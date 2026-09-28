@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:enterprise": "npx --yes tsx src/data/enterprisePack.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.11.2",

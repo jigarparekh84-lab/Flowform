@@ -30,6 +30,19 @@ import {
   type ApiOptimizeResponse,
 } from '../data/optimizeApi'
 import {
+  buildEnterprisePack,
+  downloadEnterprisePack,
+  emissionFactorsFromPack,
+  packToBomRows,
+  packToConstraints,
+  packToOptimizePayload,
+  packToUploadedNetwork,
+  parseEnterprisePackJson,
+  validateEnterprisePack,
+  type EnterprisePack,
+  type EnterpriseValidationScorecard,
+} from '../data/enterprisePack'
+import {
   createProject as createProjectStorage,
   DEFAULT_PROJECT_NAME,
   deleteProject as deleteProjectStorage,
@@ -285,6 +298,13 @@ type FlowformContextValue = {
   nodeById: (id: string) => NetworkNode | undefined
   loadUploadedNetwork: (net: UploadedNetwork) => void
   resetToSampleNetwork: () => void
+  /** Build + validate enterprise pack from active studio state. */
+  getEnterprisePack: () => {
+    pack: EnterprisePack
+    scorecard: EnterpriseValidationScorecard
+  }
+  exportEnterprisePackFile: () => void
+  importEnterprisePack: (raw: unknown) => EnterpriseValidationScorecard | null
 
   constraints: NetworkConstraints
   setConstraints: (c: NetworkConstraints) => void
@@ -947,6 +967,65 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setSelection({ ids: [], kind: null })
   }, [])
 
+  const getEnterprisePack = useCallback(() => {
+    const pack = buildEnterprisePack({
+      network,
+      constraints,
+      productMix,
+      bom,
+      emissionFactors,
+      name: projectMeta?.name,
+    })
+    return { pack, scorecard: validateEnterprisePack(pack) }
+  }, [network, constraints, productMix, bom, emissionFactors, projectMeta?.name])
+
+  const exportEnterprisePackFile = useCallback(() => {
+    const { pack } = getEnterprisePack()
+    downloadEnterprisePack(pack)
+  }, [getEnterprisePack])
+
+  const importEnterprisePack = useCallback(
+    (raw: unknown): EnterpriseValidationScorecard | null => {
+      const parsed = parseEnterprisePackJson(raw)
+      if (!parsed) return null
+      const { pack, scorecard } = parsed
+      if (!scorecard.ok) {
+        // Still allow load when only warnings? Require no errors.
+        // Errors block apply — return scorecard for UI.
+        const fatal = scorecard.errorCount > 0
+        if (fatal) return scorecard
+      }
+      const net = packToUploadedNetwork(pack)
+      setNetwork(net)
+      setConstraints(packToConstraints(pack))
+      setEmissionFactors(emissionFactorsFromPack(pack))
+      setBom((prev) => {
+        const rows = packToBomRows(pack)
+        if (rows.length === 0) return prev
+        return {
+          ...prev,
+          rows,
+          fgShares: pack.skus
+            .filter((s) => pack.bom.some((b) => b.parentSkuId === s.id))
+            .map((s) => ({
+              finishedGoodId: s.id,
+              finishedGoodName: s.name,
+              sharePct: Math.round(100 / Math.max(1, pack.skus.filter((x) =>
+                pack.bom.some((b) => b.parentSkuId === x.id),
+              ).length)),
+            })),
+        }
+      })
+      setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+      setProductMix((prev) => mergeProductMix(prev, net))
+      setLaneRates((prev) => mergeLaneRates(prev, net))
+      setCapexRoadmap((prev) => mergeCapexRoadmap(prev, net))
+      setSelection({ ids: [], kind: null })
+      return scorecard
+    },
+    [],
+  )
+
   const updateFacilityConstraint = useCallback(
     (nodeId: string, patch: Partial<FacilityConstraint>) => {
       setConstraints((prev) => ({
@@ -1212,18 +1291,34 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       const reference =
         scenarios.find((s) => s.id === 'baseline') ?? scenarios[0]
 
+      // Enterprise pack → MIP payload (capacities, fixed costs, BOM demand)
+      const pack = buildEnterprisePack({
+        network,
+        constraints,
+        productMix,
+        bom,
+        emissionFactors,
+        name: projectMeta?.name,
+      })
+      const scorecard = validateEnterprisePack(pack)
+      const mipPayload = packToOptimizePayload(pack, scorecard)
+
       if (apiUp) {
         setOptimizeStatus({
           phase: 'running',
           progress: 35,
-          message: 'API available — running PuLP MIP…',
+          message: scorecard.ok
+            ? `API available — MIP via ${scorecard.schemaVersion} (score ${scorecard.score})…`
+            : `API available — pack score ${scorecard.score} (warns ok) — running PuLP MIP…`,
         })
         try {
           const api = await postOptimize({
-            network,
-            constraints,
+            network: mipPayload.network,
+            constraints: mipPayload.constraints,
             reference,
-            bom,
+            bom: mipPayload.bom,
+            bomDemand: mipPayload.network.bomDemand,
+            enterpriseSchemaVersion: mipPayload.enterpriseSchemaVersion,
           })
           setOptimizeStatus({
             phase: 'running',
@@ -1314,7 +1409,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     } finally {
       optimizeLock.current = false
     }
-  }, [scenarios, network, constraints, bom, applyOptimizeResult])
+  }, [scenarios, network, constraints, bom, productMix, emissionFactors, projectMeta?.name, applyOptimizeResult])
 
   const setInventoryFormula = useCallback((formula: SafetyStockFormula) => {
     setInventoryPolicies((prev) => ({ ...prev, formula }))
@@ -1967,6 +2062,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       nodeById,
       loadUploadedNetwork,
       resetToSampleNetwork,
+      getEnterprisePack,
+      exportEnterprisePackFile,
+      importEnterprisePack,
       constraints,
       setConstraints,
       updateFacilityConstraint,
@@ -2065,6 +2163,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       nodeById,
       loadUploadedNetwork,
       resetToSampleNetwork,
+      getEnterprisePack,
+      exportEnterprisePackFile,
+      importEnterprisePack,
       constraints,
       updateFacilityConstraint,
       updateConstraintGlobals,

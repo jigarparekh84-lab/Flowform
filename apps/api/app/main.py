@@ -91,6 +91,10 @@ class OptimizeRequest(BaseModel):
         default=None,
         description="Optional explicit supplier→plant BOM arcs",
     )
+    enterpriseSchemaVersion: str | None = Field(
+        default=None,
+        description="Client enterprise pack schema id (e.g. enterprise-data-v1)",
+    )
 
 
 @app.get("/health")
@@ -109,7 +113,8 @@ def optimize(body: OptimizeRequest) -> dict[str, Any]:
                 "bom": body.bom if isinstance(body.bom, dict) else (
                     body.bom.model_dump() if body.bom else {}
                 ),
-                "bomDemand": body.bomDemand or [],
+                "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
+                "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
             }
         )
     except ValueError as e:

@@ -21,6 +21,8 @@ export type NetworkLane = {
   costPerUnit: number
   leadDays: number
   co2Kg: number
+  /** Optional lane throughput capacity (units); used by enterprise pack / MIP. */
+  capacityUnits?: number
 }
 
 export type KpiCell = { value: string; delta: string; better: boolean }

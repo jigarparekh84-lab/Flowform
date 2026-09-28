@@ -101,11 +101,25 @@ export async function checkApiHealth(
   }
 }
 
+export type OptimizeBomDemand = {
+  supplierId: string
+  plantId: string
+  qtyPerUnit: number
+}
+
 export async function postOptimize(args: {
-  network: UploadedNetwork
+  network: UploadedNetwork | {
+    nodes: UploadedNetwork['nodes']
+    lanes: UploadedNetwork['lanes']
+    demandVolume: Record<string, number>
+    bomDemand?: OptimizeBomDemand[]
+  }
   constraints: NetworkConstraints
   reference: Scenario
-  bom?: BomState
+  bom?: BomState | { rows: BomState['rows'] }
+  bomDemand?: OptimizeBomDemand[]
+  /** When set, echoed in API log / client status (enterprise-data-v1). */
+  enterpriseSchemaVersion?: string
   baseUrl?: string
 }): Promise<ApiOptimizeResponse> {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
@@ -116,6 +130,10 @@ export async function postOptimize(args: {
     finishedGoodId: r.finishedGoodId,
     componentId: r.componentId,
   }))
+  const bomDemand =
+    args.bomDemand ??
+    ('bomDemand' in args.network ? args.network.bomDemand : undefined) ??
+    []
   const res = await fetch(`${base}/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -124,6 +142,7 @@ export async function postOptimize(args: {
         nodes: args.network.nodes,
         lanes: args.network.lanes,
         demandVolume: args.network.demandVolume,
+        bomDemand: bomDemand.length ? bomDemand : undefined,
       },
       constraints: args.constraints,
       reference: {
@@ -132,6 +151,8 @@ export async function postOptimize(args: {
         kpis: args.reference.kpis,
       },
       bom: bomRows.length ? { rows: bomRows } : undefined,
+      bomDemand: bomDemand.length ? bomDemand : undefined,
+      enterpriseSchemaVersion: args.enterpriseSchemaVersion,
     }),
   })
   if (!res.ok) {

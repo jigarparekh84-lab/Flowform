@@ -34,6 +34,10 @@ import {
   deriveImpliedRmDemand,
   type BomComponentKind,
 } from '../data/bom'
+import {
+  ENTERPRISE_SCHEMA_VERSION,
+  type EnterpriseValidationIssue,
+} from '../data/enterprisePack'
 import { useFlowform } from '../state/FlowformContext'
 import { EmptyState } from './ui/EmptyState'
 import { RoomHeader } from './ui/RoomHeader'
@@ -74,9 +78,40 @@ export function DataRoom() {
     setBomHighlight,
     resetBom,
     applyBomInboundScenario,
+    getEnterprisePack,
+    exportEnterprisePackFile,
+    importEnterprisePack,
   } = useFlowform()
   const [draft, setDraft] = useState<Draft>({ fileNames: {} })
   const [status, setStatus] = useState<string | null>(null)
+
+  const { pack: enterprisePack, scorecard: enterpriseScore } = useMemo(
+    () => getEnterprisePack(),
+    [getEnterprisePack],
+  )
+
+  async function onEnterpriseFile(file: File | null) {
+    if (!file) return
+    try {
+      const raw = JSON.parse(await file.text())
+      const card = importEnterprisePack(raw)
+      if (!card) {
+        setStatus('Not a flowform-enterprise-pack JSON.')
+        return
+      }
+      if (card.errorCount > 0) {
+        setStatus(
+          `Import blocked — ${card.errorCount} error(s), score ${card.score}. Fix codes below.`,
+        )
+        return
+      }
+      setStatus(
+        `Imported enterprise pack · schema ${card.schemaVersion} · score ${card.score} · ${card.siteCount} sites · ${card.demandRowCount} demand rows.`,
+      )
+    } catch {
+      setStatus('Could not parse enterprise pack JSON.')
+    }
+  }
 
   const preview = useMemo(() => {
     if (!draft.sites && !draft.demand && !draft.lanes) return null
@@ -126,7 +161,7 @@ export function DataRoom() {
       <RoomHeader
         kicker="Data"
         title="Data room"
-        tip="Upload sites, demand, and lanes CSVs — validate, then load into the Network map."
+        tip="Enterprise pack schema + CSV uploads — validate, scorecard, then load into Network / MIP."
       />
 
       {!draft.sites && !draft.demand && !draft.lanes ? (
@@ -192,6 +227,73 @@ export function DataRoom() {
         </aside>
 
         <div className="studio-main data-main">
+          <section className="library-card enterprise-pack-card" aria-label="Enterprise data pack">
+            <div className="library-card-head">
+              <h2>Enterprise data model</h2>
+              <div className="product-chip-row">
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => {
+                    exportEnterprisePackFile()
+                    setStatus(`Exported enterprise pack (${ENTERPRISE_SCHEMA_VERSION}).`)
+                  }}
+                >
+                  Export pack JSON
+                </button>
+                <label className="btn ghost btn-tiny file-btn-label">
+                  Import pack JSON
+                  <input
+                    type="file"
+                    accept=".json,.enterprise.json,application/json"
+                    hidden
+                    onChange={(e) => {
+                      void onEnterpriseFile(e.target.files?.[0] ?? null)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+            <p className="studio-sub" style={{ marginTop: 0 }}>
+              Formal schema <code>{ENTERPRISE_SCHEMA_VERSION}</code> — sites
+              (kind, lat/lng, capacity min/max, fixed cost, status), SKUs /
+              product groups, demand by SKU+customer, lanes (from/to/mode/cost/
+              lead/capacity), BOM, cost factors. Validated packs feed the
+              fixed-charge multi-echelon MIP.
+            </p>
+            <div className="data-scores">
+              <ScoreCard
+                label="Schema"
+                value={enterpriseScore.schemaVersion}
+                sub={enterprisePack.format}
+              />
+              <ScoreCard
+                label="Validation score"
+                value={`${enterpriseScore.score}`}
+                sub={
+                  enterpriseScore.ok
+                    ? 'Ready for MIP'
+                    : `${enterpriseScore.errorCount} errors · ${enterpriseScore.warnCount} warns`
+                }
+                tone={enterpriseScore.ok ? 'good' : 'warn'}
+              />
+              <ScoreCard
+                label="Geocode"
+                value={`${enterpriseScore.geocodeCoveragePct}%`}
+                sub={`${enterpriseScore.siteCount} sites`}
+                tone={enterpriseScore.geocodeCoveragePct >= 80 ? 'good' : 'warn'}
+              />
+              <ScoreCard
+                label="Demand / lanes"
+                value={`${enterpriseScore.demandRowCount} / ${enterpriseScore.laneCount}`}
+                sub={`${enterpriseScore.demandVolumeTotal.toLocaleString()} units · ${enterpriseScore.skuCount} SKUs · ${enterpriseScore.bomRowCount} BOM`}
+              />
+            </div>
+            <h3 className="data-subhead">Validation scorecard</h3>
+            <EnterpriseValidationList issues={enterpriseScore.issues} ok={enterpriseScore.ok} />
+          </section>
+
           <div className="data-scores">
             <ScoreCard
               label="Active source"
@@ -1185,6 +1287,35 @@ function ScoreCard({
       <strong className="score-value">{value}</strong>
       <span className="score-sub">{sub}</span>
     </div>
+  )
+}
+
+function EnterpriseValidationList({
+  issues,
+  ok,
+}: {
+  issues: EnterpriseValidationIssue[]
+  ok: boolean
+}) {
+  if (issues.length === 0) {
+    return <p className="hint">No issues — enterprise pack is MIP-ready.</p>
+  }
+  return (
+    <>
+      <p className={`validation-banner ${ok ? 'ok' : 'bad'}`}>
+        {ok ? 'Pack valid — wired into Run optimize' : 'Blocked — fix errors (codes below)'}
+      </p>
+      <ul className="issue-list enterprise-issue-list">
+        {issues.slice(0, 50).map((issue, i) => (
+          <li key={`${issue.code}-${i}`} className={`issue-${issue.level}`}>
+            <span className="issue-level">{issue.level}</span>
+            <span className="issue-code mono">{issue.code}</span>
+            <span className="issue-msg">{issue.message}</span>
+            <span className="issue-hint">Fix: {issue.hint}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
 

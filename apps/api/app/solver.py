@@ -232,6 +232,8 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     log: list[str] = [
         "Flowform fixed-charge multi-echelon MIP (PuLP).",
     ]
+    if payload.get("enterpriseSchemaVersion"):
+        log.append(f"Enterprise pack schema: {payload['enterpriseSchemaVersion']}.")
     network = payload.get("network") or {}
     constraints = payload.get("constraints") or {}
     nodes = list(network.get("nodes") or [])

@@ -144,3 +144,11 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 ## Pass criteria
 
 All rooms above load without console errors that block interaction; sample import works; OpenFreeMap + theme + Esc/? behave; Compare tabs each render for the sample project; `npm run build` in `apps/web` stays green after related changes.
+
+
+## Enterprise pack (Data room)
+
+1. Open **Data** — confirm schema `enterprise-data-v1` scorecard (score, geocode, demand/lanes).
+2. **Export pack JSON** — downloads `.enterprise.json`.
+3. Optionally import `public/samples/stress-120-demand.enterprise.json` (100+ demand nodes).
+4. Run optimize — MIP log should mention enterprise pack schema; capacities / fixed costs / BOM demand come from the pack.

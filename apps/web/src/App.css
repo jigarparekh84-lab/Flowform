@@ -3966,3 +3966,39 @@ td.empty-cell .empty-state {
   margin: 0.85rem 0 0;
 }
 
+
+
+/* Enterprise pack (Data room) */
+.enterprise-pack-card .issue-code {
+  display: inline-block;
+  margin-right: 0.45rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.68rem;
+  background: color-mix(in oklab, var(--ff-accent) 18%, transparent);
+  color: var(--ff-text);
+}
+
+.enterprise-issue-list li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 0.2rem 0.55rem;
+  align-items: baseline;
+}
+
+.enterprise-issue-list .issue-msg {
+  grid-column: 3;
+}
+
+.enterprise-issue-list .issue-hint {
+  grid-column: 2 / -1;
+  font-size: 0.75rem;
+  color: var(--ff-text-secondary);
+}
+
+.file-btn-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}

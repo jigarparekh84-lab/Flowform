@@ -39,7 +39,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
 | **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** (tornado + MC) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** + **decision log** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export, **decision log** |
-| **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups**, **lane rate tables & bids**, **bill of materials** |
+| **Data** | CSV upload + **enterprise pack** (`enterprise-data-v1`: sites, SKUs, demand by SKU+customer, lanes, BOM, cost factors) with validation scorecard / export-import; CO₂ factors, product groups, lane bids, BOM |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
 | **Handoff** | S&OP package: sites/lanes, preferred territory lanes, CapEx years, product mix, BOM RM, inventory targets, scenario meta — JSON + Markdown ops brief (Ritara intake stub) |
 
@@ -62,7 +62,7 @@ Flowform/
 └── apps/
     ├── web/                    # Vite + React + TypeScript (port 5180)
     │   ├── Dockerfile
-    │   ├── public/samples/     # Importable *.flowform.json sample pack
+    │   ├── public/samples/     # *.flowform.json + *.enterprise.json (stress 120 demand)
     │   └── src/                # UI, state, DES-lite, optimize client
     └── api/                    # FastAPI optimize (PuLP + HiGHS/CBC, port 5182)
         ├── Dockerfile

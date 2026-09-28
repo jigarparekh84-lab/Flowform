@@ -228,3 +228,47 @@ def test_optimize_multi_echelon_with_plant_and_bom():
     assert bom_vol + 1e-3 >= 1.2 * fg_vol - 1.0
     assert body["objectiveBreakdown"]["totalM"] >= 0
     assert body["model"] == "fixed-charge-multi-echelon-v1"
+
+
+def test_optimize_enterprise_pack_fields():
+    """Capacities, fixed costs, and BOM demand from enterprise-shaped payload."""
+    payload = {
+        "enterpriseSchemaVersion": "enterprise-data-v1",
+        "network": {
+            "nodes": [
+                {"id": "sup", "name": "Sup", "kind": "supplier", "x": 10, "y": 40, "capacity": "20k", "lat": 25.0, "lng": -100.0},
+                {"id": "plt", "name": "Plant", "kind": "plant", "x": 30, "y": 40, "capacity": "30k", "lat": 30.0, "lng": -97.0},
+                {"id": "dc1", "name": "DC", "kind": "dc", "x": 50, "y": 40, "capacity": "20k", "lat": 33.0, "lng": -84.0},
+                {"id": "d1", "name": "Cust", "kind": "demand", "x": 55, "y": 40, "capacity": "5k", "lat": 34.0, "lng": -84.0},
+            ],
+            "lanes": [
+                {"id": "l1", "from": "sup", "to": "plt", "mode": "Truck", "costPerUnit": 1.0, "leadDays": 2, "co2Kg": 10},
+                {"id": "l2", "from": "plt", "to": "dc1", "mode": "Truck", "costPerUnit": 0.5, "leadDays": 2, "co2Kg": 8},
+                {"id": "l3", "from": "dc1", "to": "d1", "mode": "Truck", "costPerUnit": 0.3, "leadDays": 1, "co2Kg": 5},
+            ],
+            "demandVolume": {"d1": 5000},
+            "bomDemand": [{"supplierId": "sup", "plantId": "plt", "qtyPerUnit": 1.5}],
+        },
+        "constraints": {
+            "serviceTargetPct": 90,
+            "serviceRadiusMiles": 500,
+            "capexBudgetM": 20,
+            "maxFacilities": 4,
+            "facilities": [
+                {"nodeId": "plt", "status": "open", "capacityMin": 0, "capacityMax": 30000, "fixedCapexM": 0, "fixedOpexM": 1.0},
+                {"nodeId": "dc1", "status": "open", "capacityMin": 0, "capacityMax": 20000, "fixedCapexM": 0, "fixedOpexM": 0.6},
+            ],
+        },
+        "bom": {"rows": [{"plantId": "plt", "preferredSupplierId": "sup", "qtyPerUnit": 1.5}]},
+    }
+    r = client.post("/optimize", json=payload)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body.get("model") == "fixed-charge-multi-echelon-v1"
+    assert any("enterprise-data-v1" in line.lower() or "Enterprise pack" in line for line in body["log"])
+    assert any("BOM" in line for line in body["log"])
+    assert "objectiveBreakdown" in body
+    fac = {f["id"]: f for f in body.get("openFacilities") or []}
+    if "dc1" in fac:
+        assert fac["dc1"]["capacityMax"] == 20000
