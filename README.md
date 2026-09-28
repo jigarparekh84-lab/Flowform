@@ -17,7 +17,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Service stress-test** — DES-lite Monte Carlo (lead-time + demand noise → fill rate / late demand %).
 - **Inventory policy** — multi-echelon lite safety stock (ASCM combined or simple z·σ·√LT); Inv $ / units on Active KPIs.
 - **Resilience** — SPOF scoring: nodes whose removal drops service below threshold.
-- **Handoff-ready** — export a clean brief of nodes, lanes, and assumptions into Ritara when design is done.
+- **Handoff-ready** — enriched S&OP package (sites, lanes, preferred territory, CapEx years, product mix, BOM implied RM, inventory targets, scenarios) with schema README; JSON + Markdown ops brief toward Ritara.
 - **Multi-commodity** — product groups (Ambient/Chilled/Hazmat or Finished/WIP/RM) tag demand, lanes, and facility capacity; filter Network / Compare KPIs by group.
 - **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 - **Bill-of-materials** — FG ← components/RM with qty per unit; implied RM demand + Plant←Supplier / FG←RM echelon flows; optional inbound-lane scenario.
@@ -41,7 +41,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
 | **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups**, **lane rate tables & bids**, **bill of materials** |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
-| **Handoff** | Export / sync design payload toward Ritara (contract stub only) |
+| **Handoff** | S&OP package: sites/lanes, preferred territory lanes, CapEx years, product mix, BOM RM, inventory targets, scenario meta — JSON + Markdown ops brief (Ritara intake stub) |
 
 Nav serves the map. See `docs/UX_BRIEF.md` and `docs/PRODUCT_BLUEPRINT.md`.
 
@@ -173,7 +173,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience, Mode mix), Brief export + comments, Data CSV + CO₂, M&A Merge studio, Share stub, Handoff stub, PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory), Brief export + comments, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, Docker Compose, CI.
 
 **Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 

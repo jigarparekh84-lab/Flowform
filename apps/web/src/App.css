@@ -1985,6 +1985,123 @@
   color: var(--ff-text-soft);
 }
 
+.handoff-count-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.handoff-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--ff-border);
+  background: var(--ff-bg-input);
+  font-size: 0.7rem;
+  color: var(--ff-text-soft);
+}
+
+.handoff-chip strong {
+  color: var(--ff-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.handoff-section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.handoff-section-panel h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.handoff-subh {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.9rem;
+}
+
+.handoff-dl {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0.5rem 0 0.85rem;
+  font-size: 0.85rem;
+}
+
+.handoff-dl dt {
+  color: var(--ff-text-soft);
+}
+
+.handoff-dl dd {
+  margin: 0;
+}
+
+.handoff-table-wrap {
+  overflow: auto;
+  max-height: 22rem;
+  border: 1px solid var(--ff-border);
+  border-radius: 0.5rem;
+}
+
+.handoff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.handoff-table th,
+.handoff-table td {
+  padding: 0.35rem 0.55rem;
+  border-bottom: 1px solid var(--ff-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.handoff-table th {
+  position: sticky;
+  top: 0;
+  background: var(--ff-bg-panel);
+  z-index: 1;
+  font-weight: 600;
+}
+
+.handoff-table .muted,
+.handoff-section-panel .muted {
+  color: var(--ff-text-soft);
+  font-size: 0.72rem;
+}
+
+.handoff-swatch {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  vertical-align: middle;
+  margin-right: 0.2rem;
+}
+
+.handoff-notes pre,
+.handoff-readme {
+  white-space: pre-wrap;
+  max-height: 28rem;
+}
+
+.handoff-notes pre {
+  margin: 0.35rem 0 0;
+  padding: 0.65rem 0.75rem;
+  background: var(--ff-bg-input);
+  border: 1px solid var(--ff-border);
+  border-radius: 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .library-card {
   background: var(--ff-bg-panel);
   border: 1px solid var(--ff-border);
