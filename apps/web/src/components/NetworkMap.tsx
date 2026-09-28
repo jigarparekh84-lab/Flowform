@@ -7,7 +7,7 @@ import type {
 } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { cartoApiKey, cartoRasterStyle, nodeLatLng } from '../data/geo'
+import { basemapProvider, mapBasemapStyle, nodeLatLng } from '../data/geo'
 import {
   kindLabel,
   type NetworkLane,
@@ -106,7 +106,7 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
       <div className="map-chrome-bar">
         <p className="map-hint">
           {mode === 'maplibre'
-            ? `MapLibre · Carto${cartoApiKey() ? '' : ' · KEY MISSING'} · `
+            ? `MapLibre · ${basemapProvider() === 'carto' ? 'Carto' : 'OpenFreeMap'} · `
             : 'SVG fallback · '}
           Click to select · Shift multi-select
           {mapError ? ` · tiles failed (${mapError})` : ''}
@@ -163,7 +163,7 @@ function MapLibreCanvas({
     try {
       map = new maplibregl.Map({
         container: containerRef.current,
-        style: cartoRasterStyle(theme) as StyleSpecification,
+        style: mapBasemapStyle(theme) as string | StyleSpecification,
         center: [-95, 37],
         zoom: 3.4,
         attributionControl: { compact: true },
@@ -240,8 +240,7 @@ function MapLibreCanvas({
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const style = cartoRasterStyle(theme) as StyleSpecification
-    map.setStyle(style)
+    map.setStyle(mapBasemapStyle(theme) as string | StyleSpecification)
   }, [theme])
 
   // Sync geojson after style loads / data changes

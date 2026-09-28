@@ -68,7 +68,7 @@ export type RasterStyleSpec = {
   }[]
 }
 
-/** Carto basemap API key from apps/web/.env.local (VITE_CARTO_API_KEY). */
+/** Optional Carto key — only used when VITE_BASEMAP=carto. */
 export function cartoApiKey(): string {
   return (
     (import.meta as ImportMeta & { env?: { VITE_CARTO_API_KEY?: string } }).env
@@ -76,15 +76,45 @@ export function cartoApiKey(): string {
   )
 }
 
+/** Preferred basemap: OpenFreeMap (free, commercial OK, no API key). */
+export function openFreeMapStyleUrl(theme: 'light' | 'dark'): string {
+  return theme === 'dark'
+    ? 'https://tiles.openfreemap.org/styles/dark'
+    : 'https://tiles.openfreemap.org/styles/liberty'
+}
+
+export type BasemapProvider = 'openfreemap' | 'carto'
+
+/** Select basemap provider. Default OpenFreeMap; set VITE_BASEMAP=carto to use Carto. */
+export function basemapProvider(): BasemapProvider {
+  const raw = (
+    (import.meta as ImportMeta & { env?: { VITE_BASEMAP?: string } }).env
+      ?.VITE_BASEMAP?.trim()
+      .toLowerCase() || 'openfreemap'
+  )
+  return raw === 'carto' ? 'carto' : 'openfreemap'
+}
+
 /**
- * CartoCDN raster basemap.
- * Carto requires `?key=` (not `api_key`) — without it tiles are watermarked
- * "API key required". Free key: https://carto.com/basemaps/apikey/
+ * Style for MapLibre: OpenFreeMap style URL, or Carto raster when VITE_BASEMAP=carto.
+ * Carto requires `?key=` on tile URLs (not `api_key`).
+ */
+export function mapBasemapStyle(
+  theme: 'light' | 'dark',
+): string | RasterStyleSpec {
+  if (basemapProvider() === 'carto') {
+    return cartoRasterStyle(theme)
+  }
+  return openFreeMapStyleUrl(theme)
+}
+
+/**
+ * CartoCDN raster basemap (optional fallback).
+ * Free key: https://carto.com/basemaps/apikey/
  */
 export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
   const key = cartoApiKey()
   const q = key ? `?key=${encodeURIComponent(key)}` : ''
-  // Prefer /rastertiles/{style}/ URLs from current Carto docs
   const path =
     theme === 'dark' ? 'rastertiles/dark_all' : 'rastertiles/light_all'
   const tiles = ['a', 'b', 'c', 'd'].map(
