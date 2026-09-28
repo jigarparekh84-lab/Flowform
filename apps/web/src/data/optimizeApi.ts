@@ -3,6 +3,7 @@
  * Falls back to client heuristic when unreachable.
  */
 
+import type { BomState } from './bom'
 import type { UploadedNetwork } from './csvParsers'
 import type { NetworkConstraints, Scenario } from './sampleNetwork'
 
@@ -12,27 +13,70 @@ export const DEFAULT_API_BASE =
       ?.VITE_API_URL) ||
   'http://127.0.0.1:5182'
 
+export type ApiFlow = {
+  from: string
+  to: string
+  volume: number
+  miles?: number
+  echelon?: string
+  unitCost?: number
+  transportCostM?: number
+}
+
+export type ApiObjectiveBreakdown = {
+  totalM: number
+  transportM: number
+  fixedCapexM: number
+  fixedOpexM: number
+  uncoveredPenaltyM: number
+  currency?: string
+}
+
+export type ApiOpenFacility = {
+  id: string
+  name: string
+  kind?: string
+  fixedCapexM: number
+  fixedOpexM: number
+  throughput: number
+  capacityMax: number
+  utilizationPct: number
+}
+
+export type ApiShadowPrice = {
+  facilityId: string
+  constraint: string
+  shadowPrice: number
+  unit?: string
+  binding?: boolean
+  slack?: number
+  method?: string
+}
+
 export type ApiOptimizeResponse = {
   ok: boolean
   solver: string
   status: string
+  model?: string
   openedIds: string[]
   closedIds: string[]
   keptOpenIds: string[]
   openIds?: string[]
-  flows: {
-    from: string
-    to: string
-    volume: number
-    miles?: number
-  }[]
+  openFacilities?: ApiOpenFacility[]
+  flows: ApiFlow[]
+  objectiveBreakdown?: ApiObjectiveBreakdown
+  shadowPrices?: ApiShadowPrice[]
+  sensitivity?: { method?: string; note?: string }
   kpis: {
     servicePct: number
     capexUsedM: number
+    opexUsedM?: number
+    transportCostM?: number
     costM: number
     co2Kt: number
     uncoveredDemand: number
     targetPct?: number
+    objectiveTotalM?: number
   }
   log: string[]
 }
@@ -61,9 +105,17 @@ export async function postOptimize(args: {
   network: UploadedNetwork
   constraints: NetworkConstraints
   reference: Scenario
+  bom?: BomState
   baseUrl?: string
 }): Promise<ApiOptimizeResponse> {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
+  const bomRows = (args.bom?.rows ?? []).map((r) => ({
+    plantId: r.plantId,
+    preferredSupplierId: r.preferredSupplierId,
+    qtyPerUnit: r.qtyPerUnit,
+    finishedGoodId: r.finishedGoodId,
+    componentId: r.componentId,
+  }))
   const res = await fetch(`${base}/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -79,6 +131,7 @@ export async function postOptimize(args: {
         name: args.reference.name,
         kpis: args.reference.kpis,
       },
+      bom: bomRows.length ? { rows: bomRows } : undefined,
     }),
   })
   if (!res.ok) {

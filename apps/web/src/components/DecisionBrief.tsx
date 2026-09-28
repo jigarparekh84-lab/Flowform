@@ -306,10 +306,32 @@ function ScenarioBriefCard({
       )}
       {scenario.optimizeMeta && (
         <p className="brief-meta">
-          Heuristic {scenario.optimizeMeta.heuristic}: open{' '}
-          {scenario.optimizeMeta.openedIds.length}, close{' '}
+          {scenario.optimizeMeta.model
+            ? `MIP ${scenario.optimizeMeta.heuristic}`
+            : `Heuristic ${scenario.optimizeMeta.heuristic}`}
+          : open {scenario.optimizeMeta.openedIds.length}, close{' '}
           {scenario.optimizeMeta.closedIds.length}
         </p>
+      )}
+      {scenario.optimizeMeta?.objectiveBreakdown && (
+        <dl className="brief-kpis" style={{ marginTop: '0.5rem' }}>
+          <div>
+            <dt>Obj total</dt>
+            <dd>${scenario.optimizeMeta.objectiveBreakdown.totalM.toFixed(2)}M</dd>
+          </div>
+          <div>
+            <dt>Transport</dt>
+            <dd>${scenario.optimizeMeta.objectiveBreakdown.transportM.toFixed(2)}M</dd>
+          </div>
+          <div>
+            <dt>Fixed CapEx</dt>
+            <dd>${scenario.optimizeMeta.objectiveBreakdown.fixedCapexM.toFixed(1)}M</dd>
+          </div>
+          <div>
+            <dt>Fixed OpEx</dt>
+            <dd>${scenario.optimizeMeta.objectiveBreakdown.fixedOpexM.toFixed(1)}M</dd>
+          </div>
+        </dl>
       )}
     </article>
   )
@@ -329,8 +351,13 @@ function recommendCopy(rec: Scenario, ref: Scenario): string {
       ? `with +${serviceDelta.toFixed(1)}pp service`
       : `with ${serviceDelta.toFixed(1)}pp service`,
   ]
-  if (rec.optimizeMeta) {
-    parts.push('(from Run optimize heuristic v1)')
+  if (rec.optimizeMeta?.objectiveBreakdown) {
+    const bd = rec.optimizeMeta.objectiveBreakdown
+    parts.push(
+      `(MIP obj $${bd.totalM.toFixed(1)}M: tx $${bd.transportM.toFixed(1)}M + CapEx $${bd.fixedCapexM.toFixed(0)}M)`,
+    )
+  } else if (rec.optimizeMeta) {
+    parts.push('(from Run optimize)')
   }
   return parts.join(' ') + '.'
 }

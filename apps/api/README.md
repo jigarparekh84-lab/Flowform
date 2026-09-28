@@ -1,12 +1,16 @@
 # Flowform Optimize API
 
-Minimal FastAPI service that runs a **real MIP** (facility open/close + demand assignment) with **PuLP + HiGHS** (preferred) or **PuLP CBC**.
+Fixed-charge **multi-echelon MIP** (PuLP + HiGHS preferred, CBC fallback):
+
+- Open/close DCs (and optional plants) with fixed CapEx + OpEx
+- Capacitated facilities; optional minimum throughput when open
+- Flow conservation **plant → DC → customer** (and **supplier → plant** when BOM present)
+- Variable transport cost on lanes (or distance proxy)
+- Returns objective breakdown, open facilities, flows (with echelon), capacity shadow prices / duals
 
 - Default port: **5182**
 - CORS: `http://localhost:5180` (Flowform web)
 - Endpoint: `POST /optimize`
-
-> Optional: Google **OR-Tools** CP-SAT is *not* required for this MVP. If you prefer it later, add `ortools` and swap the solver backend in `app/solver.py`.
 
 ## Setup
 
@@ -38,18 +42,30 @@ Request body (JSON):
 ```json
 {
   "network": {
-    "nodes": [{ "id": "n1", "name": "…", "kind": "dc", "x": 50, "y": 40, "lat": 39.9, "lng": -83.0, "capacity": "12k" }],
-    "lanes": [],
-    "demandVolume": { "n4": 9200 }
+    "nodes": [
+      { "id": "n1", "name": "Plant", "kind": "plant", "x": 30, "y": 50, "capacity": "30k" },
+      { "id": "n2", "name": "DC", "kind": "dc", "x": 55, "y": 50, "capacity": "20k" },
+      { "id": "n4", "name": "Demand", "kind": "demand", "x": 70, "y": 50, "capacity": "5k" }
+    ],
+    "lanes": [
+      { "id": "l1", "from": "n1", "to": "n2", "mode": "Rail", "costPerUnit": 0.64, "leadDays": 5, "co2Kg": 9 }
+    ],
+    "demandVolume": { "n4": 5000 }
   },
   "constraints": {
     "serviceTargetPct": 95,
     "serviceRadiusMiles": 250,
     "capexBudgetM": 30,
     "maxFacilities": 6,
+    "optimizePlants": false,
+    "forceOpenSeed": false,
     "facilities": [
-      { "nodeId": "n1", "status": "open", "capacityMin": 0, "capacityMax": 20000, "fixedCapexM": 4 }
+      { "nodeId": "n1", "status": "open", "capacityMin": 0, "capacityMax": 30000, "fixedCapexM": 0, "fixedOpexM": 1.2 },
+      { "nodeId": "n2", "status": "open", "capacityMin": 0, "capacityMax": 20000, "fixedCapexM": 4, "fixedOpexM": 0.7 }
     ]
+  },
+  "bom": {
+    "rows": [{ "plantId": "n1", "preferredSupplierId": "n7", "qtyPerUnit": 1.2 }]
   },
   "reference": {
     "id": "baseline",
@@ -58,17 +74,26 @@ Request body (JSON):
 }
 ```
 
-Response includes `openedIds`, `closedIds`, `keptOpenIds`, `flows`, `kpis`, `solver`, and `log`.
+Response includes:
 
-## Smoke test
+| Field | Description |
+|-------|-------------|
+| `openIds` / `openedIds` / `closedIds` / `keptOpenIds` | Facility decisions |
+| `openFacilities` | Throughput, util %, CapEx/OpEx per open site |
+| `flows` | Multi-echelon arcs (`echelon`: plant→dc, dc→customer, supplier→plant, …) |
+| `objectiveBreakdown` | transportM, fixedCapexM, fixedOpexM, uncoveredPenaltyM, totalM |
+| `shadowPrices` | Capacity duals (LP with binaries fixed) or reduced-cost proxy |
+| `kpis` | servicePct, capexUsedM, opexUsedM, transportCostM, costM, … |
+| `solver` / `model` / `log` | `pulp-highs` / `fixed-charge-multi-echelon-v1` |
+
+## Tests
 
 ```bash
-curl -s http://127.0.0.1:5182/health
-curl -s -X POST http://127.0.0.1:5182/optimize \
-  -H 'Content-Type: application/json' \
-  -d '{"network":{"nodes":[{"id":"f1","name":"DC A","kind":"dc","x":40,"y":40,"capacity":"10k"},{"id":"f2","name":"Cand B","kind":"candidate","x":70,"y":40,"capacity":"10k"},{"id":"d1","name":"Demand","kind":"demand","x":55,"y":40,"capacity":"5k"}],"lanes":[],"demandVolume":{"d1":5000}},"constraints":{"serviceTargetPct":95,"serviceRadiusMiles":250,"capexBudgetM":30,"maxFacilities":4,"facilities":[{"nodeId":"f1","status":"open","capacityMin":0,"capacityMax":20000,"fixedCapexM":0},{"nodeId":"f2","status":"candidate","capacityMin":0,"capacityMax":20000,"fixedCapexM":6}]}}'
+cd /Users/jigar/Projects/Flowform/apps/api
+source .venv/bin/activate
+pytest -q
 ```
 
 ## Web client
 
-The Flowform web app (`apps/web`) calls this API from **Run** when reachable (`VITE_API_URL`, default `http://127.0.0.1:5182`). If the API is down, Run falls back to the client heuristic v1.
+The Flowform web app (`apps/web`) calls this API from **Run** when reachable (`VITE_API_URL`, default `http://127.0.0.1:5182`), passing network + constraints + BOM. Compare / Brief show the objective breakdown. If the API is down, Run falls back to the client heuristic v1.

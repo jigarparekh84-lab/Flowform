@@ -87,12 +87,37 @@ export function buildBriefMarkdown(args: {
       '',
       '## Optimize meta',
       '',
-      `- Heuristic: ${rec.optimizeMeta.heuristic}`,
+      `- Solver: ${rec.optimizeMeta.heuristic}`,
+      `- Model: ${rec.optimizeMeta.model ?? '—'}`,
       `- Opened: ${rec.optimizeMeta.openedIds.join(', ') || '—'}`,
       `- Closed: ${rec.optimizeMeta.closedIds.join(', ') || '—'}`,
       `- Service: ${rec.optimizeMeta.servicePct.toFixed(1)}%`,
       `- CapEx used: $${rec.optimizeMeta.capexUsedM}M`,
     )
+    const bd = rec.optimizeMeta.objectiveBreakdown
+    if (bd) {
+      lines.push(
+        '',
+        '### Objective breakdown',
+        '',
+        `| Component | $M |`,
+        `| --- | ---: |`,
+        `| Transport | ${bd.transportM.toFixed(3)} |`,
+        `| Fixed CapEx | ${bd.fixedCapexM.toFixed(3)} |`,
+        `| Fixed OpEx | ${bd.fixedOpexM.toFixed(3)} |`,
+        `| Uncovered penalty | ${bd.uncoveredPenaltyM.toFixed(3)} |`,
+        `| **Total** | **${bd.totalM.toFixed(3)}** |`,
+      )
+    }
+    const facs = rec.optimizeMeta.openFacilities
+    if (facs && facs.length) {
+      lines.push('', '### Open facilities', '')
+      for (const f of facs) {
+        lines.push(
+          `- ${f.name} (${f.id}): thr ${f.throughput.toFixed(0)} / ${f.capacityMax.toFixed(0)} (${f.utilizationPct.toFixed(0)}% util)`,
+        )
+      }
+    }
   }
 
   if (roadmapSection && roadmapSection.trim()) {

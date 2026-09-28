@@ -37,6 +37,36 @@ export type KpiSnapshot = {
   invUnits?: KpiCell
 }
 
+export type OptimizeObjectiveBreakdown = {
+  totalM: number
+  transportM: number
+  fixedCapexM: number
+  fixedOpexM: number
+  uncoveredPenaltyM: number
+  currency?: string
+}
+
+export type OptimizeOpenFacility = {
+  id: string
+  name: string
+  kind?: string
+  fixedCapexM: number
+  fixedOpexM: number
+  throughput: number
+  capacityMax: number
+  utilizationPct: number
+}
+
+export type OptimizeShadowPrice = {
+  facilityId: string
+  constraint: string
+  shadowPrice: number
+  unit?: string
+  binding?: boolean
+  slack?: number
+  method?: string
+}
+
 export type OptimizeMeta = {
   /** Client heuristic or API MIP solver id (e.g. pulp-highs, pulp-cbc). */
   heuristic: 'v1-greedy' | 'pulp-highs' | 'pulp-cbc' | string
@@ -44,8 +74,21 @@ export type OptimizeMeta = {
   closedIds: string[]
   servicePct: number
   capexUsedM: number
-  /** Assignment flows from MIP when available. */
-  flows?: { from: string; to: string; volume: number; miles?: number }[]
+  /** Assignment / multi-echelon flows from MIP when available. */
+  flows?: {
+    from: string
+    to: string
+    volume: number
+    miles?: number
+    echelon?: string
+    unitCost?: number
+    transportCostM?: number
+  }[]
+  /** Objective cost stack from fixed-charge MIP. */
+  objectiveBreakdown?: OptimizeObjectiveBreakdown
+  openFacilities?: OptimizeOpenFacility[]
+  shadowPrices?: OptimizeShadowPrice[]
+  model?: string
   /** Positions for map-diff when nodes are not in the sample set. */
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }
@@ -142,6 +185,8 @@ export type FacilityConstraint = {
   capacityMax: number
   /** CapEx $M to open if candidate / currently closed. */
   fixedCapexM: number
+  /** Annualized fixed OpEx $M while open (optional; API defaults by kind). */
+  fixedOpexM?: number
 }
 
 export type NetworkConstraints = {

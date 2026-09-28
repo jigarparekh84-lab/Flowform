@@ -526,8 +526,72 @@ function MatrixView({
     )
   }
 
+  const withBreakdown = selected.filter((s) => s.optimizeMeta?.objectiveBreakdown)
+
   return (
     <div className="compare-matrix-wrap">
+      {withBreakdown.length > 0 && (
+        <section className="library-card" aria-label="MIP objective breakdown" style={{ marginBottom: '1rem' }}>
+          <h2>Optimize objective breakdown</h2>
+          <p className="muted tiny">
+            Fixed-charge multi-echelon MIP cost stack (transport + CapEx + OpEx + uncovered penalty).
+          </p>
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th scope="col">Scenario</th>
+                <th scope="col">Total</th>
+                <th scope="col">Transport</th>
+                <th scope="col">CapEx</th>
+                <th scope="col">OpEx</th>
+                <th scope="col">Uncovered pen.</th>
+                <th scope="col">Open sites</th>
+                <th scope="col">Model</th>
+              </tr>
+            </thead>
+            <tbody>
+              {withBreakdown.map((s) => {
+                const bd = s.optimizeMeta!.objectiveBreakdown!
+                const keptHint = s.optimizeMeta
+                  ? `${(s.optimizeMeta.openFacilities ?? []).length || '—'} fac`
+                  : '—'
+                return (
+                  <tr key={s.id}>
+                    <td>
+                      <strong>{s.name}</strong>
+                    </td>
+                    <td>${bd.totalM.toFixed(2)}M</td>
+                    <td>${bd.transportM.toFixed(2)}M</td>
+                    <td>${bd.fixedCapexM.toFixed(1)}M</td>
+                    <td>${bd.fixedOpexM.toFixed(1)}M</td>
+                    <td>${bd.uncoveredPenaltyM.toFixed(2)}M</td>
+                    <td>{keptHint}</td>
+                    <td className="muted tiny">
+                      {s.optimizeMeta?.model ?? s.optimizeMeta?.heuristic ?? '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {withBreakdown.some((s) => (s.optimizeMeta?.shadowPrices ?? []).some((p) => p.binding)) && (
+            <p className="muted tiny" style={{ marginTop: '0.5rem' }}>
+              Binding capacity duals:{' '}
+              {withBreakdown
+                .flatMap((s) =>
+                  (s.optimizeMeta?.shadowPrices ?? [])
+                    .filter((p) => p.binding)
+                    .map(
+                      (p) =>
+                        `${p.facilityId} (π=${p.shadowPrice.toFixed(4)})`,
+                    ),
+                )
+                .slice(0, 8)
+                .join(' · ') || '—'}
+            </p>
+          )}
+        </section>
+      )}
       <table className="compare-matrix">
         <thead>
           <tr>

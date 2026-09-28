@@ -1096,6 +1096,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       capexUsedM: number
       heuristic: string
       flows?: ApiOptimizeResponse['flows']
+      objectiveBreakdown?: ApiOptimizeResponse['objectiveBreakdown']
+      openFacilities?: ApiOptimizeResponse['openFacilities']
+      shadowPrices?: ApiOptimizeResponse['shadowPrices']
+      model?: string
       log: string[]
       name: string
       kpis: Scenario['kpis']
@@ -1118,6 +1122,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           servicePct: Math.round(args.servicePct * 10) / 10,
           capexUsedM: Math.round(args.capexUsedM * 10) / 10,
           flows: args.flows,
+          objectiveBreakdown: args.objectiveBreakdown,
+          openFacilities: args.openFacilities,
+          shadowPrices: args.shadowPrices,
+          model: args.model,
           marks: [
             ...openedIds.map((id) => {
               const n = facilities.find((f) => f.id === id)
@@ -1215,6 +1223,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             network,
             constraints,
             reference,
+            bom,
           })
           setOptimizeStatus({
             phase: 'running',
@@ -1222,6 +1231,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             message: `Packaging ${api.solver} result…`,
           })
           await sleep(120)
+          const bd = api.objectiveBreakdown
+          const bdMsg = bd
+            ? ` · obj $${bd.totalM.toFixed(2)}M (tx $${bd.transportM.toFixed(2)}M + CapEx $${bd.fixedCapexM.toFixed(1)}M + OpEx $${bd.fixedOpexM.toFixed(1)}M)`
+            : ''
           return applyOptimizeResult({
             openedIds: api.openedIds,
             closedIds: api.closedIds,
@@ -1229,10 +1242,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             capexUsedM: api.kpis.capexUsedM,
             heuristic: api.solver,
             flows: api.flows,
+            objectiveBreakdown: api.objectiveBreakdown,
+            openFacilities: api.openFacilities,
+            shadowPrices: api.shadowPrices,
+            model: api.model,
             log: api.log,
             name: `Optimize MIP ${new Date().toLocaleTimeString()}`,
             kpis: kpisFromApi(api, reference),
-            statusMessage: `API ${api.solver} · ${api.status} · service ${api.kpis.servicePct.toFixed(1)}%`,
+            statusMessage: `API ${api.solver} · ${api.status} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}`,
           })
         } catch (apiErr) {
           const msg =
@@ -1297,7 +1314,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     } finally {
       optimizeLock.current = false
     }
-  }, [scenarios, network, constraints, applyOptimizeResult])
+  }, [scenarios, network, constraints, bom, applyOptimizeResult])
 
   const setInventoryFormula = useCallback((formula: SafetyStockFormula) => {
     setInventoryPolicies((prev) => ({ ...prev, formula }))
