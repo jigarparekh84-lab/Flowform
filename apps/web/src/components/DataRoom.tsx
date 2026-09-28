@@ -90,7 +90,38 @@ export function DataRoom() {
     [getEnterprisePack],
   )
 
-  async function onEnterpriseFile(file: File | null) {
+  
+  async function loadStressSample(which: '120' | '200' = '200') {
+    const file =
+      which === '120'
+        ? '/samples/stress-120-demand.enterprise.json'
+        : '/samples/stress-200-demand.enterprise.json'
+    try {
+      setStatus(`Loading stress-${which} sample…`)
+      const res = await fetch(file)
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      const raw = (await res.json()) as unknown
+      const card = importEnterprisePack(raw)
+      if (!card) {
+        setStatus('Not a flowform-enterprise-pack JSON.')
+        return
+      }
+      if (card.errorCount > 0) {
+        setStatus(
+          `Stress-${which} blocked — ${card.errorCount} error(s), score ${card.score}.`,
+        )
+        return
+      }
+      setStatus(
+        `Loaded stress-${which} · schema ${card.schemaVersion} · score ${card.score} · ${card.siteCount} sites · ${card.demandRowCount} demand rows · ${card.laneCount} lanes.`,
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'load failed'
+      setStatus(`Could not load stress-${which}: ${msg}`)
+    }
+  }
+
+async function onEnterpriseFile(file: File | null) {
     if (!file) return
     try {
       const raw = JSON.parse(await file.text())
@@ -253,6 +284,22 @@ export function DataRoom() {
                     }}
                   />
                 </label>
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  title="Load public/samples/stress-200-demand.enterprise.json"
+                  onClick={() => void loadStressSample('200')}
+                >
+                  Load stress-200
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  title="Load public/samples/stress-120-demand.enterprise.json"
+                  onClick={() => void loadStressSample('120')}
+                >
+                  Load stress-120
+                </button>
               </div>
             </div>
             <p className="studio-sub" style={{ marginTop: 0 }}>

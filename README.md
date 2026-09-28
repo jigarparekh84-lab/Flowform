@@ -62,12 +62,12 @@ Flowform/
 └── apps/
     ├── web/                    # Vite + React + TypeScript (port 5180)
     │   ├── Dockerfile
-    │   ├── public/samples/     # *.flowform.json + *.enterprise.json (stress 120 demand)
+    │   ├── public/samples/     # *.flowform.json + stress-120/200 *.enterprise.json
     │   └── src/                # UI, state, DES-lite, optimize client
     └── api/                    # FastAPI optimize (PuLP + HiGHS/CBC, port 5182)
         ├── Dockerfile
         ├── app/
-        └── tests/              # pytest health + optimize smoke
+        └── tests/              # pytest smoke + stress-120/200 MIP benchmarks
 ```
 
 | Piece | Stack | Port | Role |
@@ -142,6 +142,13 @@ Open http://localhost:5180.
 Optional: `VITE_API_URL` (default `http://127.0.0.1:5182`) so **Run** can reach the API.
 
 Basemap defaults to **OpenFreeMap** (free for commercial use, no API key). Optional Carto: set `VITE_BASEMAP=carto` and `VITE_CARTO_API_KEY` in `apps/web/.env.local` (gitignored; Carto needs `?key=`). Hard-refresh after env changes.
+
+### Stress packs + MIP benchmark
+
+- **Data / Projects → Load stress-200** (or stress-120) — loads `public/samples/stress-*-demand.enterprise.json` (`enterprise-data-v1`) into the Active network for large open/close + flow solves.
+- After **Run**, top chrome shows **model version**, **solver status**, and **solve seconds** next to the result message.
+- **Compare → Cost-to-serve** uses MIP flows when present (per-customer landed transport + variable OpEx, service DC); totals match objective transport+OpEx.
+- API benchmark: `cd apps/api && pytest -q tests/test_stress_benchmark.py -s` (fails if solve > 60s or unexpectedly infeasible).
 
 ### DES-lite
 

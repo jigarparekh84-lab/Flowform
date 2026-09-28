@@ -1522,6 +1522,30 @@
   overflow: hidden;
 }
 
+
+.run-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 8px;
+  align-items: center;
+}
+.run-chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ff-accent) 18%, transparent);
+  color: var(--ff-text);
+  border: 1px solid color-mix(in srgb, var(--ff-accent) 35%, transparent);
+  white-space: nowrap;
+}
+.run-chip.muted {
+  opacity: 0.75;
+  font-weight: 500;
+}
+
 .run-status.run-done {
   color: var(--ff-good);
   border-color: color-mix(in srgb, var(--ff-good) 35%, var(--ff-border));

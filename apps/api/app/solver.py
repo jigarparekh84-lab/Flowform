@@ -15,6 +15,7 @@ Model (depth slice 1):
 from __future__ import annotations
 
 import math
+import time
 import re
 from typing import Any
 
@@ -23,6 +24,18 @@ import pulp
 MILES_PER_UNIT = 12.0
 DEFAULT_TRANSPORT_PER_MILE = 0.002  # $M proxy per unit-mile when no lane rate
 UNCOVERED_PENALTY = 80.0  # $M-scale penalty per unit uncovered
+
+
+def _safe_name(*parts: object) -> str:
+    """PuLP replaces '-' with '_' in constraint names — normalize up front."""
+    raw = "_".join(str(p) for p in parts)
+    return (
+        raw.replace("-", "_")
+        .replace("→", "_")
+        .replace(" ", "_")
+        .replace(".", "_")
+    )
+
 
 
 def _dist_miles(a: dict[str, Any], b: dict[str, Any]) -> float:
@@ -344,14 +357,14 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     for f in decidable:
         st = _facility_status(f, cmap)
         if st == "closed":
-            prob += y[f["id"]] == 0, f"forced_closed_{f['id']}"
+            prob += y[f["id"]] == 0, _safe_name("forced_closed", f["id"])
         elif st == "open" and f.get("kind") == "plant" and not optimize_plants:
             # Plants stay open unless explicitly optimizing plants
-            prob += y[f["id"]] == 1, f"forced_open_{f['id']}"
+            prob += y[f["id"]] == 1, _safe_name("forced_open", f["id"])
         elif st == "open" and constraints.get("forceOpenSeed", False):
             # Opt-in: keep currently open non-candidate sites open
             if f.get("kind") != "candidate":
-                prob += y[f["id"]] == 1, f"forced_open_{f['id']}"
+                prob += y[f["id"]] == 1, _safe_name("forced_open", f["id"])
 
     x_dc_c = pulp.LpVariable.dicts(
         "x_dc_c",
@@ -389,9 +402,9 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         inbound = [x_dc_c[(a, b)] for a, b, _, _ in arcs_dc_cust if b == d_id]
         inbound += [x_p_c[(a, b)] for a, b, _, _ in arcs_plant_cust if b == d_id]
         if inbound:
-            prob += pulp.lpSum(inbound) + uncovered[d_id] == vol, f"dem_{d_id}"
+            prob += pulp.lpSum(inbound) + uncovered[d_id] == vol, _safe_name("dem", d_id)
         else:
-            prob += uncovered[d_id] == vol, f"dem_isol_{d_id}"
+            prob += uncovered[d_id] == vol, _safe_name("dem_isol", d_id)
 
     # DC flow balance: inflow from plants == outflow to customers
     # (single-echelon: no plant inflow required — DC "sources" locally)
@@ -405,34 +418,34 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             # No balance — outflow gated by capacity only
             pass
         elif inflow:
-            prob += pulp.lpSum(inflow) == pulp.lpSum(outflow), f"bal_dc_{did}"
+            prob += pulp.lpSum(inflow) == pulp.lpSum(outflow), _safe_name("bal_dc", did)
         else:
             # No plant→DC arcs into this DC: block outflow
             for a, b, _, _ in arcs_dc_cust:
                 if a == did:
-                    prob += x_dc_c[(a, b)] == 0, f"block_dc_{did}_{b}"
+                    prob += x_dc_c[(a, b)] == 0, _safe_name("block_dc", did, b)
 
     # Link flows to open facilities
     for a, b, _, _ in arcs_dc_cust:
         if a in y:
             dem_b = dem_map[b]
-            prob += x_dc_c[(a, b)] <= dem_b * y[a], f"link_dc_{a}_{b}"
+            prob += x_dc_c[(a, b)] <= dem_b * y[a], _safe_name("link_dc", a, b)
 
     for a, b, _, _ in arcs_plant_dc:
         if a in y:
             # Big-M: total demand
-            prob += x_p_dc[(a, b)] <= total_demand * y[a], f"link_pdc_{a}_{b}"
+            prob += x_p_dc[(a, b)] <= total_demand * y[a], _safe_name("link_pdc", a, b)
         if b in y:
-            prob += x_p_dc[(a, b)] <= total_demand * y[b], f"link_pdc_in_{a}_{b}"
+            prob += x_p_dc[(a, b)] <= total_demand * y[b], _safe_name("link_pdc_in", a, b)
 
     for a, b, _, _ in arcs_plant_cust:
         if a in y:
-            prob += x_p_c[(a, b)] <= dem_map[b] * y[a], f"link_pc_{a}_{b}"
+            prob += x_p_c[(a, b)] <= dem_map[b] * y[a], _safe_name("link_pc", a, b)
 
     for a, b, _, _ in bom_arcs:
         if b in y:
             # RM inflow only if plant open
-            prob += x_s_p[(a, b)] <= total_demand * 10 * y[b], f"link_sp_{a}_{b}"
+            prob += x_s_p[(a, b)] <= total_demand * 10 * y[b], _safe_name("link_sp", a, b)
 
     # BOM: RM inflow >= qtyPerUnit * plant FG outflow
     if bom_arcs:
@@ -460,7 +473,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                 if (sid, pid) in x_s_p:
                     prob += (
                         x_s_p[(sid, pid)] >= qty * fg_sum,
-                        f"bom_{sid}_{pid}",
+                        _safe_name("bom", sid, pid),
                     )
 
     # Capacity + min throughput
@@ -480,11 +493,11 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         if not outbound:
             continue
         thr = pulp.lpSum(outbound)
-        ren = f"cap_{fid}"
+        ren = _safe_name("cap", fid)
         prob += thr <= cap_max * y[fid], ren
         cap_constraints[fid] = (prob.constraints[ren], cap_max, cap_min)
         if cap_min > 0:
-            prob += thr >= cap_min * y[fid], f"minthr_{fid}"
+            prob += thr >= cap_min * y[fid], _safe_name("minthr", fid)
 
     # CapEx budget (incremental CapEx only)
     capex_cost = {f["id"]: _open_capex(f["id"], fac_by_id, cmap) for f in decidable}
@@ -528,9 +541,11 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
 
     prob += transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
 
+    t_solve0 = time.perf_counter()
     status_code = prob.solve(solver)
+    solve_seconds = round(time.perf_counter() - t_solve0, 3)
     status_name = pulp.LpStatus.get(status_code, str(status_code))
-    log.append(f"Solve status: {status_name}.")
+    log.append(f"Solve status: {status_name} in {solve_seconds:.3f}s.")
 
     def _val(var: Any) -> float:
         v = pulp.value(var)
@@ -624,7 +639,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         # Fix all binary y
         for fid in y:
             fixed = 1.0 if fid in open_ids else 0.0
-            lp += y[fid] == fixed, f"fix_y_{fid}"
+            lp += y[fid] == fixed, _safe_name("fix_y", fid)
         # Re-declare as continuous relaxation is automatic once y fixed;
         # HiGHS/CBC still solve as MIP with fixed binaries — duals via .pi
         lp_solver, _ = _pick_solver([])
@@ -632,7 +647,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         dual_method = "fixed-MIP-LP-duals"
         for fid, (constr, cap_max, _cap_min) in cap_constraints.items():
             # Re-fetch constraint from lp
-            cname = f"cap_{fid}"
+            cname = _safe_name("cap", fid)
             if cname not in lp.constraints:
                 continue
             pi = _safe_dual(lp.constraints[cname])
@@ -743,6 +758,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         "solver": solver_name,
         "status": status_name,
         "model": "fixed-charge-multi-echelon-v1",
+        "solveSeconds": solve_seconds,
         "openedIds": opened_ids,
         "closedIds": closed_ids,
         "keptOpenIds": kept_open,

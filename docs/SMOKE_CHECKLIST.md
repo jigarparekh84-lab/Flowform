@@ -6,6 +6,8 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
 
 **Sample pack:** [`apps/web/public/samples/na-footprint-2027.flowform.json`](../apps/web/public/samples/na-footprint-2027.flowform.json) — importable `flowform-project` v1 with the built-in NA network, Baseline + three what-ifs, product mix, lane rates, BOM, CapEx roadmap, and inventory policies.
 
+**Stress packs (enterprise-data-v1):** [`stress-120-demand.enterprise.json`](../apps/web/public/samples/stress-120-demand.enterprise.json) and [`stress-200-demand.enterprise.json`](../apps/web/public/samples/stress-200-demand.enterprise.json) — load via **Projects → Load stress-*** or **Data → Load stress-*** (or Import pack JSON).
+
 ---
 
 ## 0. Load the sample project
@@ -150,5 +152,16 @@ All rooms above load without console errors that block interaction; sample impor
 
 1. Open **Data** — confirm schema `enterprise-data-v1` scorecard (score, geocode, demand/lanes).
 2. **Export pack JSON** — downloads `.enterprise.json`.
-3. Optionally import `public/samples/stress-120-demand.enterprise.json` (100+ demand nodes).
-4. Run optimize — MIP log should mention enterprise pack schema; capacities / fixed costs / BOM demand come from the pack.
+3. **Load stress-200** (or **Load stress-120**) — one-click fetch of `public/samples/stress-*-demand.enterprise.json` into the Active network. Same buttons exist under **Projects**.
+4. Confirm scorecard: ~200 (or 120) demand sites, geocode ~100%, score ready for MIP.
+5. **Run** optimize — chrome shows model `fixed-charge-multi-echelon-v1`, solver status, and solve seconds; MIP log mentions enterprise pack schema.
+6. **Compare → Cost-to-serve** — after MIP, rows show **Service DC**, transport + variable OpEx; totals match objective transport+OpEx (gap ≈ 0).
+
+### Stress benchmark (API)
+
+```bash
+cd apps/api && source .venv/bin/activate
+pytest -q tests/test_stress_benchmark.py -s
+```
+
+Expect Optimal, open ≥ 1, `solveSeconds` ≪ 60s on stress-120 and stress-200 fixtures.

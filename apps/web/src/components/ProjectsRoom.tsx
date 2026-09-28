@@ -28,6 +28,7 @@ export function ProjectsRoom() {
     switchProject,
     exportActiveProject,
     importProjectFile,
+    importEnterprisePack,
   } = useFlowform()
 
   const [renameId, setRenameId] = useState<string | null>(null)
@@ -72,6 +73,35 @@ export function ProjectsRoom() {
     }
   }
 
+  async function loadStressIntoActive(which: '120' | '200' = '200') {
+    const file =
+      which === '120'
+        ? '/samples/stress-120-demand.enterprise.json'
+        : '/samples/stress-200-demand.enterprise.json'
+    try {
+      const res = await fetch(file)
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+      const raw = (await res.json()) as unknown
+      const card = importEnterprisePack(raw)
+      if (!card) {
+        setStatus('Stress pack is not a valid enterprise JSON.')
+        return
+      }
+      if (card.errorCount > 0) {
+        setStatus(
+          `Stress-${which} blocked — ${card.errorCount} error(s), score ${card.score}.`,
+        )
+        return
+      }
+      setStatus(
+        `Loaded stress-${which} into Active project · ${card.siteCount} sites · ${card.demandRowCount} demand rows (schema ${card.schemaVersion}). Open Data to review scorecard, then Run.`,
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'load failed'
+      setStatus(`Could not load stress-${which}: ${msg}`)
+    }
+  }
+
   return (
     <div className="studio-room projects-room">
       <header className="studio-header">
@@ -82,6 +112,8 @@ export function ProjectsRoom() {
             Create, rename, duplicate, or delete footprint studies. Full state
             (network, scenarios, constraints, data, optional theme) persists in
             localStorage keyed by project id. Export / import JSON to share.
+            Load stress-120 / stress-200 enterprise packs into the Active
+            project for large MIP benchmarks (also available under Data).
           </p>
         </div>
         <div className="projects-header-actions">
@@ -101,6 +133,22 @@ export function ProjectsRoom() {
             onClick={() => fileRef.current?.click()}
           >
             Import JSON
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            title="Load stress-200 enterprise pack into the Active project network"
+            onClick={() => void loadStressIntoActive('200')}
+          >
+            Load stress-200
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            title="Load stress-120 enterprise pack into the Active project network"
+            onClick={() => void loadStressIntoActive('120')}
+          >
+            Load stress-120
           </button>
           <input
             ref={fileRef}

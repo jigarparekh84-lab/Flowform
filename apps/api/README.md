@@ -97,3 +97,21 @@ pytest -q
 ## Web client
 
 The Flowform web app (`apps/web`) calls this API from **Run** when reachable (`VITE_API_URL`, default `http://127.0.0.1:5182`), passing network + constraints + BOM. Compare / Brief show the objective breakdown. If the API is down, Run falls back to the client heuristic v1.
+
+
+## Stress benchmarks
+
+```bash
+pytest -q tests/test_stress_benchmark.py -s
+```
+
+Loads `tests/fixtures/stress-{120,200}-demand.enterprise.json`, times `solve_optimize`, and asserts:
+
+| Check | Threshold |
+|-------|-----------|
+| Status | Optimal (or service ≥ 90%) |
+| Open facilities | ≥ 1 |
+| `solveSeconds` | ≤ 60s |
+| Model | `fixed-charge-multi-echelon-v1` |
+
+Response includes `solveSeconds`, `objectiveBreakdown`, `openIds`, and multi-echelon `flows` used by Compare CTS.

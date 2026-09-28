@@ -91,6 +91,12 @@ export type OptimizeMeta = {
   openFacilities?: OptimizeOpenFacility[]
   shadowPrices?: OptimizeShadowPrice[]
   model?: string
+  /** Solver status string (Optimal, …). */
+  status?: string
+  /** Wall seconds for MIP solve (API). */
+  solveSeconds?: number
+  /** ISO timestamp when this optimize finished. */
+  solvedAt?: string
   /** Positions for map-diff when nodes are not in the sample set. */
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }
@@ -217,7 +223,16 @@ export type BriefState = {
 export type OptimizeRunStatus =
   | { phase: 'idle' }
   | { phase: 'running'; progress: number; message: string }
-  | { phase: 'done'; scenarioId: string; message: string; log: string[] }
+  | {
+      phase: 'done'
+      scenarioId: string
+      message: string
+      log: string[]
+      solveSeconds?: number
+      status?: string
+      model?: string
+      solver?: string
+    }
   | { phase: 'error'; message: string }
 
 export const PROJECT_NAME = 'NA Footprint 2027'

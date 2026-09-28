@@ -421,6 +421,12 @@ export function CompareResults() {
             rows={cts.rows}
             steps={cts.waterfall}
             totalM={cts.totalM}
+            source={cts.source}
+            variableTotalM={cts.variableTotalM}
+            transportTotalM={cts.transportTotalM}
+            fidelityGapM={cts.fidelityGapM}
+            objectiveTransportM={cts.objectiveTransportM}
+            objectiveVariableM={cts.objectiveVariableM}
           />
         )}
         {view === 'des' && (
@@ -1013,6 +1019,12 @@ function CtsView({
   rows,
   steps,
   totalM,
+  source,
+  variableTotalM,
+  transportTotalM,
+  fidelityGapM,
+  objectiveTransportM,
+  objectiveVariableM,
 }: {
   focus: Scenario
   selected: Scenario[]
@@ -1021,9 +1033,16 @@ function CtsView({
   rows: CtsRow[]
   steps: WaterfallStep[]
   totalM: number
+  source: 'mip' | 'mock'
+  variableTotalM: number
+  transportTotalM: number
+  fidelityGapM?: number
+  objectiveTransportM?: number
+  objectiveVariableM?: number
 }) {
   const regions = useMemo(() => ctsByRegion(rows), [rows])
   const chart = useMemo(() => layoutWaterfall(steps), [steps])
+  const showService = rows.some((r) => r.serviceDc)
 
   return (
     <div className="compare-cts-layout">
@@ -1044,9 +1063,41 @@ function CtsView({
           ))}
         </div>
         <p className="hint">
-          Cost-to-serve for <strong>{focus.name}</strong> — mock allocation from
-          active network lanes + demand volumes (total ${totalM.toFixed(1)}M).
+          Cost-to-serve for <strong>{focus.name}</strong>
+          {source === 'mip' ? (
+            <>
+              {' '}
+              — MIP flows (landed transport + variable OpEx). Total $
+              {variableTotalM.toFixed(2)}M
+              {objectiveVariableM != null && (
+                <>
+                  {' '}
+                  · objective tx+OpEx ${objectiveVariableM.toFixed(2)}M
+                  {fidelityGapM != null && (
+                    <> · gap ${fidelityGapM.toFixed(3)}M</>
+                  )}
+                </>
+              )}
+              .
+            </>
+          ) : (
+            <>
+              {' '}
+              — mock allocation from active network lanes + demand volumes
+              (total ${totalM.toFixed(1)}M). Run MIP optimize for flow-faithful
+              CTS.
+            </>
+          )}
         </p>
+        {source === 'mip' && (
+          <p className="hint muted tiny">
+            Transport ${transportTotalM.toFixed(2)}M
+            {objectiveTransportM != null &&
+              ` (obj ${objectiveTransportM.toFixed(2)}M)`}
+            {' · '}
+            CapEx excluded from CTS variable stack.
+          </p>
+        )}
         <h3 className="cts-side-h">By region</h3>
         <ul className="cts-region-list">
           {regions.map((r) => (
@@ -1066,10 +1117,11 @@ function CtsView({
               <tr>
                 <th>Customer</th>
                 <th>Region</th>
+                {showService && <th>Service DC</th>}
                 <th>Volume</th>
                 <th>Transport</th>
-                <th>Handling</th>
-                <th>Facility</th>
+                <th>{source === 'mip' ? 'Var OpEx' : 'Handling'}</th>
+                {source !== 'mip' && <th>Facility</th>}
                 <th>Total</th>
                 <th>$/unit</th>
               </tr>
@@ -1079,10 +1131,15 @@ function CtsView({
                 <tr key={r.id}>
                   <td>{r.customer}</td>
                   <td>{r.region}</td>
+                  {showService && (
+                    <td className="mono">{r.serviceDc ?? '—'}</td>
+                  )}
                   <td className="mono">{r.volume.toLocaleString()}</td>
                   <td className="mono">${r.transportM.toFixed(2)}M</td>
                   <td className="mono">${r.handlingM.toFixed(2)}M</td>
-                  <td className="mono">${r.facilityM.toFixed(2)}M</td>
+                  {source !== 'mip' && (
+                    <td className="mono">${r.facilityM.toFixed(2)}M</td>
+                  )}
                   <td className="mono"><strong>${r.totalM.toFixed(2)}M</strong></td>
                   <td className="mono">${r.ctsPerUnit.toFixed(2)}</td>
                 </tr>

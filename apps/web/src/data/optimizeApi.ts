@@ -58,6 +58,7 @@ export type ApiOptimizeResponse = {
   solver: string
   status: string
   model?: string
+  solveSeconds?: number
   openedIds: string[]
   closedIds: string[]
   keptOpenIds: string[]

@@ -1179,6 +1179,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       openFacilities?: ApiOptimizeResponse['openFacilities']
       shadowPrices?: ApiOptimizeResponse['shadowPrices']
       model?: string
+      status?: string
+      solveSeconds?: number
       log: string[]
       name: string
       kpis: Scenario['kpis']
@@ -1205,6 +1207,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           openFacilities: args.openFacilities,
           shadowPrices: args.shadowPrices,
           model: args.model,
+          status: args.status,
+          solveSeconds: args.solveSeconds,
+          solvedAt: new Date().toISOString(),
           marks: [
             ...openedIds.map((id) => {
               const n = facilities.find((f) => f.id === id)
@@ -1264,6 +1269,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         scenarioId: scenario.id,
         message: args.statusMessage,
         log: args.log,
+        solveSeconds: args.solveSeconds,
+        status: args.status,
+        model: args.model,
+        solver: args.heuristic,
       })
       setDecisionLog((prev) =>
         appendDecisionEntry(prev, {
@@ -1330,6 +1339,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           const bdMsg = bd
             ? ` · obj $${bd.totalM.toFixed(2)}M (tx $${bd.transportM.toFixed(2)}M + CapEx $${bd.fixedCapexM.toFixed(1)}M + OpEx $${bd.fixedOpexM.toFixed(1)}M)`
             : ''
+          const solveSec = api.solveSeconds
+          const timeMsg =
+            solveSec != null ? ` · ${solveSec.toFixed(3)}s` : ''
           return applyOptimizeResult({
             openedIds: api.openedIds,
             closedIds: api.closedIds,
@@ -1341,10 +1353,12 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             openFacilities: api.openFacilities,
             shadowPrices: api.shadowPrices,
             model: api.model,
+            status: api.status,
+            solveSeconds: api.solveSeconds,
             log: api.log,
             name: `Optimize MIP ${new Date().toLocaleTimeString()}`,
             kpis: kpisFromApi(api, reference),
-            statusMessage: `API ${api.solver} · ${api.status} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}`,
+            statusMessage: `API ${api.solver} · ${api.status}${timeMsg} · ${api.model ?? 'MIP'} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}`,
           })
         } catch (apiErr) {
           const msg =

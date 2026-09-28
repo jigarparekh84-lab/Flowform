@@ -103,6 +103,24 @@ export function TopChrome({
               {optimizeStatus.phase === 'done' && optimizeStatus.message}
               {optimizeStatus.phase === 'error' && optimizeStatus.message}
             </span>
+            {optimizeStatus.phase === 'done' && (
+              <span className="run-meta" aria-label="Last solve metadata">
+                {optimizeStatus.model && (
+                  <span className="run-chip">{optimizeStatus.model}</span>
+                )}
+                {optimizeStatus.status && (
+                  <span className="run-chip">{optimizeStatus.status}</span>
+                )}
+                {optimizeStatus.solveSeconds != null && (
+                  <span className="run-chip">
+                    {optimizeStatus.solveSeconds.toFixed(3)}s
+                  </span>
+                )}
+                {optimizeStatus.solver && (
+                  <span className="run-chip muted">{optimizeStatus.solver}</span>
+                )}
+              </span>
+            )}
           </div>
         )}
       </div>
