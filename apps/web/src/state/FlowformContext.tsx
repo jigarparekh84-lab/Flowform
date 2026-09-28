@@ -133,6 +133,18 @@ import {
   type BomRow,
   type BomState,
 } from '../data/bom'
+import {
+  addCapexEvent,
+  applyYearSlice,
+  defaultCapexRoadmap,
+  formatRoadmapBriefSection,
+  mergeCapexRoadmap,
+  removeCapexEvent,
+  updateCapexEvent,
+  type CapexEvent,
+  type CapexRoadmapState,
+  type ApplyYearSliceResult,
+} from '../data/capexRoadmap'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -185,6 +197,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     productMix: defaultProductMix(net),
     laneRates: defaultLaneRates(net),
     bom: defaultBom(net),
+    capexRoadmap: defaultCapexRoadmap(net),
   }
 }
 
@@ -404,6 +417,24 @@ type FlowformContextValue = {
     addedLanes: number
     scenarioId: string
   }
+
+  /** CapEx phasing / multi-year roadmap. */
+  capexRoadmap: CapexRoadmapState
+  setCapexRoadmap: (next: CapexRoadmapState) => void
+  updateCapexEvent: (
+    id: string,
+    patch: Partial<Omit<CapexEvent, 'id'>>,
+  ) => void
+  removeCapexEvent: (id: string) => void
+  addCapexRoadmapEvent: (partial?: Partial<CapexEvent>) => void
+  resetCapexRoadmap: () => void
+  /** Apply events through year as network scenario. */
+  applyRoadmapYearSlice: (
+    throughYear: number,
+    scenarioName?: string,
+  ) => ApplyYearSliceResult | null
+  /** Append roadmap markdown into Brief notes; uncheck overnight CapEx assumption. */
+  exportRoadmapToBrief: () => boolean
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -472,6 +503,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [bom, setBom] = useState<BomState>(
     () => mergeBom(boot.snap.bom, boot.snap.network),
   )
+  const [capexRoadmap, setCapexRoadmap] = useState<CapexRoadmapState>(() =>
+    mergeCapexRoadmap(boot.snap.capexRoadmap, boot.snap.network),
+  )
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -515,6 +549,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       productMix,
       laneRates,
       bom,
+      capexRoadmap,
     }
   }, [
     horizon,
@@ -532,6 +567,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     productMix,
     laneRates,
     bom,
+    capexRoadmap,
   ])
 
   const persistNow = useCallback(() => {
@@ -575,6 +611,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     comments,
     productMix,
     laneRates,
+    bom,
+    capexRoadmap,
   ])
 
   const applySnapshot = useCallback((snap: ProjectSnapshot) => {
@@ -596,6 +634,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setProductMix(mergeProductMix(snap.productMix, snap.network))
     setLaneRates(mergeLaneRates(snap.laneRates, snap.network))
     setBom(mergeBom(snap.bom, snap.network))
+    setCapexRoadmap(mergeCapexRoadmap(snap.capexRoadmap, snap.network))
     setSelection({ ids: [], kind: null })
     setOptimizeStatus({ phase: 'idle' })
     if (snap.theme === 'light' || snap.theme === 'dark') {
@@ -847,6 +886,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setProductMix((prev) => mergeProductMix(prev, net))
     setLaneRates((prev) => mergeLaneRates(prev, net))
     setBom((prev) => mergeBom(prev, net))
+    setCapexRoadmap((prev) => mergeCapexRoadmap(prev, net))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -858,6 +898,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setProductMix(defaultProductMix(sample))
     setLaneRates(defaultLaneRates(sample))
     setBom(defaultBom(sample))
+    setCapexRoadmap(defaultCapexRoadmap(sample))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -1629,6 +1670,84 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setHandoffPayload(payload)
   }, [brief])
 
+
+  const updateCapexEventCb = useCallback(
+    (id: string, patch: Partial<Omit<CapexEvent, 'id'>>) => {
+      setCapexRoadmap((prev) => updateCapexEvent(prev, id, patch))
+    },
+    [],
+  )
+
+  const removeCapexEventCb = useCallback((id: string) => {
+    setCapexRoadmap((prev) => removeCapexEvent(prev, id))
+  }, [])
+
+  const addCapexRoadmapEvent = useCallback((partial?: Partial<CapexEvent>) => {
+    setCapexRoadmap((prev) => addCapexEvent(prev, partial))
+  }, [])
+
+  const resetCapexRoadmap = useCallback(() => {
+    setCapexRoadmap(defaultCapexRoadmap(network))
+  }, [network])
+
+  const applyRoadmapYearSlice = useCallback(
+    (throughYear: number, scenarioName?: string): ApplyYearSliceResult | null => {
+      const result = applyYearSlice(
+        network,
+        constraints,
+        capexRoadmap,
+        throughYear,
+        activeScenario.kpis,
+        scenarioName,
+      )
+      setNetwork(result.network)
+      setConstraints(result.constraints)
+      setInventoryPolicies((prev) => mergeInventoryPolicies(prev, result.network))
+      setProductMix((prev) => mergeProductMix(prev, result.network))
+      setLaneRates((prev) => mergeLaneRates(prev, result.network))
+      setBom((prev) => mergeBom(prev, result.network))
+      setSelection({ ids: [], kind: null })
+      setScenarios((prev) => {
+        if (prev.some((s) => s.id === result.draftScenario.id)) return prev
+        return [...prev, result.draftScenario]
+      })
+      setActiveScenarioId(result.draftScenario.id)
+      return result
+    },
+    [network, constraints, capexRoadmap, activeScenario.kpis],
+  )
+
+  const exportRoadmapToBrief = useCallback(() => {
+    const section = formatRoadmapBriefSection(capexRoadmap, network)
+    setBrief((prev) => {
+      const notes = prev.notes.trim()
+      let merged: string
+      if (notes.includes('## CapEx roadmap')) {
+        merged = notes.replace(
+          /## CapEx roadmap[\s\S]*?(?=\n## |$)/,
+          section.trim() + '\n\n',
+        )
+      } else {
+        merged = (notes ? notes + '\n\n' : '') + section
+      }
+      return {
+        ...prev,
+        notes: merged.trim() + '\n',
+        assumptions: prev.assumptions.map((a) =>
+          a.id === 'a3'
+            ? {
+                ...a,
+                checked: false,
+                label:
+                  'CapEx is overnight build — no phased construction (roadmap in notes)',
+              }
+            : a,
+        ),
+      }
+    })
+    return true
+  }, [capexRoadmap, network])
+
   const value = useMemo<FlowformContextValue>(
     () => ({
       horizon,
@@ -1717,6 +1836,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setBomHighlight: setBomHighlightCb,
       resetBom,
       applyBomInboundScenario,
+      capexRoadmap,
+      setCapexRoadmap,
+      updateCapexEvent: updateCapexEventCb,
+      removeCapexEvent: removeCapexEventCb,
+      addCapexRoadmapEvent,
+      resetCapexRoadmap,
+      applyRoadmapYearSlice,
+      exportRoadmapToBrief,
     }),
     [
       horizon,
@@ -1798,6 +1925,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setBomHighlightCb,
       resetBom,
       applyBomInboundScenario,
+      capexRoadmap,
+      updateCapexEventCb,
+      removeCapexEventCb,
+      addCapexRoadmapEvent,
+      resetCapexRoadmap,
+      applyRoadmapYearSlice,
+      exportRoadmapToBrief,
     ],
   )
 

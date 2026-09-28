@@ -34,8 +34,10 @@ export function buildBriefMarkdown(args: {
   scenarios: Scenario[]
   projectName: string
   horizon: string
+  /** Optional CapEx roadmap markdown block. */
+  roadmapSection?: string
 }): string {
-  const { brief, scenarios, projectName, horizon } = args
+  const { brief, scenarios, projectName, horizon, roadmapSection } = args
   const ref = scenarios.find((s) => s.id === 'baseline') ?? scenarios[0]
   const rec =
     scenarios.find((s) => s.id === brief.recommendedScenarioId) ?? ref
@@ -93,6 +95,10 @@ export function buildBriefMarkdown(args: {
     )
   }
 
+  if (roadmapSection && roadmapSection.trim()) {
+    lines.push('', roadmapSection.trim(), '')
+  }
+
   lines.push('', '---', '', '_Exported from Flowform — network design studio._', '')
   return lines.join('\n')
 }
@@ -102,9 +108,10 @@ export function buildBriefHtml(args: {
   scenarios: Scenario[]
   projectName: string
   horizon: string
+  roadmapSection?: string
 }): string {
   const mdLike = buildBriefMarkdown(args)
-  const { brief, scenarios, projectName, horizon } = args
+  const { brief, scenarios, projectName, horizon, roadmapSection } = args
   const ref = scenarios.find((s) => s.id === 'baseline') ?? scenarios[0]
   const rec =
     scenarios.find((s) => s.id === brief.recommendedScenarioId) ?? ref
@@ -197,6 +204,11 @@ ${assumptions}
   ${
     brief.notes.trim()
       ? `<h2>Notes</h2><div class="notes">${esc(brief.notes.trim())}</div>`
+      : ''
+  }
+  ${
+    roadmapSection && roadmapSection.trim()
+      ? `<h2>CapEx roadmap</h2><pre style="white-space:pre-wrap;font-size:0.85rem">${esc(roadmapSection.trim())}</pre>`
       : ''
   }
   <p class="foot">Exported from Flowform — network design studio.</p>

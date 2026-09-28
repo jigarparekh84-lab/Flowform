@@ -22,6 +22,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 - **Bill-of-materials** — FG ← components/RM with qty per unit; implied RM demand + Plant←Supplier / FG←RM echelon flows; optional inbound-lane scenario.
 - **Service territory** — assign demand to DCs/plants by distance, capacity, or current lanes; coverage % within miles/lead-time; gaps/overlaps; apply preferred lanes + scenario.
+- **CapEx roadmap** — multi-year (Y0–Y5) open/close/expand phasing with CapEx $ + capacity delta; Gantt-lite + cumulative KPIs; apply year slice as scenario or export into Brief.
 
 ---
 
@@ -34,6 +35,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
 | **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
 | **Territory** | Service territory / coverage — assign demand to servers, gaps/overlaps, preferred lanes + scenario |
+| **Roadmap** | CapEx phasing — multi-year open/close/expand events, Gantt-lite, cumulative CapEx/capacity, year-slice scenarios |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
 | **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |

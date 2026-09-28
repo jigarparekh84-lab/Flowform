@@ -3155,3 +3155,259 @@ tr.bom-implied td {
     grid-template-columns: 1fr;
   }
 }
+
+/* —— CapEx roadmap —— */
+.roadmap-studio .studio-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.roadmap-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.roadmap-kpi {
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.roadmap-kpi strong {
+  font-size: 1.25rem;
+}
+
+.roadmap-body {
+  display: grid;
+  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.roadmap-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.gantt-wrap {
+  overflow-x: auto;
+  padding: 0.5rem 0.75rem 0.85rem;
+}
+
+.gantt-head,
+.gantt-row {
+  display: grid;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 36rem;
+}
+
+.gantt-head {
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #334) 80%, transparent);
+}
+
+.gantt-year-h {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.gantt-year-h em {
+  font-style: normal;
+  font-weight: 400;
+  opacity: 0.65;
+  font-size: 0.68rem;
+}
+
+.gantt-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.gantt-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.82rem;
+}
+
+.gantt-cell {
+  min-height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--surface-2, #1a2030) 40%, transparent);
+  border-radius: 6px;
+}
+
+.gantt-bar {
+  width: 92%;
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.3rem 0.2rem;
+  border-radius: 5px;
+  color: #0b1220;
+}
+
+.gantt-bar.kind-open,
+.chip-tag.kind-open {
+  background: #34d399;
+}
+
+.gantt-bar.kind-expand,
+.chip-tag.kind-expand {
+  background: #60a5fa;
+}
+
+.gantt-bar.kind-close,
+.chip-tag.kind-close {
+  background: #f87171;
+  color: #1a0a0a;
+}
+
+.chip-tag.kind-open,
+.chip-tag.kind-expand,
+.chip-tag.kind-close {
+  color: #0b1220;
+  font-size: 0.65rem;
+}
+
+.roadmap-bars {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  height: 9rem;
+  padding: 0.75rem 1rem 0.25rem;
+}
+
+.roadmap-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  height: 100%;
+}
+
+.roadmap-bar-stack {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.roadmap-bar {
+  width: 42%;
+  max-width: 1.4rem;
+  border-radius: 4px 4px 0 0;
+  min-height: 0.4rem;
+}
+
+.roadmap-bar.capex {
+  background: #60a5fa;
+}
+
+.roadmap-bar.capacity {
+  background: #34d399;
+}
+
+.roadmap-legend {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 0.2rem;
+}
+
+.roadmap-legend.capex {
+  background: #60a5fa;
+}
+
+.roadmap-legend.capacity {
+  background: #34d399;
+}
+
+.roadmap-table tr.is-focus {
+  background: color-mix(in srgb, #60a5fa 14%, transparent);
+}
+
+.roadmap-event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0.85rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.roadmap-event-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.roadmap-event-edits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+  margin-top: 0.35rem;
+}
+
+.roadmap-event-edits .field.compact {
+  min-width: 5.5rem;
+  flex: 0 1 auto;
+}
+
+.roadmap-event-edits .field.compact input,
+.roadmap-event-edits .field.compact select {
+  min-width: 4.5rem;
+}
+
+.roadmap-preview summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+}
+
+.roadmap-md {
+  margin: 0;
+  padding: 0 1rem 1rem;
+  white-space: pre-wrap;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0.9;
+  max-height: 18rem;
+  overflow: auto;
+}
+
+@media (max-width: 960px) {
+  .roadmap-kpi-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+  .roadmap-body {
+    grid-template-columns: 1fr;
+  }
+}

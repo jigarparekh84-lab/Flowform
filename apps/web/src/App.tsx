@@ -6,6 +6,7 @@ import { DecisionBrief } from './components/DecisionBrief'
 import { GreenfieldStudio } from './components/GreenfieldStudio'
 import { HubSpokeStudio } from './components/HubSpokeStudio'
 import { TerritoryStudio } from './components/TerritoryStudio'
+import { RoadmapStudio } from './components/RoadmapStudio'
 import { HandoffRoom } from './components/HandoffRoom'
 import { LeftNav, type NavItem } from './components/LeftNav'
 import { MergeStudio } from './components/MergeStudio'
@@ -40,6 +41,7 @@ function App() {
           {room === 'Greenfield' && <GreenfieldStudio />}
           {room === 'Hubs' && <HubSpokeStudio />}
           {room === 'Territory' && <TerritoryStudio />}
+          {room === 'Roadmap' && <RoadmapStudio />}
           {room === 'Scenarios' && <ScenariosLibrary />}
           {room === 'Compare' && <CompareResults />}
           {room === 'Brief' && (

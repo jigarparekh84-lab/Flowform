@@ -8,6 +8,7 @@ import type { UploadedNetwork } from './csvParsers'
 import type { EmissionFactor } from './emissions'
 import type { InventoryPolicyState } from './inventoryPolicy'
 import type { BomState } from './bom'
+import type { CapexRoadmapState } from './capexRoadmap'
 import type { LaneRatesState } from './laneRates'
 import type { ProductMixState } from './productGroups'
 import type {
@@ -57,6 +58,8 @@ export type ProjectSnapshot = {
   laneRates?: LaneRatesState
   /** Bill-of-materials / multi-echelon FG←RM. */
   bom?: BomState
+  /** CapEx phasing / multi-year roadmap. */
+  capexRoadmap?: CapexRoadmapState
 }
 
 export type ProjectExportFile = {
