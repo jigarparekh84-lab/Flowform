@@ -20,6 +20,7 @@ import {
   nodeMatchesProductFilter,
   type ProductMixState,
 } from '../data/productGroups'
+import { bomDrivenLaneIds } from '../data/bom'
 import { useFlowform } from '../state/FlowformContext'
 import { useTheme } from '../state/theme'
 
@@ -169,7 +170,7 @@ function MapLibreCanvas({
   onClear,
   onFail,
 }: Props & { onFail: (reason: string) => void }) {
-  const { nodes, lanes, network, constraints, productMix } = useFlowform()
+  const { nodes, lanes, network, constraints, productMix, bom } = useFlowform()
   const { theme } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -278,6 +279,7 @@ function MapLibreCanvas({
       const utilById = layers.utilization
         ? computeCapacityUtilization(network, constraints)
         : null
+      const bomLaneIds = bomDrivenLaneIds(bom, network)
       syncNetworkLayers(map, {
         nodes,
         lanes,
@@ -289,6 +291,7 @@ function MapLibreCanvas({
         source: network.source,
         utilById,
         productMix,
+        bomLaneIds,
       })
     }
 
@@ -298,7 +301,7 @@ function MapLibreCanvas({
       map.once('styledata', apply)
       map.once('load', apply)
     }
-  }, [nodes, lanes, layers, selectedIds, constraints, network, theme, productMix])
+  }, [nodes, lanes, layers, selectedIds, constraints, network, theme, productMix, bom])
 
   return <div ref={containerRef} className="maplibre-root" role="img" aria-label="Network map" />
 }
@@ -314,9 +317,10 @@ function syncNetworkLayers(
     source: string
     utilById?: Map<string, { color: string; label: string }> | null
     productMix: ProductMixState
+    bomLaneIds: Set<string>
   },
 ) {
-  const { nodes, lanes, layers, selectedIds, statusById, utilById, productMix } = args
+  const { nodes, lanes, layers, selectedIds, statusById, utilById, productMix, bomLaneIds } = args
   const selectedSet = new Set(selectedIds)
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
 
@@ -352,6 +356,7 @@ function syncNetworkLayers(
           id: lane.id,
           entityKind: 'lane',
           selected: selectedSet.has(lane.id) ? 1 : 0,
+          bom: bomLaneIds.has(lane.id) ? 1 : 0,
           mode: lane.mode,
         },
         geometry: {
@@ -417,12 +422,16 @@ function syncNetworkLayers(
           'case',
           ['==', ['get', 'selected'], 1],
           '#7dd3fc',
+          ['==', ['get', 'bom'], 1],
+          '#c084fc',
           '#64748b',
         ],
         'line-width': [
           'case',
           ['==', ['get', 'selected'], 1],
           3.5,
+          ['==', ['get', 'bom'], 1],
+          2.8,
           2,
         ],
         'line-opacity': 0.85,
@@ -432,6 +441,25 @@ function syncNetworkLayers(
         'line-join': 'round',
       },
     })
+  }
+
+  if (map.getLayer('ff-lanes-line')) {
+    map.setPaintProperty('ff-lanes-line', 'line-color', [
+      'case',
+      ['==', ['get', 'selected'], 1],
+      '#7dd3fc',
+      ['==', ['get', 'bom'], 1],
+      '#c084fc',
+      '#64748b',
+    ])
+    map.setPaintProperty('ff-lanes-line', 'line-width', [
+      'case',
+      ['==', ['get', 'selected'], 1],
+      3.5,
+      ['==', ['get', 'bom'], 1],
+      2.8,
+      2,
+    ])
   }
 
   if (!map.getLayer('ff-nodes-halo')) {
@@ -512,7 +540,7 @@ function syncNetworkLayers(
 }
 
 function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
-  const { nodes, lanes, network, constraints, productMix } = useFlowform()
+  const { nodes, lanes, network, constraints, productMix, bom } = useFlowform()
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
   const selectedSet = new Set(selectedIds)
   const statusById = new Map(
@@ -521,6 +549,7 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
   const utilById = layers.utilization
     ? computeCapacityUtilization(network, constraints)
     : null
+  const bomLaneIds = bomDrivenLaneIds(bom, network)
 
   const visibleLanes = layers.lanes
     ? lanes.filter((l) => {
@@ -583,13 +612,20 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
         const a = nodeMap.get(lane.from)!
         const b = nodeMap.get(lane.to)!
         const selected = selectedSet.has(lane.id)
+        const isBom = bomLaneIds.has(lane.id)
         return (
           <path
             key={lane.id}
             d={bezierPath(a, b)}
             fill="none"
-            stroke={selected ? 'var(--ff-accent-text)' : 'var(--ff-lane)'}
-            strokeWidth={selected ? 0.55 : 0.35}
+            stroke={
+              selected
+                ? 'var(--ff-accent-text)'
+                : isBom
+                  ? '#c084fc'
+                  : 'var(--ff-lane)'
+            }
+            strokeWidth={selected ? 0.55 : isBom ? 0.48 : 0.35}
             strokeLinecap="round"
             className="lane-arc"
             onClick={(e) => {

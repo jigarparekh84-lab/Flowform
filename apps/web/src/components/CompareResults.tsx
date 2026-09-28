@@ -38,6 +38,13 @@ import {
   catalogLabel,
   rollupByProductGroup,
 } from '../data/productGroups'
+import {
+  bomRollup,
+  componentKindLabel,
+  deriveEchelonFlows,
+  deriveImpliedRmDemand,
+  previewBomInboundLanes,
+} from '../data/bom'
 import { useFlowform } from '../state/FlowformContext'
 
 type ViewMode =
@@ -51,6 +58,7 @@ type ViewMode =
   | 'modes'
   | 'products'
   | 'bids'
+  | 'bom'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -168,6 +176,8 @@ export function CompareResults() {
     setLaneRatesStrategy,
     applyWinningBids,
     applyRateBid,
+    bom,
+    applyBomInboundScenario,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -334,6 +344,7 @@ export function CompareResults() {
               ['modes', 'Mode mix'],
               ['products', 'Products'],
               ['bids', 'Bids'],
+              ['bom', 'BOM'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -441,6 +452,14 @@ export function CompareResults() {
             onStrategy={setLaneRatesStrategy}
             onApplyAll={() => applyWinningBids()}
             onApplyBid={applyRateBid}
+          />
+        )}
+        {view === 'bom' && (
+          <BomView
+            bom={bom}
+            network={network}
+            kpis={focus?.kpis ?? activeScenario.kpis}
+            onDraftInbound={() => applyBomInboundScenario()}
           />
         )}
       </div>
@@ -1991,3 +2010,168 @@ function BidsView({
     </div>
   )
 }
+
+function BomView({
+  bom,
+  network,
+  kpis,
+  onDraftInbound,
+}: {
+  bom: import('../data/bom').BomState
+  network: import('../data/csvParsers').UploadedNetwork
+  kpis: KpiSnapshot
+  onDraftInbound: () => { addedLanes: number; scenarioId: string }
+}) {
+  const roll = bomRollup(bom, network)
+  const implied = deriveImpliedRmDemand(bom, network)
+  const flows = deriveEchelonFlows(bom, network)
+  const plantFlows = flows.filter((f) => f.echelon === 'plant←supplier')
+  const matFlows = flows.filter((f) => f.echelon === 'fg←rm')
+  const preview = previewBomInboundLanes(bom, network, kpis)
+
+  return (
+    <div className="compare-modes-layout">
+      <section className="library-card" aria-label="BOM echelon flows">
+        <div className="library-card-head">
+          <h2>BOM / multi-echelon flows</h2>
+          <button
+            type="button"
+            className="btn primary btn-tiny"
+            onClick={() => {
+              const r = onDraftInbound()
+              // status surfaces via scenario switch
+              void r
+            }}
+          >
+            Draft inbound scenario
+            {preview.newLanes.length > 0
+              ? ` (+${preview.newLanes.length})`
+              : ''}
+          </button>
+        </div>
+        <p className="muted tiny">
+          Implied RM from FG demand × BOM qty. Echelon view: Plant←Supplier
+          (network lanes) and FG←RM (material). Optional scenario adds missing
+          inbound Supplier→Plant lanes.
+        </p>
+        <div className="data-scores" style={{ marginBottom: '0.85rem' }}>
+          <div className="score-card">
+            <span className="score-label">BOM rows</span>
+            <strong className="score-value">{roll.bomRows}</strong>
+            <span className="score-sub">{roll.fgCount} finished goods</span>
+          </div>
+          <div className="score-card">
+            <span className="score-label">Implied RM qty</span>
+            <strong className="score-value">
+              {roll.totalRmQty.toLocaleString()}
+            </strong>
+            <span className="score-sub">{roll.componentCount} components</span>
+          </div>
+          <div
+            className={`score-card${roll.impliedLaneGaps > 0 ? ' tone-warn' : ' tone-good'}`}
+          >
+            <span className="score-label">Lane coverage</span>
+            <strong className="score-value">
+              {roll.coveredLanePairs}/{roll.plantSupplierFlows}
+            </strong>
+            <span className="score-sub">
+              {roll.impliedLaneGaps} implied gap
+              {roll.impliedLaneGaps === 1 ? '' : 's'}
+            </span>
+          </div>
+        </div>
+
+        <h3 className="data-subhead">Implied RM demand</h3>
+        <div className="table-scroll">
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th>Component</th>
+                <th>Kind</th>
+                <th>Qty needed</th>
+                <th>Supplier</th>
+                <th>FG sources</th>
+              </tr>
+            </thead>
+            <tbody>
+              {implied.map((i) => (
+                <tr key={i.componentId}>
+                  <td>{i.componentName}</td>
+                  <td>{componentKindLabel(i.componentKind)}</td>
+                  <td>{i.qtyNeeded.toLocaleString()}</td>
+                  <td>{i.preferredSupplierName ?? '—'}</td>
+                  <td className="muted tiny">
+                    {i.sources
+                      .map((s) => `${s.finishedGoodName} ×${s.qtyPerUnit}`)
+                      .join(', ')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <h3 className="data-subhead">Plant←Supplier (network)</h3>
+        <div className="table-scroll">
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th>Supplier</th>
+                <th>Plant</th>
+                <th>Material</th>
+                <th>Volume</th>
+                <th>Lane</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plantFlows.map((f) => (
+                <tr
+                  key={f.id}
+                  className={f.implied ? 'bom-implied' : undefined}
+                >
+                  <td>{f.fromName}</td>
+                  <td>{f.toName}</td>
+                  <td>{f.materialName}</td>
+                  <td>{f.volume.toLocaleString()}</td>
+                  <td>
+                    {f.implied ? (
+                      <em className="bom-gap">implied gap</em>
+                    ) : (
+                      f.laneId
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <h3 className="data-subhead">FG←RM (material)</h3>
+        <div className="table-scroll">
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th>Component / RM</th>
+                <th>Finished good</th>
+                <th>Volume</th>
+                <th>Kind</th>
+              </tr>
+            </thead>
+            <tbody>
+              {matFlows.map((f) => (
+                <tr key={f.id}>
+                  <td>{f.fromName}</td>
+                  <td>{f.toName}</td>
+                  <td>{f.volume.toLocaleString()}</td>
+                  <td>{f.fromKind}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="hint">{preview.summary}. Edit BOM in Data room.</p>
+      </section>
+    </div>
+  )
+}
+

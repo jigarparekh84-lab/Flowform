@@ -14,6 +14,11 @@ import {
   laneGroups,
   type ProductGroupId,
 } from '../data/productGroups'
+import {
+  componentKindLabel,
+  deriveBomRequirements,
+  deriveEchelonFlows,
+} from '../data/bom'
 import { kindLabel, type FacilityStatus } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
@@ -42,6 +47,9 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
     removeRateBid,
     applyRateBid,
     applyWinningBids,
+    network,
+    bom,
+    setBomHighlight,
   } = useFlowform()
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null
@@ -259,6 +267,85 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
                     </li>
                   )
                 })}
+              </ul>
+            </div>
+          )}
+
+          {node.kind === 'plant' && (
+            <div className="constraint-edit bom-edit">
+              <h3>BOM production (FG ← RM)</h3>
+              <p className="hint">
+                Plant builds finished goods from inbound components. Edit rows in
+                Data → Bill of materials.
+              </p>
+              <label className="layer-row" style={{ marginBottom: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={bom.highlightBomLanes}
+                  onChange={(e) => setBomHighlight(e.target.checked)}
+                />
+                <span>Highlight BOM lanes on map</span>
+              </label>
+              {deriveBomRequirements(bom, network)
+                .filter((r) => r.plantId === node.id)
+                .map((r) => (
+                  <div key={`${r.plantId}-${r.finishedGoodId}`} className="bom-req-card">
+                    <strong>
+                      {r.finishedGoodName}{' '}
+                      <span className="mono muted">
+                        ({r.fgDemand.toLocaleString()} FG)
+                      </span>
+                    </strong>
+                    <ul className="bom-comp-list">
+                      {r.components.map((c) => (
+                        <li key={c.componentId}>
+                          <span className="bom-kind">
+                            {componentKindLabel(c.componentKind)}
+                          </span>{' '}
+                          {c.componentName}{' '}
+                          <span className="mono">
+                            ×{c.qtyPerUnit} → {c.qtyNeeded.toLocaleString()}
+                          </span>
+                          {c.supplierName ? (
+                            <span className="muted tiny">
+                              {' '}
+                              ← {c.supplierName}
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              {deriveBomRequirements(bom, network).filter(
+                (r) => r.plantId === node.id,
+              ).length === 0 && (
+                <p className="hint">No BOM rows bound to this plant.</p>
+              )}
+            </div>
+          )}
+          {node.kind === 'supplier' && (
+            <div className="constraint-edit bom-edit">
+              <h3>BOM outbound (Plant ← Supplier)</h3>
+              <ul className="bom-comp-list">
+                {deriveEchelonFlows(bom, network)
+                  .filter(
+                    (f) =>
+                      f.echelon === 'plant←supplier' && f.fromId === node.id,
+                  )
+                  .map((f) => (
+                    <li key={f.id}>
+                      → {f.toName}: {f.materialName}{' '}
+                      <span className="mono">
+                        {f.volume.toLocaleString()}
+                      </span>
+                      {f.implied ? (
+                        <em className="bom-gap"> gap</em>
+                      ) : (
+                        <span className="muted tiny"> via {f.laneId}</span>
+                      )}
+                    </li>
+                  ))}
               </ul>
             </div>
           )}

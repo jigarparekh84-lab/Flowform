@@ -45,7 +45,7 @@ import {
   type ProjectMeta,
   type ProjectSnapshot,
 } from '../data/projects'
-import {
+import { BASELINE_KPIS,
   HORIZON_OPTIONS,
   INITIAL_SCENARIOS,
   generateCandidates,
@@ -121,6 +121,18 @@ import {
   type LaneRatesState,
   type RateBid,
 } from '../data/laneRates'
+import {
+  addBomRow,
+  applyBomInboundLanes,
+  defaultBom,
+  mergeBom,
+  removeBomRow,
+  setBomHighlight,
+  updateBomRow,
+  updateFgShare,
+  type BomRow,
+  type BomState,
+} from '../data/bom'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -172,6 +184,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     comments: [],
     productMix: defaultProductMix(net),
     laneRates: defaultLaneRates(net),
+    bom: defaultBom(net),
   }
 }
 
@@ -371,6 +384,20 @@ type FlowformContextValue = {
   /** Apply strategy winners across all lanes (or one lane). */
   applyWinningBids: (strategy?: BidStrategy, laneId?: string) => number
   resetLaneRates: () => void
+
+  /** Bill-of-materials / multi-echelon FG←RM. */
+  bom: BomState
+  updateBomRow: (rowId: string, patch: Partial<Omit<BomRow, 'id'>>) => void
+  addBomRow: (partial?: Partial<BomRow>) => void
+  removeBomRow: (rowId: string) => void
+  updateFgShare: (finishedGoodId: string, sharePct: number) => void
+  setBomHighlight: (on: boolean) => void
+  resetBom: () => void
+  /** Draft scenario that adds implied Supplier→Plant inbound lanes. */
+  applyBomInboundScenario: (scenarioName?: string) => {
+    addedLanes: number
+    scenarioId: string
+  }
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -436,6 +463,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [laneRates, setLaneRates] = useState<LaneRatesState>(
     () => mergeLaneRates(boot.snap.laneRates, boot.snap.network),
   )
+  const [bom, setBom] = useState<BomState>(
+    () => mergeBom(boot.snap.bom, boot.snap.network),
+  )
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -478,6 +508,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       comments,
       productMix,
       laneRates,
+      bom,
     }
   }, [
     horizon,
@@ -494,6 +525,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     comments,
     productMix,
     laneRates,
+    bom,
   ])
 
   const persistNow = useCallback(() => {
@@ -557,6 +589,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setComments(snap.comments ?? [])
     setProductMix(mergeProductMix(snap.productMix, snap.network))
     setLaneRates(mergeLaneRates(snap.laneRates, snap.network))
+    setBom(mergeBom(snap.bom, snap.network))
     setSelection({ ids: [], kind: null })
     setOptimizeStatus({ phase: 'idle' })
     if (snap.theme === 'light' || snap.theme === 'dark') {
@@ -807,6 +840,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
     setProductMix((prev) => mergeProductMix(prev, net))
     setLaneRates((prev) => mergeLaneRates(prev, net))
+    setBom((prev) => mergeBom(prev, net))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -817,6 +851,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setInventoryPolicies(defaultInventoryPolicies(sample))
     setProductMix(defaultProductMix(sample))
     setLaneRates(defaultLaneRates(sample))
+    setBom(defaultBom(sample))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -1319,6 +1354,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
       setProductMix((prev) => mergeProductMix(prev, net))
       setLaneRates((prev) => mergeLaneRates(prev, net))
+      setBom((prev) => mergeBom(prev, net))
       setSelection({ ids: [], kind: null })
       if (draftScenario) {
         setScenarios((prev) => {
@@ -1341,6 +1377,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
       setProductMix((prev) => mergeProductMix(prev, net))
       setLaneRates((prev) => mergeLaneRates(prev, net))
+      setBom((prev) => mergeBom(prev, net))
       setSelection({ ids: [], kind: null })
       if (draftScenario) {
         setScenarios((prev) => {
@@ -1493,6 +1530,63 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setLaneRates(defaultLaneRates(network))
   }, [network])
 
+  const updateBomRowCb = useCallback(
+    (rowId: string, patch: Partial<Omit<BomRow, 'id'>>) => {
+      setBom((prev) => updateBomRow(prev, rowId, patch))
+    },
+    [],
+  )
+
+  const addBomRowCb = useCallback((partial?: Partial<BomRow>) => {
+    setBom((prev) => addBomRow(prev, partial))
+  }, [])
+
+  const removeBomRowCb = useCallback((rowId: string) => {
+    setBom((prev) => removeBomRow(prev, rowId))
+  }, [])
+
+  const updateFgShareCb = useCallback(
+    (finishedGoodId: string, sharePct: number) => {
+      setBom((prev) => updateFgShare(prev, finishedGoodId, sharePct))
+    },
+    [],
+  )
+
+  const setBomHighlightCb = useCallback((on: boolean) => {
+    setBom((prev) => setBomHighlight(prev, on))
+  }, [])
+
+  const resetBom = useCallback(() => {
+    setBom(defaultBom(network))
+  }, [network])
+
+  const applyBomInboundScenario = useCallback(
+    (scenarioName?: string) => {
+      const active = scenarios.find((s) => s.id === activeScenarioId)
+      const refKpis = active?.kpis ?? BASELINE_KPIS
+      const result = applyBomInboundLanes(bom, network, refKpis, scenarioName)
+      setNetwork(result.network)
+      setConstraints((prev) => mergeConstraints(prev, result.network))
+      setInventoryPolicies((prev) =>
+        mergeInventoryPolicies(prev, result.network),
+      )
+      setProductMix((prev) => mergeProductMix(prev, result.network))
+      setLaneRates((prev) => mergeLaneRates(prev, result.network))
+      setBom((prev) => mergeBom(prev, result.network))
+      setScenarios((prev) => {
+        if (prev.some((s) => s.id === result.draftScenario.id)) return prev
+        return [...prev, result.draftScenario]
+      })
+      setActiveScenarioId(result.draftScenario.id)
+      setSelection({ ids: [], kind: null })
+      return {
+        addedLanes: result.preview.newLanes.length,
+        scenarioId: result.draftScenario.id,
+      }
+    },
+    [bom, network, scenarios, activeScenarioId],
+  )
+
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
 
     setBrief((prev) => ({ ...prev, ...patch }))
@@ -1586,6 +1680,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       applyRateBid,
       applyWinningBids,
       resetLaneRates,
+      bom,
+      updateBomRow: updateBomRowCb,
+      addBomRow: addBomRowCb,
+      removeBomRow: removeBomRowCb,
+      updateFgShare: updateFgShareCb,
+      setBomHighlight: setBomHighlightCb,
+      resetBom,
+      applyBomInboundScenario,
     }),
     [
       horizon,
@@ -1658,6 +1760,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       applyRateBid,
       applyWinningBids,
       resetLaneRates,
+      bom,
+      updateBomRowCb,
+      addBomRowCb,
+      removeBomRowCb,
+      updateFgShareCb,
+      setBomHighlightCb,
+      resetBom,
+      applyBomInboundScenario,
     ],
   )
 

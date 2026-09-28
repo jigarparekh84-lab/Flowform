@@ -3012,3 +3012,92 @@ tr.rate-row.selected td:first-child {
 [data-theme='light'] .bid-badge.applied {
   color: #0369a1;
 }
+
+
+/* —— Bill of materials / multi-echelon —— */
+.bom-edit .bom-req-card {
+  border: 1px solid var(--ff-border, rgba(148, 163, 184, 0.25));
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  margin-top: 0.4rem;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.bom-edit .bom-req-card strong {
+  font-size: 0.8rem;
+}
+
+.bom-comp-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+}
+
+.bom-kind {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.08rem 0.3rem;
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.22);
+  color: #c4b5fd;
+}
+
+.bom-echelon {
+  font-size: 0.65rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.15);
+}
+
+.bom-echelon.geo {
+  background: rgba(192, 132, 252, 0.2);
+  color: #e9d5ff;
+}
+
+.bom-echelon.mat {
+  background: rgba(52, 211, 153, 0.15);
+  color: #6ee7b7;
+}
+
+tr.bom-implied td {
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.bom-gap {
+  color: #fbbf24;
+  font-style: italic;
+  font-size: 0.7rem;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+[data-theme='light'] .bom-edit .bom-req-card {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme='light'] .bom-kind {
+  color: #6d28d9;
+}
+
+[data-theme='light'] .bom-echelon.geo {
+  color: #7e22ce;
+}
+
+[data-theme='light'] .bom-echelon.mat {
+  color: #047857;
+}

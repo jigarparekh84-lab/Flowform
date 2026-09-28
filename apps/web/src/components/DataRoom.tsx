@@ -26,6 +26,14 @@ import {
   laneGroups,
   type ProductCatalogId,
 } from '../data/productGroups'
+import {
+  bomRollup,
+  componentKindLabel,
+  deriveBomRequirements,
+  deriveEchelonFlows,
+  deriveImpliedRmDemand,
+  type BomComponentKind,
+} from '../data/bom'
 import { useFlowform } from '../state/FlowformContext'
 
 type Draft = {
@@ -56,6 +64,14 @@ export function DataRoom() {
     applyRateBid,
     applyWinningBids,
     resetLaneRates,
+    bom,
+    updateBomRow,
+    addBomRow,
+    removeBomRow,
+    updateFgShare,
+    setBomHighlight,
+    resetBom,
+    applyBomInboundScenario,
   } = useFlowform()
   const [draft, setDraft] = useState<Draft>({ fileNames: {} })
   const [status, setStatus] = useState<string | null>(null)
@@ -705,6 +721,351 @@ export function DataRoom() {
             <p className="hint">
               Add a bid on a corridor from Network Inspector, or reset sample
               rates above. ★ = strategy winner · ✓ = applied to lane.
+            </p>
+          </section>
+
+
+          <section className="library-card" aria-label="Bill of materials">
+            <div className="library-card-head">
+              <h2>Bill of materials (multi-echelon)</h2>
+              <div className="product-chip-row">
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => {
+                    addBomRow()
+                    setStatus('Added BOM row.')
+                  }}
+                >
+                  Add row
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => {
+                    const r = applyBomInboundScenario()
+                    setStatus(
+                      r.addedLanes > 0
+                        ? `Drafted BOM inbound scenario (+${r.addedLanes} lane${r.addedLanes === 1 ? '' : 's'}).`
+                        : 'BOM inbound scenario drafted — all Plant←Supplier pairs already had lanes.',
+                    )
+                  }}
+                >
+                  Draft inbound scenario
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => {
+                    resetBom()
+                    setStatus('Reset sample BOM.')
+                  }}
+                >
+                  Reset sample
+                </button>
+              </div>
+            </div>
+            <p className="studio-sub" style={{ marginTop: 0 }}>
+              Finished goods ← components / RM with qty per unit. Plants produce
+              FG from inbound RM; implied RM demand rolls up from FG demand ×
+              BOM. Toggle Network highlight for BOM-driven Plant←Supplier lanes.
+            </p>
+            <label className="field inline-check" style={{ marginBottom: '0.75rem' }}>
+              <input
+                type="checkbox"
+                checked={bom.highlightBomLanes}
+                onChange={(e) => setBomHighlight(e.target.checked)}
+              />
+              <span>Highlight BOM lanes on Network</span>
+            </label>
+            {(() => {
+              const roll = bomRollup(bom, network)
+              return (
+                <div className="data-scores" style={{ marginBottom: '0.85rem' }}>
+                  <ScoreCard label="BOM rows" value={String(roll.bomRows)} sub={`${roll.fgCount} FG`} />
+                  <ScoreCard
+                    label="Implied RM"
+                    value={roll.totalRmQty.toLocaleString()}
+                    sub={`${roll.componentCount} components`}
+                  />
+                  <ScoreCard
+                    label="Plant←Supplier"
+                    value={String(roll.plantSupplierFlows)}
+                    sub={`${roll.coveredLanePairs} covered · ${roll.impliedLaneGaps} gaps`}
+                    tone={roll.impliedLaneGaps > 0 ? 'warn' : 'good'}
+                  />
+                </div>
+              )
+            })()}
+
+            <h3 className="data-subhead">FG demand shares</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Finished good</th>
+                    <th>Share %</th>
+                    <th>Implied FG demand</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bom.fgShares.map((s) => {
+                    const total = Object.values(network.demandVolume).reduce(
+                      (a, b) => a + b,
+                      0,
+                    )
+                    const fgDem = Math.round(total * (s.sharePct / 100))
+                    return (
+                      <tr key={s.finishedGoodId}>
+                        <td>
+                          {s.finishedGoodName}{' '}
+                          <span className="mono muted">({s.finishedGoodId})</span>
+                        </td>
+                        <td>
+                          <input
+                            className="factor-input mono"
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={1}
+                            value={s.sharePct}
+                            onChange={(e) =>
+                              updateFgShare(
+                                s.finishedGoodId,
+                                parseFloat(e.target.value) || 0,
+                              )
+                            }
+                            aria-label={`${s.finishedGoodName} share`}
+                          />
+                        </td>
+                        <td>{fgDem.toLocaleString()} u</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="data-subhead">BOM rows (FG ← component / RM)</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>FG</th>
+                    <th>Component</th>
+                    <th>Kind</th>
+                    <th>Qty / FG</th>
+                    <th>Plant</th>
+                    <th>Supplier</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bom.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <input
+                          className="factor-input"
+                          value={r.finishedGoodName}
+                          onChange={(e) =>
+                            updateBomRow(r.id, {
+                              finishedGoodName: e.target.value,
+                            })
+                          }
+                          aria-label="Finished good name"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="factor-input"
+                          value={r.componentName}
+                          onChange={(e) =>
+                            updateBomRow(r.id, {
+                              componentName: e.target.value,
+                            })
+                          }
+                          aria-label="Component name"
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={r.componentKind}
+                          onChange={(e) =>
+                            updateBomRow(r.id, {
+                              componentKind: e.target
+                                .value as BomComponentKind,
+                            })
+                          }
+                          aria-label="Component kind"
+                        >
+                          <option value="rm">RM</option>
+                          <option value="component">Comp</option>
+                          <option value="wip">WIP</option>
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          className="factor-input mono"
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          value={r.qtyPerUnit}
+                          onChange={(e) =>
+                            updateBomRow(r.id, {
+                              qtyPerUnit: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          aria-label="Qty per unit"
+                        />
+                      </td>
+                      <td>
+                        <select
+                          value={r.plantId ?? ''}
+                          onChange={(e) =>
+                            updateBomRow(r.id, {
+                              plantId: e.target.value || null,
+                            })
+                          }
+                          aria-label="Plant"
+                        >
+                          <option value="">—</option>
+                          {network.nodes
+                            .filter((n) => n.kind === 'plant')
+                            .map((n) => (
+                              <option key={n.id} value={n.id}>
+                                {n.name}
+                              </option>
+                            ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={r.preferredSupplierId ?? ''}
+                          onChange={(e) =>
+                            updateBomRow(r.id, {
+                              preferredSupplierId: e.target.value || null,
+                            })
+                          }
+                          aria-label="Supplier"
+                        >
+                          <option value="">—</option>
+                          {network.nodes
+                            .filter((n) => n.kind === 'supplier')
+                            .map((n) => (
+                              <option key={n.id} value={n.id}>
+                                {n.name}
+                              </option>
+                            ))}
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn ghost btn-tiny"
+                          onClick={() => removeBomRow(r.id)}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="data-subhead">Implied RM demand (from FG × BOM)</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Component</th>
+                    <th>Kind</th>
+                    <th>Qty needed</th>
+                    <th>Supplier</th>
+                    <th>From FGs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deriveImpliedRmDemand(bom, network).map((i) => (
+                    <tr key={i.componentId}>
+                      <td>{i.componentName}</td>
+                      <td>
+                        <span className="bom-kind">
+                          {componentKindLabel(i.componentKind)}
+                        </span>
+                      </td>
+                      <td>{i.qtyNeeded.toLocaleString()}</td>
+                      <td>{i.preferredSupplierName ?? '—'}</td>
+                      <td className="muted tiny">
+                        {i.sources
+                          .map(
+                            (s) =>
+                              `${s.finishedGoodName} (${s.contrib.toLocaleString()})`,
+                          )
+                          .join(' · ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="data-subhead">Echelon flows (Plant←Supplier / FG←RM)</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Echelon</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Material</th>
+                    <th>Volume</th>
+                    <th>Lane</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deriveEchelonFlows(bom, network).map((f) => (
+                    <tr
+                      key={f.id}
+                      className={f.implied ? 'bom-implied' : undefined}
+                    >
+                      <td>
+                        <span className={`bom-echelon ${f.echelon === 'plant←supplier' ? 'geo' : 'mat'}`}>
+                          {f.echelon}
+                        </span>
+                      </td>
+                      <td>
+                        {f.fromName}{' '}
+                        <span className="mono muted">({f.fromKind})</span>
+                      </td>
+                      <td>
+                        {f.toName}{' '}
+                        <span className="mono muted">({f.toKind})</span>
+                      </td>
+                      <td>{f.materialName}</td>
+                      <td>{f.volume.toLocaleString()}</td>
+                      <td>
+                        {f.echelon === 'fg←rm'
+                          ? '—'
+                          : f.laneId
+                            ? f.laneId
+                            : 'implied gap'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="hint">
+              Plant requirements:{' '}
+              {deriveBomRequirements(bom, network)
+                .map(
+                  (r) =>
+                    `${r.plantName} · ${r.finishedGoodName} (${r.fgDemand.toLocaleString()} FG)`,
+                )
+                .join(' · ') || 'none'}
+              . Compare → BOM visualizes the same flows; draft inbound scenario
+              adds missing Supplier→Plant lanes.
             </p>
           </section>
 
