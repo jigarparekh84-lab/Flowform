@@ -19,6 +19,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Resilience** — SPOF scoring: nodes whose removal drops service below threshold.
 - **Handoff-ready** — export a clean brief of nodes, lanes, and assumptions into Ritara when design is done.
 - **Multi-commodity** — product groups (Ambient/Chilled/Hazmat or Finished/WIP/RM) tag demand, lanes, and facility capacity; filter Network / Compare KPIs by group.
+- **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 
 ---
 
@@ -31,9 +32,9 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
 | **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
-| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** / **Products** |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** / **Products** / **Bids** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
-| **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups** |
+| **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups**, **lane rate tables & bids** |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
 | **Handoff** | Export / sync design payload toward Ritara (contract stub only) |
 

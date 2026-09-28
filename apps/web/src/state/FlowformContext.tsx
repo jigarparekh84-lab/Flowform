@@ -107,6 +107,20 @@ import {
   type SharePack,
 } from '../data/collaboration'
 import { applyLaneModeChange, emissionModeKey } from '../data/modeMix'
+import {
+  addBidToLane,
+  applyBidToLane,
+  defaultLaneRates,
+  laneMiles as laneMilesHelper,
+  mergeLaneRates,
+  rankBids as rankBidsHelper,
+  removeBidFromLane,
+  setSelectedBid,
+  updateBidInState,
+  type BidStrategy,
+  type LaneRatesState,
+  type RateBid,
+} from '../data/laneRates'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -157,6 +171,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     inventoryPolicies: defaultInventoryPolicies(net),
     comments: [],
     productMix: defaultProductMix(net),
+    laneRates: defaultLaneRates(net),
   }
 }
 
@@ -340,6 +355,22 @@ type FlowformContextValue = {
     patch: Partial<FacilityProductCap>,
   ) => void
   resetProductMix: () => void
+
+  /** Lane rate tables + carrier bid comparison. */
+  laneRates: LaneRatesState
+  setLaneRatesStrategy: (strategy: BidStrategy) => void
+  updateRateBid: (
+    laneId: string,
+    bidId: string,
+    patch: Partial<Omit<RateBid, 'id'>>,
+  ) => void
+  addRateBid: (laneId: string, bid?: Partial<RateBid>) => void
+  removeRateBid: (laneId: string, bidId: string) => void
+  /** Apply bid to network lane cost/transit/mode; marks selected. */
+  applyRateBid: (laneId: string, bidId: string) => void
+  /** Apply strategy winners across all lanes (or one lane). */
+  applyWinningBids: (strategy?: BidStrategy, laneId?: string) => number
+  resetLaneRates: () => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -402,6 +433,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [productMix, setProductMix] = useState<ProductMixState>(
     () => mergeProductMix(boot.snap.productMix, boot.snap.network),
   )
+  const [laneRates, setLaneRates] = useState<LaneRatesState>(
+    () => mergeLaneRates(boot.snap.laneRates, boot.snap.network),
+  )
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -443,6 +477,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       inventoryPolicies,
       comments,
       productMix,
+      laneRates,
     }
   }, [
     horizon,
@@ -458,6 +493,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     inventoryPolicies,
     comments,
     productMix,
+    laneRates,
   ])
 
   const persistNow = useCallback(() => {
@@ -500,6 +536,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     inventoryPolicies,
     comments,
     productMix,
+    laneRates,
   ])
 
   const applySnapshot = useCallback((snap: ProjectSnapshot) => {
@@ -519,6 +556,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     )
     setComments(snap.comments ?? [])
     setProductMix(mergeProductMix(snap.productMix, snap.network))
+    setLaneRates(mergeLaneRates(snap.laneRates, snap.network))
     setSelection({ ids: [], kind: null })
     setOptimizeStatus({ phase: 'idle' })
     if (snap.theme === 'light' || snap.theme === 'dark') {
@@ -768,6 +806,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setConstraints((prev) => mergeConstraints(prev, net))
     setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
     setProductMix((prev) => mergeProductMix(prev, net))
+    setLaneRates((prev) => mergeLaneRates(prev, net))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -777,6 +816,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setConstraints(defaultConstraintsFromNetwork(sample))
     setInventoryPolicies(defaultInventoryPolicies(sample))
     setProductMix(defaultProductMix(sample))
+    setLaneRates(defaultLaneRates(sample))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -1278,6 +1318,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setConstraints((prev) => mergeConstraints(prev, net))
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
       setProductMix((prev) => mergeProductMix(prev, net))
+      setLaneRates((prev) => mergeLaneRates(prev, net))
       setSelection({ ids: [], kind: null })
       if (draftScenario) {
         setScenarios((prev) => {
@@ -1299,6 +1340,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setConstraints((prev) => mergeConstraints(prev, net))
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
       setProductMix((prev) => mergeProductMix(prev, net))
+      setLaneRates((prev) => mergeLaneRates(prev, net))
       setSelection({ ids: [], kind: null })
       if (draftScenario) {
         setScenarios((prev) => {
@@ -1366,7 +1408,93 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setProductMix(defaultProductMix(network, productMix.catalog))
   }, [network, productMix.catalog])
 
+
+  const setLaneRatesStrategy = useCallback((strategy: BidStrategy) => {
+    setLaneRates((prev) => ({ ...prev, compareStrategy: strategy }))
+  }, [])
+
+  const updateRateBid = useCallback(
+    (
+      laneId: string,
+      bidId: string,
+      patch: Partial<Omit<RateBid, 'id'>>,
+    ) => {
+      setLaneRates((prev) => updateBidInState(prev, laneId, bidId, patch))
+    },
+    [],
+  )
+
+  const addRateBid = useCallback((laneId: string, bid?: Partial<RateBid>) => {
+    setLaneRates((prev) => addBidToLane(prev, laneId, bid))
+  }, [])
+
+  const removeRateBid = useCallback((laneId: string, bidId: string) => {
+    setLaneRates((prev) => removeBidFromLane(prev, laneId, bidId))
+  }, [])
+
+  const applyRateBid = useCallback((laneId: string, bidId: string) => {
+    setLaneRates((prev) => {
+      const table = prev.tables.find((t) => t.laneId === laneId)
+      const bid = table?.bids.find((b) => b.id === bidId)
+      if (!bid) return prev
+      setNetwork((net) => ({
+        ...net,
+        lanes: net.lanes.map((l) =>
+          l.id === laneId ? applyBidToLane(l, bid, net.nodes) : l,
+        ),
+      }))
+      return setSelectedBid(prev, laneId, bidId)
+    })
+  }, [])
+
+  const applyWinningBids = useCallback(
+    (strategy?: BidStrategy, laneId?: string): number => {
+      const strat = strategy ?? laneRates.compareStrategy
+      const targets = laneId
+        ? laneRates.tables.filter((t) => t.laneId === laneId)
+        : laneRates.tables
+
+      const winners: { laneId: string; bid: RateBid }[] = []
+      for (const table of targets) {
+        const lane = network.lanes.find((l) => l.id === table.laneId)
+        if (!lane || table.bids.length === 0) continue
+        const ranked = rankBidsHelper(
+          table.bids,
+          laneMilesHelper(lane, network.nodes),
+          strat,
+          table.selectedBidId,
+        )
+        const win = ranked.find((r) => r.isWinner)
+        if (win) winners.push({ laneId: table.laneId, bid: win.bid })
+      }
+      if (winners.length === 0) return 0
+
+      setNetwork((net) => ({
+        ...net,
+        lanes: net.lanes.map((l) => {
+          const hit = winners.find((w) => w.laneId === l.id)
+          return hit ? applyBidToLane(l, hit.bid, net.nodes) : l
+        }),
+      }))
+      setLaneRates((prev) => {
+        let next = prev
+        if (strategy) next = { ...next, compareStrategy: strategy }
+        for (const w of winners) {
+          next = setSelectedBid(next, w.laneId, w.bid.id)
+        }
+        return next
+      })
+      return winners.length
+    },
+    [laneRates, network],
+  )
+
+  const resetLaneRates = useCallback(() => {
+    setLaneRates(defaultLaneRates(network))
+  }, [network])
+
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
+
     setBrief((prev) => ({ ...prev, ...patch }))
   }, [])
 
@@ -1450,6 +1578,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateLaneProductGroups,
       updateFacilityProductCap,
       resetProductMix,
+      laneRates,
+      setLaneRatesStrategy,
+      updateRateBid,
+      addRateBid,
+      removeRateBid,
+      applyRateBid,
+      applyWinningBids,
+      resetLaneRates,
     }),
     [
       horizon,
@@ -1514,6 +1650,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateLaneProductGroups,
       updateFacilityProductCap,
       resetProductMix,
+      laneRates,
+      setLaneRatesStrategy,
+      updateRateBid,
+      addRateBid,
+      removeRateBid,
+      applyRateBid,
+      applyWinningBids,
+      resetLaneRates,
     ],
   )
 

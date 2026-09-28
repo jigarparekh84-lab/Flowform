@@ -7,6 +7,12 @@ import {
 } from '../data/costToServe'
 import { summarizeModeMix } from '../data/modeMix'
 import {
+  bidCompareRollup,
+  strategyLabel,
+  summarizeLaneBids,
+  type BidStrategy,
+} from '../data/laneRates'
+import {
   computeInventoryRollup,
   formatInvDollars,
   formatInvUnits,
@@ -44,6 +50,7 @@ type ViewMode =
   | 'resilience'
   | 'modes'
   | 'products'
+  | 'bids'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -157,6 +164,10 @@ export function CompareResults() {
     emissionFactors,
     productMix,
     setProductFilter,
+    laneRates,
+    setLaneRatesStrategy,
+    applyWinningBids,
+    applyRateBid,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -255,8 +266,8 @@ export function CompareResults() {
           <h1>Results</h1>
           <p className="studio-sub">
             Multi-scenario KPI matrix, map opens/closes vs Reference, cost
-            waterfall, DES-lite, inventory, resilience (SPOF), and transport
-            mode mix. Defaults: Active + Baseline as Reference.
+            waterfall, DES-lite, inventory, resilience (SPOF), transport
+            mode mix, and lane bid comparison. Defaults: Active + Baseline as Reference.
           </p>
         </div>
       </header>
@@ -322,6 +333,7 @@ export function CompareResults() {
               ['resilience', 'Resilience'],
               ['modes', 'Mode mix'],
               ['products', 'Products'],
+              ['bids', 'Bids'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -420,6 +432,15 @@ export function CompareResults() {
             network={network}
             kpis={focus?.kpis ?? activeScenario.kpis}
             onFilter={setProductFilter}
+          />
+        )}
+        {view === 'bids' && (
+          <BidsView
+            network={network}
+            laneRates={laneRates}
+            onStrategy={setLaneRatesStrategy}
+            onApplyAll={() => applyWinningBids()}
+            onApplyBid={applyRateBid}
           />
         )}
       </div>
@@ -1812,6 +1833,157 @@ function ModeMixView({
                   <td>{r.kgPerTonMile}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function BidsView({
+  network,
+  laneRates,
+  onStrategy,
+  onApplyAll,
+  onApplyBid,
+}: {
+  network: import('../data/csvParsers').UploadedNetwork
+  laneRates: import('../data/laneRates').LaneRatesState
+  onStrategy: (s: BidStrategy) => void
+  onApplyAll: () => number
+  onApplyBid: (laneId: string, bidId: string) => void
+}) {
+  const summaries = summarizeLaneBids(laneRates, network)
+  const rollup = bidCompareRollup(summaries)
+  const [status, setStatus] = useState<string | null>(null)
+
+  return (
+    <div className="compare-modes-layout">
+      <section className="library-card" aria-label="Lane bid comparison">
+        <div className="library-card-head">
+          <h2>Lane rate bid comparison</h2>
+          <div className="product-chip-row">
+            <button
+              type="button"
+              className="btn primary btn-tiny"
+              onClick={() => {
+                const n = onApplyAll()
+                setStatus(
+                  `Applied ${strategyLabel(laneRates.compareStrategy)} winners on ${n} lanes.`,
+                )
+              }}
+            >
+              Apply all winners
+            </button>
+          </div>
+        </div>
+        <p className="muted tiny">
+          Carrier bids ranked by strategy. Apply writes $/unit and transit onto
+          the active network. Edit sample rates in Data room.
+        </p>
+        <label className="field" style={{ maxWidth: '16rem' }}>
+          <span>Strategy</span>
+          <select
+            value={laneRates.compareStrategy}
+            onChange={(e) => onStrategy(e.target.value as BidStrategy)}
+          >
+            <option value="cheapest">Cheapest</option>
+            <option value="fastest">Fastest</option>
+            <option value="balanced">Balanced</option>
+          </select>
+        </label>
+        {status && <p className="status-line">{status}</p>}
+        <div className="data-scores" style={{ marginTop: '0.75rem' }}>
+          <div className="score-card">
+            <span className="score-label">Lanes / bids</span>
+            <strong className="score-value">
+              {rollup.laneCount} / {rollup.bidCount}
+            </strong>
+            <span className="score-sub">
+              {strategyLabel(laneRates.compareStrategy)}
+            </span>
+          </div>
+          <div className="score-card tone-good">
+            <span className="score-label">Avg winner $/u</span>
+            <strong className="score-value">
+              ${rollup.avgWinnerCost.toFixed(2)}
+            </strong>
+            <span className="score-sub">
+              vs ${rollup.avgCurrentCost.toFixed(2)} current
+            </span>
+          </div>
+          <div
+            className={`score-card${rollup.totalSavingsPerUnit > 0 ? ' tone-good' : ' tone-warn'}`}
+          >
+            <span className="score-label">Σ savings $/u</span>
+            <strong className="score-value">
+              ${rollup.totalSavingsPerUnit.toFixed(2)}
+            </strong>
+            <span className="score-sub">
+              {rollup.lanesWithSavings} lanes cheaper
+            </span>
+          </div>
+        </div>
+        <div className="table-scroll" style={{ marginTop: '0.85rem' }}>
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th>Corridor</th>
+                <th>Current</th>
+                <th>Winner</th>
+                <th>$/unit</th>
+                <th>Transit</th>
+                <th>Δ vs current</th>
+                <th>Bids</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.map((s) => {
+                const w = s.winner
+                return (
+                  <tr key={s.laneId}>
+                    <td>{s.corridorLabel}</td>
+                    <td className="mono">
+                      ${s.currentCost.toFixed(2)} · {s.currentLeadDays}d
+                    </td>
+                    <td>{w?.bid.carrier ?? '—'}</td>
+                    <td className="mono">
+                      {w ? `$${w.effectiveCostPerUnit.toFixed(2)}` : '—'}
+                    </td>
+                    <td>{w ? `${w.bid.transitDays}d` : '—'}</td>
+                    <td
+                      className={
+                        s.savingsPerUnit > 0
+                          ? 'delta-up'
+                          : s.savingsPerUnit < 0
+                            ? 'delta-down'
+                            : ''
+                      }
+                    >
+                      {s.savingsPerUnit === 0
+                        ? '—'
+                        : `${s.savingsPerUnit > 0 ? '−' : '+'}$${Math.abs(s.savingsPerUnit).toFixed(2)}`}
+                    </td>
+                    <td>{s.bids.length}</td>
+                    <td>
+                      {w && (
+                        <button
+                          type="button"
+                          className="btn ghost btn-tiny"
+                          onClick={() => {
+                            onApplyBid(s.laneId, w.bid.id)
+                            setStatus(`Applied ${w.bid.carrier} → ${s.corridorLabel}`)
+                          }}
+                        >
+                          Apply
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

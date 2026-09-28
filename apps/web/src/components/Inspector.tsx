@@ -1,5 +1,13 @@
 import { TRANSPORT_MODES, normalizeMode } from '../data/modeMix'
 import {
+  laneMiles,
+  rankBids,
+  strategyLabel,
+  tableForLane,
+  type BidStrategy,
+  type RateUnit,
+} from '../data/laneRates'
+import {
   demandSharesForNode,
   facilityCapFor,
   formatGroupCodes,
@@ -28,6 +36,12 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
     updateDemandProductShares,
     updateLaneProductGroups,
     updateFacilityProductCap,
+    laneRates,
+    setLaneRatesStrategy,
+    addRateBid,
+    removeRateBid,
+    applyRateBid,
+    applyWinningBids,
   } = useFlowform()
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null
@@ -50,6 +64,16 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
   const facCap = node ? facilityCapFor(productMix, node.id) : undefined
   const demandShares = node ? demandSharesForNode(productMix, node.id) : null
   const laneGroupIds = lane ? laneGroups(productMix, lane.id) : []
+  const rateTable = lane ? tableForLane(laneRates, lane.id) : undefined
+  const miles = lane ? laneMiles(lane, nodes) : 0
+  const rankedBids = rateTable
+    ? rankBids(
+        rateTable.bids,
+        miles,
+        laneRates.compareStrategy,
+        rateTable.selectedBidId,
+      )
+    : []
 
   function toggleLaneGroup(gid: ProductGroupId) {
     if (!lane) return
@@ -369,6 +393,103 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
               from planning emission factors.
             </p>
           </div>
+          {rateTable && (
+            <div className="constraint-edit rate-bid-edit">
+              <h3>Carrier bids</h3>
+              <label className="field">
+                <span>Compare strategy</span>
+                <select
+                  value={laneRates.compareStrategy}
+                  onChange={(e) =>
+                    setLaneRatesStrategy(e.target.value as BidStrategy)
+                  }
+                >
+                  <option value="cheapest">Cheapest</option>
+                  <option value="fastest">Fastest</option>
+                  <option value="balanced">Balanced</option>
+                </select>
+              </label>
+              <p className="hint">
+                {miles > 0 ? `${miles} mi · ` : ''}
+                {strategyLabel(laneRates.compareStrategy)} ranks bids;
+                Apply writes cost + transit onto this lane.
+              </p>
+              <ul className="bid-list">
+                {rankedBids.map((row) => (
+                  <li
+                    key={row.bid.id}
+                    className={
+                      row.isWinner
+                        ? 'bid-row winner'
+                        : row.isSelected
+                          ? 'bid-row selected'
+                          : 'bid-row'
+                    }
+                  >
+                    <div className="bid-row-head">
+                      <strong>{row.bid.carrier}</strong>
+                      <span className="bid-rank">#{row.rank}</span>
+                      {row.isWinner && (
+                        <span className="bid-badge">Winner</span>
+                      )}
+                      {row.isSelected && (
+                        <span className="bid-badge applied">Applied</span>
+                      )}
+                    </div>
+                    <div className="bid-meta mono">
+                      {row.bid.mode} · ${row.effectiveCostPerUnit.toFixed(2)}/u
+                      {row.bid.rateUnit === 'per_mile'
+                        ? ` ($${row.bid.rate}/mi)`
+                        : ''}{' '}
+                      · {row.bid.transitDays}d · cap{' '}
+                      {row.bid.capacityUnits.toLocaleString()}
+                    </div>
+                    <div className="bid-actions">
+                      <button
+                        type="button"
+                        className="btn primary btn-tiny"
+                        onClick={() => applyRateBid(lane.id, row.bid.id)}
+                      >
+                        Apply
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost btn-tiny"
+                        onClick={() => removeRateBid(lane.id, row.bid.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div className="bid-toolbar">
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() =>
+                    addRateBid(lane.id, {
+                      carrier: 'New carrier',
+                      mode: normalizeMode(lane.mode),
+                      rate: lane.costPerUnit,
+                      rateUnit: 'per_unit' as RateUnit,
+                      transitDays: lane.leadDays,
+                      capacityUnits: 5000,
+                    })
+                  }
+                >
+                  Add bid
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => applyWinningBids(undefined, lane.id)}
+                >
+                  Apply winner
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
     </aside>

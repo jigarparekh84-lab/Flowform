@@ -2913,3 +2913,102 @@
 [data-theme='light'] .product-chip.on {
   color: #0f172a;
 }
+
+/* —— Lane rate tables / bid comparison —— */
+.rate-bid-edit .bid-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.bid-row {
+  border: 1px solid var(--ff-border, rgba(148, 163, 184, 0.25));
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.bid-row.winner {
+  border-color: rgba(52, 211, 153, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.2);
+}
+
+.bid-row.selected {
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+.bid-row-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.bid-row-head strong {
+  font-size: 0.8rem;
+}
+
+.bid-rank {
+  font-size: 0.65rem;
+  color: var(--ff-muted, #94a3b8);
+  font-variant-numeric: tabular-nums;
+}
+
+.bid-badge {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.2);
+  color: #6ee7b7;
+}
+
+.bid-badge.applied {
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+}
+
+.bid-meta {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--ff-muted, #94a3b8);
+}
+
+.bid-actions,
+.bid-toolbar {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.bid-cell-actions {
+  white-space: nowrap;
+  display: flex;
+  gap: 0.25rem;
+}
+
+tr.rate-row.winner td:first-child {
+  color: #6ee7b7;
+}
+
+tr.rate-row.selected td:first-child {
+  color: #7dd3fc;
+}
+
+[data-theme='light'] .bid-row {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+[data-theme='light'] .bid-badge {
+  color: #047857;
+}
+
+[data-theme='light'] .bid-badge.applied {
+  color: #0369a1;
+}

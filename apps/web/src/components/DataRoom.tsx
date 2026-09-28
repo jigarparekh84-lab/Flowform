@@ -11,6 +11,15 @@ import {
   type ParseSitesResult,
 } from '../data/csvParsers'
 import {
+  bidCompareRollup,
+  effectiveCostPerUnit,
+  laneMiles,
+  rankBids,
+  strategyLabel,
+  type BidStrategy,
+  type RateUnit,
+} from '../data/laneRates'
+import {
   catalogLabel,
   demandSharesForNode,
   formatGroupCodes,
@@ -40,6 +49,13 @@ export function DataRoom() {
     updateDemandProductShares,
     updateFacilityProductCap,
     resetProductMix,
+    laneRates,
+    setLaneRatesStrategy,
+    updateRateBid,
+    removeRateBid,
+    applyRateBid,
+    applyWinningBids,
+    resetLaneRates,
   } = useFlowform()
   const [draft, setDraft] = useState<Draft>({ fileNames: {} })
   const [status, setStatus] = useState<string | null>(null)
@@ -414,6 +430,281 @@ export function DataRoom() {
             </div>
             <p className="hint">
               Toggle lane groups on a selected lane in the Network Inspector.
+            </p>
+          </section>
+
+          <section className="library-card" aria-label="Lane rate tables">
+            <div className="library-card-head">
+              <h2>Lane rate tables &amp; bids</h2>
+              <div className="product-chip-row">
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => {
+                    const n = applyWinningBids()
+                    setStatus(
+                      `Applied ${strategyLabel(laneRates.compareStrategy)} winner on ${n} lane${n === 1 ? '' : 's'}.`,
+                    )
+                  }}
+                >
+                  Apply all winners
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => {
+                    resetLaneRates()
+                    setStatus('Reset sample carrier rate tables.')
+                  }}
+                >
+                  Reset rates
+                </button>
+              </div>
+            </div>
+            <p className="studio-sub" style={{ marginTop: 0 }}>
+              Carrier bids per lane corridor — mode, $/unit or $/mile, transit
+              days, capacity. Compare{' '}
+              <strong>{strategyLabel(laneRates.compareStrategy)}</strong> and
+              apply the selected bid onto active network lane cost (and transit).
+              Edit here or apply from the Network Inspector on a selected lane.
+            </p>
+            <label className="field" style={{ maxWidth: '16rem' }}>
+              <span>Compare strategy</span>
+              <select
+                value={laneRates.compareStrategy}
+                onChange={(e) =>
+                  setLaneRatesStrategy(e.target.value as BidStrategy)
+                }
+              >
+                <option value="cheapest">Cheapest</option>
+                <option value="fastest">Fastest</option>
+                <option value="balanced">Balanced</option>
+              </select>
+            </label>
+            {(() => {
+              const rollup = bidCompareRollup(
+                laneRates.tables.map((t) => {
+                  const lane = network.lanes.find((l) => l.id === t.laneId)
+                  const miles = lane ? laneMiles(lane, network.nodes) : 0
+                  const ranked = rankBids(
+                    t.bids,
+                    miles,
+                    laneRates.compareStrategy,
+                    t.selectedBidId,
+                  )
+                  const winner = ranked.find((r) => r.isWinner) ?? null
+                  const currentCost = lane?.costPerUnit ?? 0
+                  return {
+                    laneId: t.laneId,
+                    corridorLabel: t.corridorLabel,
+                    mode: lane?.mode ?? '—',
+                    currentCost,
+                    currentLeadDays: lane?.leadDays ?? 0,
+                    miles,
+                    bids: ranked,
+                    winner,
+                    selected: ranked.find((r) => r.isSelected) ?? null,
+                    savingsPerUnit: winner
+                      ? Math.round(
+                          (currentCost - winner.effectiveCostPerUnit) * 100,
+                        ) / 100
+                      : 0,
+                  }
+                }),
+              )
+              return (
+                <div className="data-scores" style={{ marginTop: '0.75rem' }}>
+                  <ScoreCard
+                    label="Lanes"
+                    value={String(rollup.laneCount)}
+                    sub={`${rollup.bidCount} bids`}
+                  />
+                  <ScoreCard
+                    label="Avg current"
+                    value={`$${rollup.avgCurrentCost.toFixed(2)}`}
+                    sub="$/unit"
+                  />
+                  <ScoreCard
+                    label="Avg winner"
+                    value={`$${rollup.avgWinnerCost.toFixed(2)}`}
+                    sub={strategyLabel(laneRates.compareStrategy)}
+                    tone="good"
+                  />
+                  <ScoreCard
+                    label="Savings Σ"
+                    value={`${rollup.totalSavingsPerUnit >= 0 ? '' : '−'}$${Math.abs(rollup.totalSavingsPerUnit).toFixed(2)}`}
+                    sub={`${rollup.lanesWithSavings} lanes cheaper`}
+                    tone={rollup.totalSavingsPerUnit > 0 ? 'good' : 'warn'}
+                  />
+                </div>
+              )
+            })()}
+
+            <h3 className="data-subhead">Bids by corridor</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Corridor</th>
+                    <th>Carrier</th>
+                    <th>Mode</th>
+                    <th>Rate</th>
+                    <th>Unit</th>
+                    <th>$/unit</th>
+                    <th>Transit</th>
+                    <th>Capacity</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {laneRates.tables.flatMap((t) => {
+                    const lane = network.lanes.find((l) => l.id === t.laneId)
+                    const miles = lane ? laneMiles(lane, network.nodes) : 0
+                    const ranked = rankBids(
+                      t.bids,
+                      miles,
+                      laneRates.compareStrategy,
+                      t.selectedBidId,
+                    )
+                    return ranked.map((row) => (
+                      <tr
+                        key={row.bid.id}
+                        className={
+                          row.isWinner
+                            ? 'rate-row winner'
+                            : row.isSelected
+                              ? 'rate-row selected'
+                              : undefined
+                        }
+                      >
+                        <td className="tiny">
+                          {t.corridorLabel}
+                          {row.isWinner ? ' ★' : ''}
+                          {row.isSelected ? ' ✓' : ''}
+                        </td>
+                        <td>
+                          <input
+                            className="factor-input"
+                            value={row.bid.carrier}
+                            onChange={(e) =>
+                              updateRateBid(t.laneId, row.bid.id, {
+                                carrier: e.target.value,
+                              })
+                            }
+                            aria-label="Carrier"
+                          />
+                        </td>
+                        <td>
+                          <select
+                            value={row.bid.mode}
+                            onChange={(e) =>
+                              updateRateBid(t.laneId, row.bid.id, {
+                                mode: e.target.value,
+                              })
+                            }
+                            aria-label="Mode"
+                          >
+                            <option value="Road">Road</option>
+                            <option value="Rail">Rail</option>
+                            <option value="Air">Air</option>
+                            <option value="Ocean">Ocean</option>
+                            <option value="Intermodal">Intermodal</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            className="factor-input mono"
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={row.bid.rate}
+                            onChange={(e) =>
+                              updateRateBid(t.laneId, row.bid.id, {
+                                rate: Number(e.target.value),
+                              })
+                            }
+                            aria-label="Rate"
+                          />
+                        </td>
+                        <td>
+                          <select
+                            value={row.bid.rateUnit}
+                            onChange={(e) =>
+                              updateRateBid(t.laneId, row.bid.id, {
+                                rateUnit: e.target.value as RateUnit,
+                              })
+                            }
+                            aria-label="Rate unit"
+                          >
+                            <option value="per_unit">$/unit</option>
+                            <option value="per_mile">$/mile</option>
+                          </select>
+                        </td>
+                        <td className="mono">
+                          ${effectiveCostPerUnit(row.bid, miles).toFixed(2)}
+                        </td>
+                        <td>
+                          <input
+                            className="factor-input mono"
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={row.bid.transitDays}
+                            onChange={(e) =>
+                              updateRateBid(t.laneId, row.bid.id, {
+                                transitDays: Number(e.target.value),
+                              })
+                            }
+                            aria-label="Transit days"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="factor-input mono"
+                            type="number"
+                            min={0}
+                            step={100}
+                            value={row.bid.capacityUnits}
+                            onChange={(e) =>
+                              updateRateBid(t.laneId, row.bid.id, {
+                                capacityUnits: Number(e.target.value),
+                              })
+                            }
+                            aria-label="Capacity"
+                          />
+                        </td>
+                        <td className="bid-cell-actions">
+                          <button
+                            type="button"
+                            className="btn primary btn-tiny"
+                            onClick={() => {
+                              applyRateBid(t.laneId, row.bid.id)
+                              setStatus(
+                                `Applied ${row.bid.carrier} to ${t.corridorLabel}.`,
+                              )
+                            }}
+                          >
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            className="btn ghost btn-tiny"
+                            onClick={() =>
+                              removeRateBid(t.laneId, row.bid.id)
+                            }
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="hint">
+              Add a bid on a corridor from Network Inspector, or reset sample
+              rates above. ★ = strategy winner · ✓ = applied to lane.
             </p>
           </section>
 

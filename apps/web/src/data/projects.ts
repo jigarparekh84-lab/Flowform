@@ -7,6 +7,7 @@ import type { ScenarioComment } from './collaboration'
 import type { UploadedNetwork } from './csvParsers'
 import type { EmissionFactor } from './emissions'
 import type { InventoryPolicyState } from './inventoryPolicy'
+import type { LaneRatesState } from './laneRates'
 import type { ProductMixState } from './productGroups'
 import type {
   BriefState,
@@ -51,6 +52,8 @@ export type ProjectSnapshot = {
   comments?: ScenarioComment[]
   /** Multi-commodity / product groups on the network. */
   productMix?: ProductMixState
+  /** Lane rate tables + carrier bids. */
+  laneRates?: LaneRatesState
 }
 
 export type ProjectExportFile = {
