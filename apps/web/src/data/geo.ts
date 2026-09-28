@@ -68,20 +68,16 @@ export type RasterStyleSpec = {
   }[]
 }
 
-/** Free raster basemap styles (CartoCDN) — no API key. */
+/** CartoCDN raster basemap; uses VITE_CARTO_API_KEY when set (.env.local). */
 export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
-  const tiles =
-    theme === 'dark'
-      ? [
-          'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-          'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-          'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-        ]
-      : [
-          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-        ]
+  const key =
+    (import.meta as ImportMeta & { env?: { VITE_CARTO_API_KEY?: string } }).env
+      ?.VITE_CARTO_API_KEY?.trim() || ''
+  const q = key ? `?api_key=${encodeURIComponent(key)}` : ''
+  const path = theme === 'dark' ? 'dark_all' : 'light_all'
+  const tiles = ['a', 'b', 'c'].map(
+    (h) => `https://${h}.basemaps.cartocdn.com/${path}/{z}/{x}/{y}.png${q}`,
+  )
   return {
     version: 8,
     name: theme === 'dark' ? 'Flowform Dark (Carto)' : 'Flowform Light (Carto)',
