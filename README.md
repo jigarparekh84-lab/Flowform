@@ -19,11 +19,12 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Resilience** — SPOF scoring: nodes whose removal drops service below threshold.
 - **Handoff-ready** — enriched S&OP package (sites, lanes, preferred territory, CapEx years, product mix, BOM implied RM, inventory targets, scenarios) with schema README; JSON + Markdown ops brief toward Ritara.
 - **Multi-SKU MIP** — enterprise demand-by-SKU/group commodities, facility capability, hard service constraints + infeasibility diagnostics; soft uncovered penalty optional
+- **Multi-period CapEx NPV** — roadmap events linked to capacity-by-year; choose timing or force timeline; minimize discounted CapEx+OpEx+transport
 - **Multi-commodity** — product groups (Ambient/Chilled/Hazmat or Finished/WIP/RM) tag demand, lanes, and facility capacity; filter Network / Compare KPIs by group.
 - **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 - **Bill-of-materials** — FG ← components/RM with qty per unit; implied RM demand + Plant←Supplier / FG←RM echelon flows; optional inbound-lane scenario.
 - **Service territory** — assign demand to DCs/plants by distance, capacity, or current lanes; coverage % within miles/lead-time; gaps/overlaps; apply preferred lanes + scenario.
-- **CapEx roadmap** — multi-year (Y0–Y5) open/close/expand phasing with CapEx $ + capacity delta; Gantt-lite + cumulative KPIs; apply year slice as scenario or export into Brief.
+- **CapEx roadmap** — multi-year (Y0–Y5) open/close/expand phasing with CapEx $ + capacity delta; Gantt-lite + cumulative KPIs; **Optimize timing** (`POST /optimize/multi-period`) minimizes NPV of CapEx+OpEx+transport (choose timing or force timeline); apply year slice as scenario or export NPV into Brief.
 
 ---
 
@@ -36,7 +37,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
 | **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
 | **Territory** | Service territory / coverage — assign demand to servers, gaps/overlaps, preferred lanes + scenario |
-| **Roadmap** | CapEx phasing — multi-year open/close/expand events, Gantt-lite, cumulative CapEx/capacity, year-slice scenarios |
+| **Roadmap** | CapEx phasing — multi-year open/close/expand events, Gantt-lite, **Optimize timing** (NPV), cumulative CapEx/capacity, year-slice scenarios |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
 | **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** (tornado + MC) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** + **decision log** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export, **decision log** |
@@ -74,7 +75,7 @@ Flowform/
 | Piece | Stack | Port | Role |
 |-------|-------|------|------|
 | **web** | Vite, React 19, TypeScript, MapLibre GL | **5180** | Studio UI; Projects persist in localStorage; Run prefers API then heuristic |
-| **api** | FastAPI, PuLP, HiGHS (highspy) / CBC | **5182** | `POST /optimize` MIP facility open/close + assignment |
+| **api** | FastAPI, PuLP, HiGHS (highspy) / CBC | **5182** | `POST /optimize` MIP; `POST /optimize/multi-period` CapEx NPV timing |
 
 > Ports are **5180 / 5182**, not 5173 (Ritara). Preview build uses 5181 locally.
 

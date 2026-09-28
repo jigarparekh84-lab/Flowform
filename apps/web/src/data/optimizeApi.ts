@@ -228,3 +228,156 @@ export async function postOptimize(args: {
   }
   return (await res.json()) as ApiOptimizeResponse
 }
+
+export type MultiPeriodMode = 'choose_timing' | 'force_timeline'
+
+export type ApiMultiPeriodEventTiming = {
+  eventId: string
+  name: string
+  kind: string
+  nodeId: string
+  nodeName?: string
+  year: number
+  preferredYear?: number
+  capexM: number
+  capacityDelta?: number
+  locked?: boolean
+}
+
+export type ApiMultiPeriodYearRow = {
+  year: number
+  label: string
+  yearLabel?: string
+  openIds: string[]
+  openCount?: number
+  capexM: number
+  opexM: number
+  transportM: number
+  uncoveredPenaltyM?: number
+  uncoveredDemand?: number
+  totalCostM: number
+  discountFactor: number
+  npvContributionM: number
+  servicePct: number
+  demandScale?: number
+  capacityByFacility?: Record<string, number>
+  flowsSummary?: {
+    arcCount: number
+    totalVolume: number
+    topFlows?: ApiFlow[]
+  }
+  eventsThisYear?: {
+    eventId: string
+    name: string
+    kind: string
+    capexM: number
+  }[]
+}
+
+export type ApiMultiPeriodResponse = {
+  ok: boolean
+  solver: string
+  status: string
+  model?: string
+  mode: MultiPeriodMode | string
+  discountRate: number
+  yearCount: number
+  baseYearLabel?: string
+  solveSeconds?: number
+  npv: {
+    totalM: number
+    capexNpvM: number
+    opexNpvM: number
+    transportNpvM: number
+    uncoveredPenaltyNpvM?: number
+    currency?: string
+  }
+  eventTiming: ApiMultiPeriodEventTiming[]
+  years: ApiMultiPeriodYearRow[]
+  kpis?: {
+    npvTotalM?: number
+    capexNpvM?: number
+    opexNpvM?: number
+    transportNpvM?: number
+    servicePctEnd?: number
+    eventsScheduled?: number
+    yearCount?: number
+    discountRate?: number
+  }
+  log: string[]
+  infeasibilityReport?: ApiInfeasibilityReport
+}
+
+export type MultiPeriodRoadmapPayload = {
+  baseYearLabel?: string
+  yearCount: number
+  discountRate: number
+  mode: MultiPeriodMode
+  events: {
+    id: string
+    name: string
+    kind: string
+    year: number
+    nodeId: string
+    nodeName?: string
+    capexM: number
+    capacityDelta: number
+    facilityKind?: string
+    earliestYear?: number
+    latestYear?: number
+    locked?: boolean
+    region?: string
+    notes?: string
+  }[]
+  demandScaleByYear?: number[]
+  demandGrowthPct?: number
+  hardServiceConstraints?: boolean
+  capexBudgetTotalM?: number
+  enforceCapexBudget?: boolean
+}
+
+export async function postMultiPeriodOptimize(args: {
+  network: UploadedNetwork | {
+    nodes: UploadedNetwork['nodes']
+    lanes: UploadedNetwork['lanes']
+    demandVolume: Record<string, number>
+  }
+  constraints: NetworkConstraints
+  roadmap: MultiPeriodRoadmapPayload
+  reference?: Scenario
+  baseUrl?: string
+}): Promise<ApiMultiPeriodResponse> {
+  const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
+  const net = args.network
+  const res = await fetch(`${base}/optimize/multi-period`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      network: {
+        nodes: net.nodes,
+        lanes: net.lanes,
+        demandVolume: net.demandVolume,
+      },
+      constraints: args.constraints,
+      roadmap: args.roadmap,
+      reference: args.reference
+        ? {
+            id: args.reference.id,
+            name: args.reference.name,
+            kpis: args.reference.kpis,
+          }
+        : undefined,
+    }),
+  })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const err = (await res.json()) as { detail?: string }
+      if (err.detail) detail = err.detail
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`API multi-period optimize ${res.status}: ${detail}`)
+  }
+  return (await res.json()) as ApiMultiPeriodResponse
+}

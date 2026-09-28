@@ -10,7 +10,7 @@ Fixed-charge **multi-echelon MIP** (PuLP + HiGHS preferred, CBC fallback):
 
 - Default port: **5182**
 - CORS: `http://localhost:5180` (Flowform web)
-- Endpoint: `POST /optimize`
+- Endpoints: `POST /optimize`, `POST /optimize/multi-period`
 
 ## Setup
 
@@ -122,3 +122,43 @@ Response includes `solveSeconds`, `objectiveBreakdown`, `openIds`, and multi-ech
 - **Hard service** — `constraints.hardServiceConstraints=true` forbids uncovered demand; optional `maxLeadTimeDays`. Soft mode keeps uncovered penalty.
 - **Infeasibility diagnostics** — on `status: Infeasible`, `infeasibilityReport` with best-effort hints (`UNREACHABLE_DEMAND`, `SERVICE_RADIUS_TOO_TIGHT`, `CAPACITY_SHORTFALL`, …) without full IIS.
 
+## Depth slice 5 — Multi-period CapEx NPV
+
+`POST /optimize/multi-period` accepts the same network/constraints as `/optimize` plus a `roadmap`:
+
+```json
+{
+  "roadmap": {
+    "baseYearLabel": "FY26",
+    "yearCount": 3,
+    "discountRate": 0.10,
+    "mode": "choose_timing",
+    "demandScaleByYear": [1.0, 1.1, 1.2],
+    "events": [
+      {
+        "id": "ev-open-east",
+        "kind": "open",
+        "year": 1,
+        "nodeId": "dc_e",
+        "capexM": 8,
+        "capacityDelta": 10000,
+        "earliestYear": 0,
+        "latestYear": 2
+      }
+    ]
+  }
+}
+```
+
+| Mode | Behavior |
+|------|----------|
+| `choose_timing` | Choose year for each event in `[earliestYear, latestYear]` to minimize NPV |
+| `force_timeline` | Apply each event in its stated `year` |
+
+Capacity in year **t** = cumulative opens/expands − closes through t. Objective: **NPV** of CapEx + OpEx + transport (optional uncovered penalty) with discount rate `r`.
+
+Response: `npv`, `eventTiming`, `years[]` (open set, CapEx, flows summary, NPV contribution).
+
+```bash
+pytest -q tests/test_multi_period.py
+```

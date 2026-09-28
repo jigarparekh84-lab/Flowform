@@ -2,11 +2,13 @@ import { useMemo, useState, type FormEvent } from 'react'
 import {
   addCapexEvent,
   eventKindLabel,
+  formatMultiPeriodBriefSection,
   formatRoadmapBriefSection,
   roadmapYearSummaries,
   type CapexEventKind,
   yearLabelFor,
 } from '../data/capexRoadmap'
+import type { MultiPeriodMode } from '../data/optimizeApi'
 import { useFlowform } from '../state/FlowformContext'
 import { EmptyState } from './ui/EmptyState'
 import { RoomHeader } from './ui/RoomHeader'
@@ -25,6 +27,11 @@ export function RoadmapStudio() {
     resetCapexRoadmap,
     applyRoadmapYearSlice,
     exportRoadmapToBrief,
+    multiPeriodResult,
+    multiPeriodStatus,
+    runMultiPeriodOptimize,
+    exportMultiPeriodToBrief,
+    clearMultiPeriodResult,
   } = useFlowform()
 
   const summaries = useMemo(
@@ -53,6 +60,9 @@ export function RoadmapStudio() {
   const [draftNodeId, setDraftNodeId] = useState('')
   const [draftCapex, setDraftCapex] = useState(5)
   const [draftCapDelta, setDraftCapDelta] = useState(4)
+  const [optMode, setOptMode] = useState<MultiPeriodMode>('choose_timing')
+  const [discountRatePct, setDiscountRatePct] = useState(10)
+  const [optBusy, setOptBusy] = useState(false)
 
   const facilities = useMemo(
     () =>
@@ -123,12 +133,49 @@ export function RoadmapStudio() {
     )
   }
 
+  async function handleOptimizeTiming() {
+    setOptBusy(true)
+    setStatus('Running multi-period CapEx NPV optimize…')
+    try {
+      const result = await runMultiPeriodOptimize({
+        mode: optMode,
+        discountRate: discountRatePct / 100,
+        applyTimingToRoadmap: true,
+      })
+      if (!result) {
+        setStatus(
+          multiPeriodStatus.message ||
+            'Multi-period optimize failed (is the API on :5182?).',
+        )
+        return
+      }
+      if (!result.ok) {
+        setStatus(`Infeasible / ${result.status}. See results panel.`)
+        return
+      }
+      setStatus(
+        `NPV $${result.npv.totalM.toFixed(2)}M · mode ${result.mode} · r=${discountRatePct}% · timing applied to roadmap events.`,
+      )
+    } finally {
+      setOptBusy(false)
+    }
+  }
+
+  function handleExportNpvBrief() {
+    const ok = exportMultiPeriodToBrief()
+    setStatus(
+      ok
+        ? 'NPV plan + roadmap appended to Decision Brief notes.'
+        : 'Run Optimize timing first, then export.',
+    )
+  }
+
   return (
     <div className="studio-room roadmap-studio">
       <RoomHeader
         kicker="CapEx"
         title="Multi-year roadmap"
-        tip={`Phase open / close / expand across Y0–${capexRoadmap.yearCount - 1}, then apply a year slice as a scenario or export to Brief.`}
+        tip={`Phase open / close / expand across Y0–${capexRoadmap.yearCount - 1}. Optimize timing minimizes CapEx+OpEx+transport NPV, or apply a year slice / export to Brief.`}
         actions={
           <>
             <button
@@ -136,6 +183,7 @@ export function RoadmapStudio() {
               className="btn ghost"
               onClick={() => {
                 resetCapexRoadmap()
+                clearMultiPeriodResult()
                 setStatus('Reset to sample CapEx roadmap.')
               }}
             >
@@ -143,6 +191,14 @@ export function RoadmapStudio() {
             </button>
             <button type="button" className="btn ghost" onClick={handleExportBrief}>
               Export to Brief
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={handleExportNpvBrief}
+              disabled={!multiPeriodResult?.ok}
+            >
+              Export NPV to Brief
             </button>
           </>
         }
@@ -289,6 +345,51 @@ export function RoadmapStudio() {
                 Add event
               </button>
             </form>
+          </div>
+
+          <div className="promote-block">
+            <h3>Optimize timing</h3>
+            <p className="hint">
+              Call API <code>/optimize/multi-period</code> to minimize NPV of
+              CapEx + OpEx + transport. Choose timing shifts event years within
+              Y0–Y{capexRoadmap.yearCount - 1}; force timeline keeps stated years.
+            </p>
+            <label className="field">
+              <span>Mode</span>
+              <select
+                value={optMode}
+                onChange={(e) =>
+                  setOptMode(e.target.value as MultiPeriodMode)
+                }
+              >
+                <option value="choose_timing">Choose timing (NPV)</option>
+                <option value="force_timeline">Force timeline</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Discount rate %</span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                step={0.5}
+                value={discountRatePct}
+                onChange={(e) =>
+                  setDiscountRatePct(Number(e.target.value) || 0)
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={optBusy || multiPeriodStatus.phase === 'running'}
+              onClick={() => void handleOptimizeTiming()}
+            >
+              {optBusy ? 'Optimizing…' : 'Optimize timing'}
+            </button>
+            {multiPeriodStatus.phase !== 'idle' && multiPeriodStatus.message && (
+              <p className="muted tiny">{multiPeriodStatus.message}</p>
+            )}
           </div>
 
           <div className="promote-block">
@@ -488,6 +589,97 @@ export function RoadmapStudio() {
             </div>
           </section>
 
+          {multiPeriodResult && (
+            <section className="library-card" aria-label="Multi-period NPV results">
+              <div className="library-card-head">
+                <h2>Multi-period NPV results</h2>
+                <span className="muted tiny">
+                  {multiPeriodResult.mode} · r=
+                  {(multiPeriodResult.discountRate * 100).toFixed(1)}%
+                  {multiPeriodResult.solveSeconds != null
+                    ? ` · ${multiPeriodResult.solveSeconds}s`
+                    : ''}
+                </span>
+              </div>
+              <div className="roadmap-kpi-strip npv-strip">
+                <div className="library-card roadmap-kpi">
+                  <span className="muted tiny">NPV total</span>
+                  <strong>${multiPeriodResult.npv.totalM.toFixed(2)}M</strong>
+                </div>
+                <div className="library-card roadmap-kpi">
+                  <span className="muted tiny">CapEx NPV</span>
+                  <strong>${multiPeriodResult.npv.capexNpvM.toFixed(2)}M</strong>
+                </div>
+                <div className="library-card roadmap-kpi">
+                  <span className="muted tiny">OpEx NPV</span>
+                  <strong>${multiPeriodResult.npv.opexNpvM.toFixed(2)}M</strong>
+                </div>
+                <div className="library-card roadmap-kpi">
+                  <span className="muted tiny">Transport NPV</span>
+                  <strong>
+                    ${multiPeriodResult.npv.transportNpvM.toFixed(2)}M
+                  </strong>
+                </div>
+              </div>
+              <div className="table-scroll">
+                <table className="data-table roadmap-table">
+                  <thead>
+                    <tr>
+                      <th>Year</th>
+                      <th>Open</th>
+                      <th>CapEx</th>
+                      <th>OpEx</th>
+                      <th>Transport</th>
+                      <th>NPV contrib</th>
+                      <th>Service</th>
+                      <th>Flows</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {multiPeriodResult.years.map((y) => (
+                      <tr key={y.year}>
+                        <td>{y.label}</td>
+                        <td title={y.openIds.join(', ')}>{y.openIds.length}</td>
+                        <td>${y.capexM.toFixed(2)}M</td>
+                        <td>${y.opexM.toFixed(2)}M</td>
+                        <td>${y.transportM.toFixed(2)}M</td>
+                        <td>${y.npvContributionM.toFixed(2)}M</td>
+                        <td>{y.servicePct.toFixed(1)}%</td>
+                        <td>
+                          {y.flowsSummary
+                            ? `${y.flowsSummary.arcCount} arcs / ${Math.round(y.flowsSummary.totalVolume)} u`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {multiPeriodResult.eventTiming.length > 0 && (
+                <ul className="roadmap-event-list npv-timing">
+                  {multiPeriodResult.eventTiming.map((e) => (
+                    <li key={e.eventId}>
+                      <div className="roadmap-event-main">
+                        <strong>{e.name}</strong>
+                        <span className={`chip-tag kind-${e.kind}`}>
+                          {eventKindLabel(e.kind as CapexEventKind)}
+                        </span>
+                        <span className="muted tiny">
+                          → Y{e.year}
+                          {e.preferredYear != null &&
+                          e.preferredYear !== e.year
+                            ? ` (was Y${e.preferredYear})`
+                            : ''}
+                          · ${e.capexM}M
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
           <section className="library-card" aria-label="Event list">
             <div className="library-card-head">
               <h2>Events</h2>
@@ -580,7 +772,14 @@ export function RoadmapStudio() {
           <details className="library-card roadmap-preview">
             <summary>Brief markdown preview</summary>
             <pre className="roadmap-md">
-              {formatRoadmapBriefSection(capexRoadmap, network)}
+              {[
+                formatRoadmapBriefSection(capexRoadmap, network),
+                multiPeriodResult?.ok
+                  ? formatMultiPeriodBriefSection(multiPeriodResult)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join('\n\n')}
             </pre>
           </details>
         </div>

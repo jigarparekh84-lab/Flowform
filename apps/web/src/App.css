@@ -4071,3 +4071,15 @@ td.empty-cell .empty-state {
 .checkbox-field input[type='checkbox'] {
   width: auto;
 }
+
+
+/* Multi-period CapEx NPV results */
+.npv-strip {
+  margin: 0.75rem 0 1rem;
+}
+.npv-timing {
+  margin-top: 0.75rem;
+}
+.roadmap-studio code {
+  font-size: 0.85em;
+}

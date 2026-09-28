@@ -623,3 +623,103 @@ export function eventKindLabel(kind: CapexEventKind): string {
       return 'Expand'
   }
 }
+
+/** Last multi-period CapEx NPV optimize result (API). */
+export type MultiPeriodOptimizeResult = {
+  ok: boolean
+  status: string
+  mode: string
+  discountRate: number
+  yearCount: number
+  baseYearLabel?: string
+  solveSeconds?: number
+  npv: {
+    totalM: number
+    capexNpvM: number
+    opexNpvM: number
+    transportNpvM: number
+    uncoveredPenaltyNpvM?: number
+  }
+  eventTiming: {
+    eventId: string
+    name: string
+    kind: string
+    nodeId: string
+    year: number
+    preferredYear?: number
+    capexM: number
+  }[]
+  years: {
+    year: number
+    label: string
+    yearLabel?: string
+    openIds: string[]
+    capexM: number
+    opexM: number
+    transportM: number
+    totalCostM: number
+    npvContributionM: number
+    servicePct: number
+    flowsSummary?: { arcCount: number; totalVolume: number }
+  }[]
+  log?: string[]
+  ranAt?: string
+}
+
+/** Markdown for Decision Brief after multi-period CapEx NPV optimize. */
+export function formatMultiPeriodBriefSection(
+  result: MultiPeriodOptimizeResult,
+): string {
+  const lines: string[] = [
+    '## CapEx multi-period optimize (NPV)',
+    '',
+    `Mode: **${result.mode}** · Discount: **${(result.discountRate * 100).toFixed(1)}%** · Horizon: Y0–Y${result.yearCount - 1} · Status: ${result.status}`,
+    '',
+    `| NPV total | CapEx NPV | OpEx NPV | Transport NPV |`,
+    `|-----------|-----------|----------|---------------|`,
+    `| **$${result.npv.totalM.toFixed(2)}M** | $${result.npv.capexNpvM.toFixed(2)}M | $${result.npv.opexNpvM.toFixed(2)}M | $${result.npv.transportNpvM.toFixed(2)}M |`,
+    '',
+    '### Per-year plan',
+    '',
+    '| Year | Open sites | CapEx $M | OpEx $M | Transport $M | NPV contrib | Service |',
+    '|------|------------|----------|---------|--------------|-------------|---------|',
+  ]
+  for (const y of result.years) {
+    lines.push(
+      `| ${y.label} | ${y.openIds.length} (${y.openIds.slice(0, 4).join(', ')}${y.openIds.length > 4 ? '…' : ''}) | ${y.capexM.toFixed(2)} | ${y.opexM.toFixed(2)} | ${y.transportM.toFixed(2)} | ${y.npvContributionM.toFixed(2)} | ${y.servicePct.toFixed(1)}% |`,
+    )
+  }
+  lines.push('', '### Event timing', '')
+  for (const e of result.eventTiming) {
+    const shift =
+      e.preferredYear != null && e.preferredYear !== e.year
+        ? ` (was Y${e.preferredYear})`
+        : ''
+    lines.push(
+      `- **Y${e.year}${shift} · ${e.kind}** — ${e.name}: $${e.capexM}M`,
+    )
+  }
+  if (result.ranAt) {
+    lines.push('', `_Ran ${result.ranAt}_`, '')
+  }
+  return lines.join('\n')
+}
+
+/** Apply chosen event years from multi-period result onto roadmap state. */
+export function applyEventTimingToRoadmap(
+  state: CapexRoadmapState,
+  timing: { eventId: string; year: number }[],
+): CapexRoadmapState {
+  const map = new Map(timing.map((t) => [t.eventId, t.year]))
+  return {
+    ...state,
+    events: state.events.map((e) => {
+      const y = map.get(e.id)
+      if (y == null) return e
+      return {
+        ...e,
+        year: Math.max(0, Math.min(state.yearCount - 1, y)),
+      }
+    }),
+  }
+}

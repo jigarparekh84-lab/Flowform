@@ -6,7 +6,10 @@ import {
   buildBriefMarkdown,
   downloadTextFile,
 } from '../data/briefExport'
-import { formatRoadmapBriefSection } from '../data/capexRoadmap'
+import {
+  formatMultiPeriodBriefSection,
+  formatRoadmapBriefSection,
+} from '../data/capexRoadmap'
 import {
   parseMoneyM,
   parsePercent,
@@ -30,6 +33,7 @@ export function DecisionBrief({ onHandoff }: Props) {
     projectName,
     capexRoadmap,
     network,
+    multiPeriodResult,
   } = useFlowform()
 
   const reference =
@@ -78,13 +82,21 @@ export function DecisionBrief({ onHandoff }: Props) {
     onHandoff?.()
   }
 
+  function roadmapExportSection(): string {
+    const parts = [formatRoadmapBriefSection(capexRoadmap, network)]
+    if (multiPeriodResult?.ok) {
+      parts.push(formatMultiPeriodBriefSection(multiPeriodResult))
+    }
+    return parts.join('\n\n')
+  }
+
   function exportMarkdown() {
     const body = buildBriefMarkdown({
       brief,
       scenarios,
       projectName,
       horizon,
-      roadmapSection: formatRoadmapBriefSection(capexRoadmap, network),
+      roadmapSection: roadmapExportSection(),
     })
     downloadTextFile(
       `flowform-brief-${horizon}.md`,
@@ -99,7 +111,7 @@ export function DecisionBrief({ onHandoff }: Props) {
       scenarios,
       projectName,
       horizon,
-      roadmapSection: formatRoadmapBriefSection(capexRoadmap, network),
+      roadmapSection: roadmapExportSection(),
     })
     downloadTextFile(
       `flowform-brief-${horizon}.html`,

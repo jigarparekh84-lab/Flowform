@@ -27,7 +27,9 @@ import {
 import {
   checkApiHealth,
   postOptimize,
+  postMultiPeriodOptimize,
   type ApiOptimizeResponse,
+  type MultiPeriodMode,
 } from '../data/optimizeApi'
 import {
   buildEnterprisePack,
@@ -159,8 +161,10 @@ import {
 } from '../data/bom'
 import {
   addCapexEvent,
+  applyEventTimingToRoadmap,
   applyYearSlice,
   defaultCapexRoadmap,
+  formatMultiPeriodBriefSection,
   formatRoadmapBriefSection,
   mergeCapexRoadmap,
   removeCapexEvent,
@@ -168,6 +172,7 @@ import {
   type CapexEvent,
   type CapexRoadmapState,
   type ApplyYearSliceResult,
+  type MultiPeriodOptimizeResult,
 } from '../data/capexRoadmap'
 import { readStoredTheme, type ThemeMode } from './theme'
 
@@ -485,6 +490,16 @@ type FlowformContextValue = {
   ) => ApplyYearSliceResult | null
   /** Append roadmap markdown into Brief notes; uncheck overnight CapEx assumption. */
   exportRoadmapToBrief: () => boolean
+  /** Multi-period CapEx NPV optimize (API). */
+  multiPeriodResult: MultiPeriodOptimizeResult | null
+  multiPeriodStatus: { phase: 'idle' | 'running' | 'done' | 'error'; message?: string }
+  runMultiPeriodOptimize: (opts?: {
+    mode?: MultiPeriodMode
+    discountRate?: number
+    applyTimingToRoadmap?: boolean
+  }) => Promise<MultiPeriodOptimizeResult | null>
+  exportMultiPeriodToBrief: () => boolean
+  clearMultiPeriodResult: () => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -559,6 +574,12 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [capexRoadmap, setCapexRoadmap] = useState<CapexRoadmapState>(() =>
     mergeCapexRoadmap(boot.snap.capexRoadmap, boot.snap.network),
   )
+  const [multiPeriodResult, setMultiPeriodResult] =
+    useState<MultiPeriodOptimizeResult | null>(null)
+  const [multiPeriodStatus, setMultiPeriodStatus] = useState<{
+    phase: 'idle' | 'running' | 'done' | 'error'
+    message?: string
+  }>({ phase: 'idle' })
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -2093,6 +2114,168 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     return true
   }, [capexRoadmap, network])
 
+
+  const runMultiPeriodOptimize = useCallback(
+    async (opts?: {
+      mode?: MultiPeriodMode
+      discountRate?: number
+      applyTimingToRoadmap?: boolean
+    }): Promise<MultiPeriodOptimizeResult | null> => {
+      const mode = opts?.mode ?? 'choose_timing'
+      const discountRate = opts?.discountRate ?? 0.1
+      const applyTiming = opts?.applyTimingToRoadmap !== false
+      setMultiPeriodStatus({ phase: 'running', message: 'Solving multi-period CapEx NPV…' })
+      try {
+        const apiUp = await checkApiHealth()
+        if (!apiUp) {
+          setMultiPeriodStatus({
+            phase: 'error',
+            message: 'Optimize API unreachable — start apps/api on :5182.',
+          })
+          return null
+        }
+        const api = await postMultiPeriodOptimize({
+          network,
+          constraints,
+          reference: activeScenario,
+          roadmap: {
+            baseYearLabel: capexRoadmap.baseYearLabel,
+            yearCount: capexRoadmap.yearCount,
+            discountRate,
+            mode,
+            enforceCapexBudget: false,
+            events: capexRoadmap.events.map((e) => ({
+              id: e.id,
+              name: e.name,
+              kind: e.kind,
+              year: e.year,
+              nodeId: e.nodeId,
+              nodeName: e.nodeName,
+              capexM: e.capexM,
+              capacityDelta: e.capacityDelta,
+              facilityKind: e.facilityKind,
+              region: e.region,
+              notes: e.notes,
+              earliestYear: mode === 'force_timeline' ? e.year : 0,
+              latestYear:
+                mode === 'force_timeline' ? e.year : capexRoadmap.yearCount - 1,
+              locked: mode === 'force_timeline',
+            })),
+          },
+        })
+        const result: MultiPeriodOptimizeResult = {
+          ok: api.ok,
+          status: api.status,
+          mode: String(api.mode),
+          discountRate: api.discountRate,
+          yearCount: api.yearCount,
+          baseYearLabel: api.baseYearLabel,
+          solveSeconds: api.solveSeconds,
+          npv: api.npv,
+          eventTiming: api.eventTiming,
+          years: api.years.map((y) => ({
+            year: y.year,
+            label: y.label,
+            yearLabel: y.yearLabel,
+            openIds: y.openIds,
+            capexM: y.capexM,
+            opexM: y.opexM,
+            transportM: y.transportM,
+            totalCostM: y.totalCostM,
+            npvContributionM: y.npvContributionM,
+            servicePct: y.servicePct,
+            flowsSummary: y.flowsSummary
+              ? {
+                  arcCount: y.flowsSummary.arcCount,
+                  totalVolume: y.flowsSummary.totalVolume,
+                }
+              : undefined,
+          })),
+          log: api.log,
+          ranAt: new Date().toLocaleString(),
+        }
+        setMultiPeriodResult(result)
+        if (api.ok && applyTiming && api.eventTiming?.length) {
+          setCapexRoadmap((prev) =>
+            applyEventTimingToRoadmap(
+              prev,
+              api.eventTiming.map((t) => ({
+                eventId: t.eventId,
+                year: t.year,
+              })),
+            ),
+          )
+        }
+        setDecisionLog((prev) =>
+          appendDecisionEntry(prev, {
+            action: 'optimize_timing',
+            summary: api.ok
+              ? `Multi-period CapEx NPV $${api.npv.totalM.toFixed(2)}M (${mode}, r=${(discountRate * 100).toFixed(0)}%)`
+              : `Multi-period CapEx optimize ${api.status}`,
+            scenarioId: activeScenario.id,
+          }),
+        )
+        setMultiPeriodStatus({
+          phase: api.ok ? 'done' : 'error',
+          message: api.ok
+            ? `NPV $${api.npv.totalM.toFixed(2)}M · ${api.eventTiming.length} events · ${api.solveSeconds ?? '?'}s`
+            : api.infeasibilityReport?.summary || api.status,
+        })
+        return result
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setMultiPeriodStatus({ phase: 'error', message: msg })
+        return null
+      }
+    },
+    [network, constraints, capexRoadmap, activeScenario],
+  )
+
+  const exportMultiPeriodToBrief = useCallback(() => {
+    if (!multiPeriodResult) return false
+    const section = formatMultiPeriodBriefSection(multiPeriodResult)
+    const roadmapSection = formatRoadmapBriefSection(capexRoadmap, network)
+    setBrief((prev) => {
+      let notes = prev.notes.trim()
+      if (notes.includes('## CapEx multi-period optimize')) {
+        notes = notes.replace(
+          /## CapEx multi-period optimize[\s\S]*?(?=\n## |$)/,
+          section.trim() + '\n\n',
+        )
+      } else {
+        notes = (notes ? notes + '\n\n' : '') + section
+      }
+      if (notes.includes('## CapEx roadmap')) {
+        notes = notes.replace(
+          /## CapEx roadmap[\s\S]*?(?=\n## |$)/,
+          roadmapSection.trim() + '\n\n',
+        )
+      } else {
+        notes = notes.trim() + '\n\n' + roadmapSection
+      }
+      return {
+        ...prev,
+        notes: notes.trim() + '\n',
+        assumptions: prev.assumptions.map((a) =>
+          a.id === 'a3'
+            ? {
+                ...a,
+                checked: false,
+                label:
+                  'CapEx is overnight build — no phased construction (roadmap NPV in notes)',
+              }
+            : a,
+        ),
+      }
+    })
+    return true
+  }, [multiPeriodResult, capexRoadmap, network])
+
+  const clearMultiPeriodResult = useCallback(() => {
+    setMultiPeriodResult(null)
+    setMultiPeriodStatus({ phase: 'idle' })
+  }, [])
+
   const value = useMemo<FlowformContextValue>(
     () => ({
       horizon,
@@ -2196,6 +2379,11 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       resetCapexRoadmap,
       applyRoadmapYearSlice,
       exportRoadmapToBrief,
+      multiPeriodResult,
+      multiPeriodStatus,
+      runMultiPeriodOptimize,
+      exportMultiPeriodToBrief,
+      clearMultiPeriodResult,
     }),
     [
       horizon,
@@ -2291,6 +2479,11 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       resetCapexRoadmap,
       applyRoadmapYearSlice,
       exportRoadmapToBrief,
+      multiPeriodResult,
+      multiPeriodStatus,
+      runMultiPeriodOptimize,
+      exportMultiPeriodToBrief,
+      clearMultiPeriodResult,
     ],
   )
 

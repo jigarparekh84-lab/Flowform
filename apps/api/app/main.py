@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .multi_period import solve_multi_period
 from .solver import solve_optimize
 
 app = FastAPI(
@@ -15,9 +16,11 @@ app = FastAPI(
     description=(
         "Fixed-charge multi-echelon MIP (PuLP + HiGHS/CBC): "
         "open/close DCs & plants, capacitated flows plant→DC→customer, "
-        "optional supplier→plant BOM, multi-SKU/product-group flows, hard service constraints, infeasibility diagnostics, objective breakdown + capacity duals."
+        "optional supplier→plant BOM, multi-SKU/product-group flows, hard service constraints, "
+        "infeasibility diagnostics, objective breakdown + capacity duals. "
+        "Multi-period CapEx NPV: POST /optimize/multi-period."
     ),
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -70,6 +73,42 @@ class BomDemandIn(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class CapexRoadmapEventIn(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    kind: str = "open"
+    year: int = 0
+    nodeId: str
+    nodeName: str | None = None
+    capexM: float = 0
+    capacityDelta: float = 0
+    facilityKind: str | None = "dc"
+    earliestYear: int | None = None
+    latestYear: int | None = None
+    fixedYear: int | None = None
+    locked: bool | None = None
+    region: str | None = None
+    notes: str | None = None
+
+
+class CapexRoadmapIn(BaseModel):
+    baseYearLabel: str | None = "FY26"
+    yearCount: int = 3
+    discountRate: float = 0.10
+    mode: str = Field(
+        default="choose_timing",
+        description="choose_timing | force_timeline",
+    )
+    events: list[CapexRoadmapEventIn] | list[dict[str, Any]] = Field(
+        default_factory=list
+    )
+    demandScaleByYear: list[float] | None = None
+    demandGrowthPct: float | None = None
+    hardServiceConstraints: bool | None = None
+    capexBudgetTotalM: float | None = None
+    enforceCapexBudget: bool | None = True
+
+
 class OptimizeRequest(BaseModel):
     network: dict[str, Any] = Field(
         ...,
@@ -105,9 +144,23 @@ class OptimizeRequest(BaseModel):
     )
 
 
+class MultiPeriodOptimizeRequest(OptimizeRequest):
+    roadmap: CapexRoadmapIn | dict[str, Any] = Field(
+        ...,
+        description=(
+            "CapEx roadmap: events (open/expand/close), yearCount, discountRate, "
+            "mode choose_timing|force_timeline"
+        ),
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "service": "flowform-api", "model": "fixed-charge-multi-echelon-v1"}
+    return {
+        "status": "ok",
+        "service": "flowform-api",
+        "model": "fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1",
+    }
 
 
 @app.post("/optimize")
@@ -131,3 +184,34 @@ def optimize(body: OptimizeRequest) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Optimize failed: {e}") from e
+
+
+@app.post("/optimize/multi-period")
+def optimize_multi_period(body: MultiPeriodOptimizeRequest) -> dict[str, Any]:
+    try:
+        roadmap = (
+            body.roadmap
+            if isinstance(body.roadmap, dict)
+            else body.roadmap.model_dump()
+        )
+        return solve_multi_period(
+            {
+                "network": body.network,
+                "constraints": body.constraints,
+                "reference": body.reference or {},
+                "bom": body.bom if isinstance(body.bom, dict) else (
+                    body.bom.model_dump() if body.bom else {}
+                ),
+                "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
+                "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
+                "roadmap": roadmap,
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Multi-period optimize failed: {e}"
+        ) from e
