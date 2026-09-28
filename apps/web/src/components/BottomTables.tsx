@@ -9,6 +9,7 @@ import {
 } from '../data/productGroups'
 import { kindLabel } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
 
 type Tab = 'facilities' | 'lanes'
 
@@ -101,6 +102,17 @@ export function BottomTables({
               </tr>
             </thead>
             <tbody>
+              {visibleNodes.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty-cell">
+                    <EmptyState
+                      compact
+                      title="No facilities"
+                      body="Nothing matches the current product filter — clear the filter or load data in Data."
+                    />
+                  </td>
+                </tr>
+              ) : null}
               {visibleNodes.map((n) => {
                 const selected =
                   selectedKind === 'node' && selectedSet.has(n.id)
@@ -149,6 +161,17 @@ export function BottomTables({
               </tr>
             </thead>
             <tbody>
+              {visibleLanes.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="empty-cell">
+                    <EmptyState
+                      compact
+                      title="No lanes"
+                      body="Nothing matches the current product filter — clear the filter or load lanes in Data."
+                    />
+                  </td>
+                </tr>
+              ) : null}
               {visibleLanes.map((l) => {
                 const selected =
                   selectedKind === 'lane' && selectedSet.has(l.id)

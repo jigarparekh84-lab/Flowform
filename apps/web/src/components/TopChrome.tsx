@@ -8,6 +8,7 @@ type Props = {
   onHorizon: (h: (typeof HORIZON_OPTIONS)[number]) => void
   onCompare?: () => void
   onOpenProjects?: () => void
+  onHelp?: () => void
   theme: ThemeMode
   onToggleTheme: () => void
 }
@@ -18,6 +19,7 @@ export function TopChrome({
   onHorizon,
   onCompare,
   onOpenProjects,
+  onHelp,
   theme,
   onToggleTheme,
 }: Props) {
@@ -137,6 +139,16 @@ export function TopChrome({
         </button>
         <button type="button" className="btn primary" onClick={onCompare}>
           Compare
+        </button>
+        <button
+          type="button"
+          className="btn ghost help-btn"
+          onClick={onHelp}
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+        >
+          Help
+          <kbd className="inline-kbd">?</kbd>
         </button>
         <button type="button" className="cmdk" title="Command palette (stub)">
           <span>Search</span>

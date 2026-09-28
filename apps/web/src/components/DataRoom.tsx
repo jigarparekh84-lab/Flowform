@@ -35,6 +35,8 @@ import {
   type BomComponentKind,
 } from '../data/bom'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 
 type Draft = {
   sites?: ParseSitesResult
@@ -121,17 +123,26 @@ export function DataRoom() {
 
   return (
     <div className="studio-room data-room">
-      <header className="studio-header">
-        <div>
-          <p className="map-kicker">Data</p>
-          <h1>Data room</h1>
-          <p className="studio-sub">
-            Upload sites, demand, and lanes/rates CSVs. Validate required
-            columns, optional lat/lng geocode coverage, and baseline reconcile
-            score — then load into the Network map.
-          </p>
+      <RoomHeader
+        kicker="Data"
+        title="Data room"
+        tip="Upload sites, demand, and lanes CSVs — validate, then load into the Network map."
+      />
+
+      {!draft.sites && !draft.demand && !draft.lanes ? (
+        <div className="empty-state-banner">
+          <EmptyState
+            compact
+            title="No CSVs uploaded yet"
+            body="Drop sites, demand, or lanes templates here — or keep working with the sample network already on the map."
+            action={
+              <button type="button" className="btn ghost" onClick={handleReset}>
+                Restore sample network
+              </button>
+            }
+          />
         </div>
-      </header>
+      ) : null}
 
       <div className="studio-body data-body">
         <aside className="wizard-panel" aria-label="CSV uploads">

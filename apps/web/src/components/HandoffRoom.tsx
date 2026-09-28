@@ -7,6 +7,8 @@ import {
   type HandoffPackage,
 } from '../data/handoffPackage'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 
 type SectionId =
   | 'overview'
@@ -103,28 +105,18 @@ export function HandoffRoom() {
 
   return (
     <div className="studio-room handoff-room">
-      <header className="studio-header">
-        <div>
-          <p className="map-kicker">Handoff</p>
-          <h1>S&amp;OP design exit ramp</h1>
-          <p className="studio-sub">
-            Enriched package of sites, lanes, preferred territory corridors,
-            CapEx year events, product mix, BOM implied RM, inventory targets,
-            and scenario metadata — Ritara-compatible intake stub (no planner
-            screens).
-          </p>
-        </div>
-      </header>
+      <RoomHeader
+        kicker="Handoff"
+        title="S&OP design exit ramp"
+        tip="Package the recommended design for S&OP intake — sites, lanes, territory, CapEx, mix, and inventory."
+      />
 
       <div className="brief-layout">
         {!payload || !pkg ? (
-          <div className="library-card">
-            <h2>Waiting for Brief</h2>
-            <p className="studio-sub">
-              Open Decision Brief, confirm the recommendation and assumptions,
-              then click <strong>Send to Handoff</strong>.
-            </p>
-          </div>
+          <EmptyState
+            title="Waiting for Brief"
+            body="Open Decision Brief, confirm the recommendation and assumptions, then click Send to Handoff."
+          />
         ) : (
           <>
             <div className="brief-banner">

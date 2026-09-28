@@ -9,6 +9,8 @@ import {
   type TerritoryAssignMode,
 } from '../data/serviceTerritory'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 
 const MODES: { id: TerritoryAssignMode; label: string; hint: string }[] = [
   {
@@ -113,22 +115,16 @@ export function TerritoryStudio() {
 
   return (
     <div className="studio-room territory-studio">
-      <header className="studio-header">
-        <div>
-          <p className="map-kicker">Coverage</p>
-          <h1>Service territory</h1>
-          <p className="studio-sub">
-            Assign demand to serving DCs / plants by distance, capacity, or
-            current lanes. See coverage gaps and overlaps, then apply as a
-            scenario that updates preferred demand-inbound lanes.
-          </p>
-        </div>
-        <div className="projects-header-actions">
+      <RoomHeader
+        kicker="Coverage"
+        title="Service territory"
+        tip="Assign demand to serving DCs / plants, spot coverage gaps, and apply preferred inbound lanes."
+        actions={
           <button type="button" className="btn ghost" onClick={selectAll}>
             Select all servers
           </button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="studio-body">
         <aside className="wizard-panel" aria-label="Territory wizard">
@@ -156,7 +152,11 @@ export function TerritoryStudio() {
               ))}
             </ul>
             {eligible.length === 0 && (
-              <p className="hint">No DC / plant nodes to serve demand.</p>
+              <EmptyState
+                compact
+                title="No serving facilities"
+                body="Load a network with DC or plant nodes in Data to design coverage."
+              />
             )}
           </div>
 
@@ -368,7 +368,11 @@ export function TerritoryStudio() {
                     {!preview || preview.assignments.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="empty-cell">
-                          No assignments yet.
+                          <EmptyState
+                            compact
+                            title="No assignments yet"
+                            body="Select serving facilities and a mode to preview coverage."
+                          />
                         </td>
                       </tr>
                     ) : (

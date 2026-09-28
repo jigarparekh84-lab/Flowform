@@ -8,6 +8,8 @@ import {
   yearLabelFor,
 } from '../data/capexRoadmap'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 
 const KINDS: CapexEventKind[] = ['open', 'expand', 'close']
 
@@ -123,33 +125,28 @@ export function RoadmapStudio() {
 
   return (
     <div className="studio-room roadmap-studio">
-      <header className="studio-header">
-        <div>
-          <p className="map-kicker">CapEx</p>
-          <h1>Multi-year roadmap</h1>
-          <p className="studio-sub">
-            Phase facility open / close / expand across Y0–
-            {capexRoadmap.yearCount - 1} with CapEx $ and capacity delta.
-            Gantt-lite timeline, cumulative spend &amp; capacity, then apply a
-            year slice as a scenario or export into Brief.
-          </p>
-        </div>
-        <div className="projects-header-actions">
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => {
-              resetCapexRoadmap()
-              setStatus('Reset to sample CapEx roadmap.')
-            }}
-          >
-            Reset sample
-          </button>
-          <button type="button" className="btn ghost" onClick={handleExportBrief}>
-            Export to Brief
-          </button>
-        </div>
-      </header>
+      <RoomHeader
+        kicker="CapEx"
+        title="Multi-year roadmap"
+        tip={`Phase open / close / expand across Y0–${capexRoadmap.yearCount - 1}, then apply a year slice as a scenario or export to Brief.`}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                resetCapexRoadmap()
+                setStatus('Reset to sample CapEx roadmap.')
+              }}
+            >
+              Reset sample
+            </button>
+            <button type="button" className="btn ghost" onClick={handleExportBrief}>
+              Export to Brief
+            </button>
+          </>
+        }
+      />
 
       <div className="roadmap-kpi-strip" aria-label="Roadmap totals">
         {summaries.length > 0 && (
@@ -364,7 +361,23 @@ export function RoadmapStudio() {
                 ))}
               </div>
               {sortedEvents.length === 0 ? (
-                <p className="hint pad">No events yet — add one or reset sample.</p>
+                <EmptyState
+                  compact
+                  title="No CapEx events"
+                  body="Add an open / expand / close event, or reset the sample roadmap."
+                  action={
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => {
+                        resetCapexRoadmap()
+                        setStatus('Reset to sample CapEx roadmap.')
+                      }}
+                    >
+                      Reset sample
+                    </button>
+                  }
+                />
               ) : (
                 <ul className="gantt-rows">
                   {sortedEvents.map((ev) => (
@@ -481,7 +494,11 @@ export function RoadmapStudio() {
               <span className="muted">{sortedEvents.length}</span>
             </div>
             {sortedEvents.length === 0 ? (
-              <p className="hint pad">No CapEx events.</p>
+              <EmptyState
+                compact
+                title="No CapEx events"
+                body="Add events in the form, or reset the sample roadmap to explore the timeline."
+              />
             ) : (
               <ul className="roadmap-event-list">
                 {sortedEvents.map((ev) => (

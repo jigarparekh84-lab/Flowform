@@ -21,6 +21,7 @@ import {
 } from '../data/bom'
 import { kindLabel, type FacilityStatus } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
 
 type Props = {
   selectedIds: string[]
@@ -153,9 +154,11 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
 
       {!node && !lane && (
         <>
-          <p className="hint">
-            Select a node or lane on the canvas. Shift-click to multi-select.
-          </p>
+          <EmptyState
+            compact
+            title="Nothing selected"
+            body="Click a node or lane on the map or in the tables. Shift-click to multi-select · Esc clears."
+          />
           <ConstraintsPanel
             constraints={constraints}
             nodes={nodes}

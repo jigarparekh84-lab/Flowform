@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CommentsPanel } from './CommentsPanel'
 import { DecisionLogPanel } from './DecisionLogPanel'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 import {
   computeCostToServe,
   ctsByRegion,
@@ -288,18 +290,19 @@ export function CompareResults() {
 
   return (
     <div className="studio-room compare-results">
-      <header className="studio-header compare-header">
-        <div>
-          <p className="map-kicker">Compare</p>
-          <h1>Results</h1>
-          <p className="studio-sub">
-            Multi-scenario KPI matrix, map opens/closes vs Reference, cost
-            waterfall, DES-lite, cost sensitivity (tornado + Monte Carlo),
-            inventory, resilience (SPOF), transport mode mix, and lane bid
-            comparison. Defaults: Active + Baseline as Reference.
-          </p>
-        </div>
-      </header>
+      <RoomHeader
+        className="compare-header"
+        kicker="Compare"
+        title="Results"
+        tip="Side-by-side KPIs, map diffs, and sensitivity vs a Reference scenario (defaults: Active + Baseline)."
+      />
+
+      {scenarios.length < 2 ? (
+        <EmptyState
+          title="Need another scenario"
+          body="Compose or promote a what-if in Scenarios, then return here to compare against Baseline."
+        />
+      ) : null}
 
       <div className="compare-toolbar">
         <div className="compare-picks" aria-label="Scenarios to compare">
@@ -515,7 +518,12 @@ function MatrixView({
   reference: Scenario
 }) {
   if (selected.length === 0) {
-    return <p className="hint pad">Select at least one scenario.</p>
+    return (
+      <EmptyState
+        title="No scenarios selected"
+        body="Pick at least one scenario chip above to populate the KPI matrix."
+      />
+    )
   }
 
   return (

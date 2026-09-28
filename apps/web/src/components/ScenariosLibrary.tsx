@@ -5,6 +5,8 @@ import {
 } from '../data/costSensitivity'
 import { SENSITIVITY_PRESETS } from '../data/sensitivity'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 
 export function ScenariosLibrary() {
   const {
@@ -52,16 +54,11 @@ export function ScenariosLibrary() {
 
   return (
     <div className="studio-room scenarios-library">
-      <header className="studio-header">
-        <div>
-          <p className="map-kicker">Scenarios</p>
-          <h1>Library</h1>
-          <p className="studio-sub">
-            Browse network scenarios and promoted deltas. Compose Baseline +
-            greenfield into a named what-if, then switch Active from here.
-          </p>
-        </div>
-      </header>
+      <RoomHeader
+        kicker="Scenarios"
+        title="Library"
+        tip="Browse what-ifs, apply sensitivity presets, and compose Baseline + deltas into a named Active scenario."
+      />
 
       <section className="library-card sensitivity-card" aria-label="Sensitivity presets">
         <div className="library-card-head">
@@ -148,38 +145,46 @@ export function ScenariosLibrary() {
             <h2>Network scenarios</h2>
             <span className="muted">{scenarios.length}</span>
           </div>
-          <ul className="scenario-list">
-            {scenarios.map((s) => {
-              const active = s.id === activeScenarioId
-              return (
-                <li key={s.id} className={active ? 'active' : ''}>
-                  <div className="scenario-list-main">
-                    <strong>{s.name}</strong>
-                    <span className="chip-tag">{s.tag}</span>
-                    {s.deltaIds && s.deltaIds.length > 0 && (
-                      <span className="muted tiny">
-                        +{s.deltaIds.length} delta
-                        {s.deltaIds.length === 1 ? '' : 's'}
+          {scenarios.length === 0 ? (
+            <EmptyState
+              compact
+              title="No scenarios yet"
+              body="Compose a what-if from Baseline + deltas, or apply a sensitivity preset."
+            />
+          ) : (
+            <ul className="scenario-list">
+              {scenarios.map((s) => {
+                const active = s.id === activeScenarioId
+                return (
+                  <li key={s.id} className={active ? 'active' : ''}>
+                    <div className="scenario-list-main">
+                      <strong>{s.name}</strong>
+                      <span className="chip-tag">{s.tag}</span>
+                      {s.deltaIds && s.deltaIds.length > 0 && (
+                        <span className="muted tiny">
+                          +{s.deltaIds.length} delta
+                          {s.deltaIds.length === 1 ? '' : 's'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="scenario-list-meta">
+                      <span className="kpi-mini">
+                        {s.kpis.cost.value} · {s.kpis.service.value}
                       </span>
-                    )}
-                  </div>
-                  <div className="scenario-list-meta">
-                    <span className="kpi-mini">
-                      {s.kpis.cost.value} · {s.kpis.service.value}
-                    </span>
-                    <button
-                      type="button"
-                      className={active ? 'btn primary' : 'btn ghost'}
-                      onClick={() => setActiveScenarioId(s.id)}
-                      disabled={active}
-                    >
-                      {active ? 'Active' : 'Set Active'}
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+                      <button
+                        type="button"
+                        className={active ? 'btn primary' : 'btn ghost'}
+                        onClick={() => setActiveScenarioId(s.id)}
+                        disabled={active}
+                      >
+                        {active ? 'Active' : 'Set Active'}
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </section>
 
         <section className="library-card" aria-label="Delta items">
@@ -188,10 +193,11 @@ export function ScenariosLibrary() {
             <span className="muted">{deltas.length}</span>
           </div>
           {deltas.length === 0 ? (
-            <p className="hint pad">
-              No deltas yet. Run Greenfield Studio and Promote selected
-              candidates.
-            </p>
+            <EmptyState
+              compact
+              title="No promoted deltas"
+              body="Run Greenfield Studio and Promote selected candidates to seed compose."
+            />
           ) : (
             <ul className="delta-list">
               {deltas.map((d) => (

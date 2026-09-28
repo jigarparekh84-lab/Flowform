@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './App.css'
 import { CompareResults } from './components/CompareResults'
 import { DataRoom } from './components/DataRoom'
@@ -14,13 +14,49 @@ import { NetworkCanvas } from './components/NetworkCanvas'
 import { ProjectsRoom } from './components/ProjectsRoom'
 import { ScenariosLibrary } from './components/ScenariosLibrary'
 import { TopChrome } from './components/TopChrome'
+import { KeyboardHelp } from './components/ui/KeyboardHelp'
 import { useFlowform } from './state/FlowformContext'
 import { useTheme } from './state/theme'
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (target.isContentEditable) return true
+  return Boolean(target.closest('[contenteditable="true"]'))
+}
+
 function App() {
   const [room, setRoom] = useState<NavItem>('Network')
-  const { activeScenario, horizon, setHorizon } = useFlowform()
+  const [helpOpen, setHelpOpen] = useState(false)
+  const { activeScenario, horizon, setHorizon, clearSelection } = useFlowform()
   const { theme, toggleTheme } = useTheme()
+
+  const closeHelp = useCallback(() => setHelpOpen(false), [])
+  const toggleHelp = useCallback(() => setHelpOpen((v) => !v), [])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (isTypingTarget(e.target)) return
+
+      if (e.key === 'Escape') {
+        if (helpOpen) {
+          setHelpOpen(false)
+          return
+        }
+        clearSelection()
+        return
+      }
+
+      // ? opens help (Shift+/ on US keyboards also yields '?')
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault()
+        setHelpOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [clearSelection, helpOpen])
 
   return (
     <div className="shell">
@@ -30,6 +66,7 @@ function App() {
         onHorizon={setHorizon}
         onCompare={() => setRoom('Compare')}
         onOpenProjects={() => setRoom('Projects')}
+        onHelp={toggleHelp}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
@@ -52,6 +89,7 @@ function App() {
           {room === 'Handoff' && <HandoffRoom />}
         </main>
       </div>
+      <KeyboardHelp open={helpOpen} onClose={closeHelp} />
     </div>
   )
 }

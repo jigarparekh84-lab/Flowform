@@ -7,6 +7,8 @@ import {
   type SpokeAssignMode,
 } from '../data/hubSpoke'
 import { useFlowform } from '../state/FlowformContext'
+import { EmptyState } from './ui/EmptyState'
+import { RoomHeader } from './ui/RoomHeader'
 
 const MODES: { id: SpokeAssignMode; label: string; hint: string }[] = [
   {
@@ -110,25 +112,21 @@ export function HubSpokeStudio() {
 
   return (
     <div className="studio-room hubspoke-studio">
-      <header className="studio-header">
-        <div>
-          <p className="map-kicker">Topology</p>
-          <h1>Hub &amp; spoke studio</h1>
-          <p className="studio-sub">
-            Designate hubs (DCs / plants), auto-assign demand spokes by
-            distance or volume, generate hub↔spoke lanes, and draft a scenario
-            with before/after KPIs.
-          </p>
-        </div>
-        <div className="projects-header-actions">
-          <button type="button" className="btn ghost" onClick={() => suggest(2)}>
-            Suggest 2 hubs
-          </button>
-          <button type="button" className="btn ghost" onClick={() => suggest(3)}>
-            Suggest 3 hubs
-          </button>
-        </div>
-      </header>
+      <RoomHeader
+        kicker="Topology"
+        title="Hub & spoke studio"
+        tip="Designate hubs, auto-assign demand spokes, generate lanes, and draft a before/after scenario."
+        actions={
+          <>
+            <button type="button" className="btn ghost" onClick={() => suggest(2)}>
+              Suggest 2 hubs
+            </button>
+            <button type="button" className="btn ghost" onClick={() => suggest(3)}>
+              Suggest 3 hubs
+            </button>
+          </>
+        }
+      />
 
       <div className="studio-body">
         <aside className="wizard-panel" aria-label="Hub-spoke wizard">
@@ -154,7 +152,11 @@ export function HubSpokeStudio() {
               ))}
             </ul>
             {eligible.length === 0 && (
-              <p className="hint">No DC / plant nodes to designate as hubs.</p>
+              <EmptyState
+                compact
+                title="No hub candidates"
+                body="Load a network with DC or plant nodes in Data, then return here."
+              />
             )}
           </div>
 
@@ -304,7 +306,11 @@ export function HubSpokeStudio() {
                     {!preview || preview.hubLoads.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="empty-cell">
-                          Select hubs to see loads.
+                          <EmptyState
+                            compact
+                            title="No hubs selected"
+                            body="Check hubs or use Suggest 2 hubs to preview utilization."
+                          />
                         </td>
                       </tr>
                     ) : (
@@ -359,7 +365,11 @@ export function HubSpokeStudio() {
                     {!preview || preview.assignments.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="empty-cell">
-                          No assignments yet.
+                          <EmptyState
+                            compact
+                            title="No assignments yet"
+                            body="Select at least one hub to assign demand spokes."
+                          />
                         </td>
                       </tr>
                     ) : (
