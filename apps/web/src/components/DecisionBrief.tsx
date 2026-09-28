@@ -1,7 +1,13 @@
 import { useMemo } from 'react'
 import {
+  buildBriefHtml,
+  buildBriefMarkdown,
+  downloadTextFile,
+} from '../data/briefExport'
+import {
   parseMoneyM,
   parsePercent,
+  PROJECT_NAME,
   type Scenario,
 } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
@@ -18,6 +24,7 @@ export function DecisionBrief({ onHandoff }: Props) {
     sendBriefToHandoff,
     activeScenarioId,
     setActiveScenarioId,
+    horizon,
   } = useFlowform()
 
   const reference =
@@ -66,6 +73,34 @@ export function DecisionBrief({ onHandoff }: Props) {
     onHandoff?.()
   }
 
+  function exportMarkdown() {
+    const body = buildBriefMarkdown({
+      brief,
+      scenarios,
+      projectName: PROJECT_NAME,
+      horizon,
+    })
+    downloadTextFile(
+      `flowform-brief-${horizon}.md`,
+      body,
+      'text/markdown;charset=utf-8',
+    )
+  }
+
+  function exportHtml() {
+    const body = buildBriefHtml({
+      brief,
+      scenarios,
+      projectName: PROJECT_NAME,
+      horizon,
+    })
+    downloadTextFile(
+      `flowform-brief-${horizon}.html`,
+      body,
+      'text/html;charset=utf-8',
+    )
+  }
+
   const bannerText = recommended
     ? recommendCopy(recommended, reference)
     : 'Select a recommended scenario to brief stakeholders.'
@@ -107,9 +142,17 @@ export function DecisionBrief({ onHandoff }: Props) {
                 ))}
               </select>
             </label>
-            <button type="button" className="btn primary" onClick={handleSend}>
-              Send to Handoff
-            </button>
+            <div className="brief-export-row">
+              <button type="button" className="btn ghost" onClick={exportMarkdown}>
+                Download Markdown
+              </button>
+              <button type="button" className="btn ghost" onClick={exportHtml}>
+                Printable HTML
+              </button>
+              <button type="button" className="btn primary" onClick={handleSend}>
+                Send to Handoff
+              </button>
+            </div>
             {brief.sentToHandoffAt && (
               <p className="status-line">
                 Sent {new Date(brief.sentToHandoffAt).toLocaleString()}

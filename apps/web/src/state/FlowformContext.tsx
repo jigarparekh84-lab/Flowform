@@ -12,6 +12,13 @@ import {
   type UploadedNetwork,
 } from '../data/csvParsers'
 import {
+  DEFAULT_EMISSION_FACTORS,
+  formatCo2Kt,
+  networkCo2Kt,
+  type EmissionFactor,
+} from '../data/emissions'
+import { haversineMiles, nodeLatLng } from '../data/geo'
+import {
   defaultConstraintsFromNetwork,
   mergeConstraints,
   runHeuristicOptimize,
@@ -33,6 +40,12 @@ import {
   type OptimizeRunStatus,
   type Scenario,
 } from '../data/sampleNetwork'
+import {
+  SENSITIVITY_PRESETS,
+  kpisForSensitivity,
+  sensitivityScenarioName,
+  type SensitivityPresetId,
+} from '../data/sensitivity'
 
 export type SelectKind = 'node' | 'lane'
 
@@ -118,6 +131,14 @@ type FlowformContextValue = {
   updateBrief: (patch: Partial<BriefState>) => void
   sendBriefToHandoff: () => void
   handoffPayload: BriefState | null
+
+  emissionFactors: EmissionFactor[]
+  setEmissionFactors: (f: EmissionFactor[]) => void
+  updateEmissionFactor: (mode: string, kgPerTonMile: number) => void
+  /** Network CO₂ (kt) from lane miles × mode factors when distances present. */
+  computedCo2Kt: number
+
+  applySensitivityPreset: (presetId: SensitivityPresetId) => Scenario | null
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -153,6 +174,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     defaultBrief(INITIAL_SCENARIOS),
   )
   const [handoffPayload, setHandoffPayload] = useState<BriefState | null>(null)
+  const [emissionFactors, setEmissionFactors] = useState<EmissionFactor[]>(
+    DEFAULT_EMISSION_FACTORS,
+  )
   const optimizeLock = useRef(false)
 
   const activeScenario = useMemo(
@@ -331,6 +355,68 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const computedCo2Kt = useMemo(() => {
+    const inputs = lanes.map((lane) => {
+      const a = nodes.find((n) => n.id === lane.from)
+      const b = nodes.find((n) => n.id === lane.to)
+      let miles = 0
+      if (a && b) {
+        miles = haversineMiles(nodeLatLng(a), nodeLatLng(b))
+      }
+      return {
+        mode: lane.mode,
+        miles,
+        tons: 1,
+        fallbackCo2Kg: lane.co2Kg,
+      }
+    })
+    return networkCo2Kt(emissionFactors, inputs)
+  }, [lanes, nodes, emissionFactors])
+
+  const updateEmissionFactor = useCallback(
+    (mode: string, kgPerTonMile: number) => {
+      setEmissionFactors((prev) =>
+        prev.map((f) =>
+          f.mode === mode
+            ? { ...f, kgPerTonMile: Math.max(0, kgPerTonMile) }
+            : f,
+        ),
+      )
+    },
+    [],
+  )
+
+  const applySensitivityPreset = useCallback(
+    (presetId: SensitivityPresetId): Scenario | null => {
+      const preset = SENSITIVITY_PRESETS.find((p) => p.id === presetId)
+      if (!preset) return null
+      const base = scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0]
+      if (!base) return null
+      const scenario: Scenario = {
+        id: uid('sens'),
+        name: sensitivityScenarioName(base, preset),
+        tag: preset.tag,
+        baseId: base.id,
+        kpis: kpisForSensitivity(base, presetId),
+      }
+      // Lightly adjust CO₂ KPI from factors when fuel preset
+      if (presetId === 'fuel-20') {
+        const kt = Math.round(computedCo2Kt * 1.03 * 10) / 10
+        scenario.kpis = {
+          ...scenario.kpis,
+          co2: {
+            ...scenario.kpis.co2,
+            value: formatCo2Kt(kt),
+          },
+        }
+      }
+      setScenarios((prev) => [...prev, scenario])
+      setActiveScenarioId(scenario.id)
+      return scenario
+    },
+    [scenarios, activeScenarioId, computedCo2Kt],
+  )
+
   const runOptimize = useCallback(async (): Promise<Scenario | null> => {
     if (optimizeLock.current) return null
     optimizeLock.current = true
@@ -471,6 +557,11 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateBrief,
       sendBriefToHandoff,
       handoffPayload,
+      emissionFactors,
+      setEmissionFactors,
+      updateEmissionFactor,
+      computedCo2Kt,
+      applySensitivityPreset,
     }),
     [
       horizon,
@@ -500,6 +591,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateBrief,
       sendBriefToHandoff,
       handoffPayload,
+      emissionFactors,
+      updateEmissionFactor,
+      computedCo2Kt,
+      applySensitivityPreset,
     ],
   )
 

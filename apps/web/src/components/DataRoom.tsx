@@ -20,8 +20,15 @@ type Draft = {
 }
 
 export function DataRoom() {
-  const { network, loadUploadedNetwork, resetToSampleNetwork, constraints } =
-    useFlowform()
+  const {
+    network,
+    loadUploadedNetwork,
+    resetToSampleNetwork,
+    constraints,
+    emissionFactors,
+    updateEmissionFactor,
+    computedCo2Kt,
+  } = useFlowform()
   const [draft, setDraft] = useState<Draft>({ fileNames: {} })
   const [status, setStatus] = useState<string | null>(null)
 
@@ -208,6 +215,51 @@ export function DataRoom() {
                       </tr>
                     )
                   })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="library-card" aria-label="CO2 emission factors">
+            <h2>CO₂ emission factors</h2>
+            <p className="studio-sub" style={{ marginTop: 0 }}>
+              Planning factors (kg CO₂e / ton-mile). Network KPI CO₂ is computed
+              as lane distance × mode factor when sites have coordinates —
+              currently <strong>{computedCo2Kt.toFixed(1)} kt</strong> for the
+              active network.
+            </p>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mode</th>
+                    <th>kg / ton-mile</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {emissionFactors.map((f) => (
+                    <tr key={f.mode}>
+                      <td>{f.mode}</td>
+                      <td>
+                        <input
+                          className="factor-input mono"
+                          type="number"
+                          min={0}
+                          step={0.001}
+                          value={f.kgPerTonMile}
+                          onChange={(e) =>
+                            updateEmissionFactor(
+                              f.mode,
+                              parseFloat(e.target.value) || 0,
+                            )
+                          }
+                          aria-label={`${f.mode} kg per ton-mile`}
+                        />
+                      </td>
+                      <td className="muted tiny">{f.notes}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
+import { SENSITIVITY_PRESETS } from '../data/sensitivity'
 import { useFlowform } from '../state/FlowformContext'
 
 export function ScenariosLibrary() {
@@ -8,6 +9,8 @@ export function ScenariosLibrary() {
     setActiveScenarioId,
     deltas,
     composeScenario,
+    applySensitivityPreset,
+    activeScenario,
   } = useFlowform()
 
   const [name, setName] = useState('')
@@ -54,6 +57,35 @@ export function ScenariosLibrary() {
           </p>
         </div>
       </header>
+
+      <section className="library-card sensitivity-card" aria-label="Sensitivity presets">
+        <div className="library-card-head">
+          <h2>Sensitivity presets</h2>
+          <span className="muted tiny">from Active · {activeScenario.name}</span>
+        </div>
+        <p className="hint pad" style={{ paddingTop: 0 }}>
+          One-click delta scenarios: fuel shock, demand shift, or DC outage.
+          Creates a new what-if branched from Active and sets it Active.
+        </p>
+        <div className="sensitivity-grid">
+          {SENSITIVITY_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="btn ghost sensitivity-btn"
+              onClick={() => {
+                const created = applySensitivityPreset(p.id)
+                if (created) {
+                  setStatus(`Created “${created.name}” from Active and set it Active.`)
+                }
+              }}
+            >
+              <strong>{p.label}</strong>
+              <span className="muted tiny">{p.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="library-grid">
         <section className="library-card" aria-label="Network scenarios">

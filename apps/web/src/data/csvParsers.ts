@@ -210,13 +210,17 @@ export function parseSitesCsv(text: string): ParseSitesResult {
     geocodeTotal++
     let x = 50
     let y = 50
+    let lat: number | undefined
+    let lng: number | undefined
     if (latRaw && lngRaw) {
-      const lat = num(latRaw, NaN)
-      const lng = num(lngRaw, NaN)
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        const xy = latLngToXY(lat, lng)
+      const latN = num(latRaw, NaN)
+      const lngN = num(lngRaw, NaN)
+      if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+        const xy = latLngToXY(latN, lngN)
         x = xy.x
         y = xy.y
+        lat = latN
+        lng = lngN
         geocodeHits++
       } else {
         issues.push({
@@ -250,6 +254,7 @@ export function parseSitesCsv(text: string): ParseSitesResult {
       capacity: capacityRaw || formatCapacity(kind, capNum),
       x,
       y,
+      ...(lat != null && lng != null ? { lat, lng } : {}),
     })
   })
 
@@ -303,13 +308,17 @@ export function parseDemandCsv(text: string): ParseDemandResult {
     geocodeTotal++
     let x = 50
     let y = 50
+    let lat: number | undefined
+    let lng: number | undefined
     if (latRaw && lngRaw) {
-      const lat = num(latRaw, NaN)
-      const lng = num(lngRaw, NaN)
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        const xy = latLngToXY(lat, lng)
+      const latN = num(latRaw, NaN)
+      const lngN = num(lngRaw, NaN)
+      if (Number.isFinite(latN) && Number.isFinite(lngN)) {
+        const xy = latLngToXY(latN, lngN)
         x = xy.x
         y = xy.y
+        lat = latN
+        lng = lngN
         geocodeHits++
       }
     } else if (xRaw && yRaw) {
@@ -332,6 +341,7 @@ export function parseDemandCsv(text: string): ParseDemandResult {
       capacity: formatCapacity('demand', vol),
       x,
       y,
+      ...(lat != null && lng != null ? { lat, lng } : {}),
     })
   })
 

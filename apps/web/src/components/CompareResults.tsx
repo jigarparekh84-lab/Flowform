@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  computeCostToServe,
+  ctsByRegion,
+  type CtsRow,
+} from '../data/costToServe'
+import {
   LANES,
   NODES,
   mapDiffForScenario,
@@ -12,7 +17,7 @@ import {
 } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
-type ViewMode = 'matrix' | 'map' | 'waterfall'
+type ViewMode = 'matrix' | 'map' | 'waterfall' | 'cts'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -109,6 +114,9 @@ export function CompareResults() {
     scenarios,
     activeScenarioId,
     deltas,
+    nodes,
+    lanes,
+    network,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -179,6 +187,16 @@ export function CompareResults() {
     return waterfallForScenario(focus, reference)
   }, [focus, reference])
 
+  const cts = useMemo(() => {
+    if (!focus) return null
+    return computeCostToServe({
+      scenario: focus,
+      nodes: nodes.length ? nodes : NODES,
+      lanes: lanes.length ? lanes : LANES,
+      demandVolume: network.demandVolume,
+    })
+  }, [focus, nodes, lanes, network.demandVolume])
+
   return (
     <div className="studio-room compare-results">
       <header className="studio-header compare-header">
@@ -247,6 +265,7 @@ export function CompareResults() {
               ['matrix', 'Matrix'],
               ['map', 'Map diff'],
               ['waterfall', 'Waterfall'],
+              ['cts', 'Cost-to-serve'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -288,6 +307,17 @@ export function CompareResults() {
             focusId={focusId}
             onFocus={setFocusId}
             steps={waterfall}
+          />
+        )}
+        {view === 'cts' && focus && cts && (
+          <CtsView
+            focus={focus}
+            selected={selected}
+            focusId={focusId}
+            onFocus={setFocusId}
+            rows={cts.rows}
+            steps={cts.waterfall}
+            totalM={cts.totalM}
           />
         )}
       </div>
@@ -700,6 +730,140 @@ function WaterfallView({
             strokeWidth="1"
           />
         </svg>
+      </div>
+    </div>
+  )
+}
+
+
+function CtsView({
+  focus,
+  selected,
+  focusId,
+  onFocus,
+  rows,
+  steps,
+  totalM,
+}: {
+  focus: Scenario
+  selected: Scenario[]
+  focusId: string
+  onFocus: (id: string) => void
+  rows: CtsRow[]
+  steps: WaterfallStep[]
+  totalM: number
+}) {
+  const regions = useMemo(() => ctsByRegion(rows), [rows])
+  const chart = useMemo(() => layoutWaterfall(steps), [steps])
+
+  return (
+    <div className="compare-cts-layout">
+      <aside className="compare-side">
+        <h2>Focus scenario</h2>
+        <div className="focus-list">
+          {selected.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={
+                s.id === focusId ? 'btn primary focus-btn' : 'btn ghost focus-btn'
+              }
+              onClick={() => onFocus(s.id)}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+        <p className="hint">
+          Cost-to-serve for <strong>{focus.name}</strong> — mock allocation from
+          active network lanes + demand volumes (total ${totalM.toFixed(1)}M).
+        </p>
+        <h3 className="cts-side-h">By region</h3>
+        <ul className="cts-region-list">
+          {regions.map((r) => (
+            <li key={r.region}>
+              <strong>{r.region}</strong>
+              <span>${r.totalM.toFixed(1)}M</span>
+              <span className="muted tiny">${r.ctsPerUnit.toFixed(2)}/u</span>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      <div className="cts-main">
+        <div className="table-scroll data-table cts-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Region</th>
+                <th>Volume</th>
+                <th>Transport</th>
+                <th>Handling</th>
+                <th>Facility</th>
+                <th>Total</th>
+                <th>$/unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.customer}</td>
+                  <td>{r.region}</td>
+                  <td className="mono">{r.volume.toLocaleString()}</td>
+                  <td className="mono">${r.transportM.toFixed(2)}M</td>
+                  <td className="mono">${r.handlingM.toFixed(2)}M</td>
+                  <td className="mono">${r.facilityM.toFixed(2)}M</td>
+                  <td className="mono"><strong>${r.totalM.toFixed(2)}M</strong></td>
+                  <td className="mono">${r.ctsPerUnit.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="waterfall-stage cts-waterfall">
+          <p className="map-kicker">CTS stack</p>
+          <svg
+            className="waterfall-svg"
+            viewBox={`0 0 ${chart.width} ${chart.height}`}
+            role="img"
+            aria-label="Cost-to-serve waterfall"
+          >
+            {chart.bars.map((b) => (
+              <g key={b.id}>
+                <rect
+                  x={b.x}
+                  y={b.y}
+                  width={b.w}
+                  height={b.h}
+                  rx="4"
+                  fill={b.fill}
+                  opacity="0.92"
+                />
+                <text
+                  x={b.x + b.w / 2}
+                  y={b.y - 8}
+                  textAnchor="middle"
+                  fill="var(--ff-text)"
+                  fontSize="11"
+                  fontWeight="600"
+                >
+                  {b.valueLabel}
+                </text>
+                <text
+                  x={b.x + b.w / 2}
+                  y={chart.height - 16}
+                  textAnchor="middle"
+                  fill="var(--ff-text-secondary)"
+                  fontSize="11"
+                >
+                  {b.label}
+                </text>
+              </g>
+            ))}
+          </svg>
+        </div>
       </div>
     </div>
   )

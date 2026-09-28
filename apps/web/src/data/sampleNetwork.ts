@@ -8,6 +8,9 @@ export type NetworkNode = {
   capacity: string
   x: number
   y: number
+  /** Optional WGS84 — preferred for MapLibre; canvas x/y always present. */
+  lat?: number
+  lng?: number
 }
 
 export type NetworkLane = {
@@ -139,14 +142,14 @@ export const LAYERS = [
 ] as const
 
 export const NODES: NetworkNode[] = [
-  { id: 'n1', name: 'Austin Plant', kind: 'plant', region: 'South', capacity: '42k u/wk', x: 28, y: 62 },
-  { id: 'n2', name: 'Columbus DC', kind: 'dc', region: 'Midwest', capacity: '18k pallet', x: 52, y: 38 },
-  { id: 'n3', name: 'Atlanta DC', kind: 'dc', region: 'Southeast', capacity: '14k pallet', x: 62, y: 58 },
-  { id: 'n4', name: 'Chicago Hub', kind: 'demand', region: 'Midwest', capacity: '9.2k u/wk', x: 48, y: 28 },
-  { id: 'n5', name: 'Dallas Metro', kind: 'demand', region: 'South', capacity: '7.1k u/wk', x: 36, y: 55 },
-  { id: 'n6', name: 'NYC Corridor', kind: 'demand', region: 'Northeast', capacity: '11.4k u/wk', x: 78, y: 32 },
-  { id: 'n7', name: 'Monterrey Sup', kind: 'supplier', region: 'MX', capacity: '22k u/wk', x: 22, y: 72 },
-  { id: 'n8', name: 'Reno DC', kind: 'dc', region: 'West', capacity: '12k pallet', x: 14, y: 36 },
+  { id: 'n1', name: 'Austin Plant', kind: 'plant', region: 'South', capacity: '42k u/wk', x: 28, y: 62, lat: 30.27, lng: -97.74 },
+  { id: 'n2', name: 'Columbus DC', kind: 'dc', region: 'Midwest', capacity: '18k pallet', x: 52, y: 38, lat: 39.96, lng: -82.99 },
+  { id: 'n3', name: 'Atlanta DC', kind: 'dc', region: 'Southeast', capacity: '14k pallet', x: 62, y: 58, lat: 33.75, lng: -84.39 },
+  { id: 'n4', name: 'Chicago Hub', kind: 'demand', region: 'Midwest', capacity: '9.2k u/wk', x: 48, y: 28, lat: 41.88, lng: -87.63 },
+  { id: 'n5', name: 'Dallas Metro', kind: 'demand', region: 'South', capacity: '7.1k u/wk', x: 36, y: 55, lat: 32.78, lng: -96.80 },
+  { id: 'n6', name: 'NYC Corridor', kind: 'demand', region: 'Northeast', capacity: '11.4k u/wk', x: 78, y: 32, lat: 40.71, lng: -74.01 },
+  { id: 'n7', name: 'Monterrey Sup', kind: 'supplier', region: 'MX', capacity: '22k u/wk', x: 22, y: 72, lat: 25.67, lng: -100.31 },
+  { id: 'n8', name: 'Reno DC', kind: 'dc', region: 'West', capacity: '12k pallet', x: 14, y: 36, lat: 39.53, lng: -119.81 },
 ]
 
 export const LANES: NetworkLane[] = [

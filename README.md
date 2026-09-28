@@ -42,19 +42,20 @@ Nav should serve the map, not compete with it. See `docs/UX_BRIEF.md`.
 - App chrome (logo, project stub, Active scenario, Horizon, **Run** + Compare, theme toggle, ⌘K)
 - Left IA nav: Projects · Network · Greenfield · Scenarios · Compare · Brief · Data · Handoff
 - Network Canvas: interactive map selection synced to inspector + tables; uses uploaded or sample data
-- **Data room**: CSV upload (sites / demand / lanes), templates, validation (required columns, geocode %, baseline reconcile), load into map
+- **MapLibre GL** basemap (free Carto/OSM raster tiles, dark+light) with SVG schematic fallback
+- **Data room**: CSV upload (sites / demand / lanes), templates, validation (required columns, geocode %, baseline reconcile), load into map; **CO₂ emission factors** table
 - **Candidates & constraints** in Network inspector: open/close/candidate, capacity bands, service target %, CapEx budget, max facilities
 - **Run optimize**: client-side **heuristic v1** (greedy open/close under CapEx + service radius) — not a full MIP; produces a Compare-selectable scenario with chrome progress
-- Greenfield Studio + Scenarios library (compose) + Compare (matrix / map-diff / waterfall)
-- **Decision Brief**: recommendation banner, scenario cards vs Reference, assumptions checklist, Send to Handoff
+- Greenfield Studio + Scenarios library (compose + **sensitivity presets**: fuel +20%, demand shift, node outage) + Compare (matrix / map-diff / waterfall / **cost-to-serve**)
+- **Decision Brief**: recommendation banner, scenario cards vs Reference, assumptions checklist, **Markdown / printable HTML export**, Send to Handoff
 - Handoff room: receives brief JSON stub for Ritara intake (contract only)
-- Shared React context for network / constraints / scenarios / optimize / brief
+- Shared React context for network / constraints / scenarios / optimize / brief / emissions
 - Docs: UX brief + product blueprint
 - Local Vite + React + TypeScript app on port **5180**
 
 **Out (for now)**
 
-- Real GIS / tile maps, full MIP solver
+- Paid map API keys, full MIP solver
 - Auth, multi-tenant, cloud deploy
 - Direct Ritara API integration (handoff is design-only stub)
 - APS / scheduling / MRP — that stays in Ritara
