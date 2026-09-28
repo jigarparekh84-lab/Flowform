@@ -381,3 +381,145 @@ export async function postMultiPeriodOptimize(args: {
   }
   return (await res.json()) as ApiMultiPeriodResponse
 }
+
+export type StochasticObjective = 'expected' | 'minimax' | 'cvar_lite'
+
+export type StochasticScenarioInput = {
+  id?: string
+  name?: string
+  probability: number
+  demandScale?: number
+  costScale?: number
+  demandVolume?: Record<string, number>
+}
+
+export type ApiStochasticScenarioRow = {
+  id: string
+  name: string
+  probability: number
+  demandScale?: number
+  costScale?: number
+  capexM: number
+  opexM: number
+  transportM: number
+  uncoveredPenaltyM?: number
+  uncoveredDemand?: number
+  totalCostM: number
+  servicePct: number
+  openIds: string[]
+  flows?: ApiFlow[]
+  flowsSummary?: {
+    arcCount: number
+    totalVolume: number
+    topFlows?: ApiFlow[]
+  }
+}
+
+export type ApiStochasticEvpi = {
+  hereAndNowExpectedM: number
+  waitAndSeeExpectedM: number | null
+  evpiGapM: number | null
+  note?: string
+  waitAndSeeByScenario?: {
+    id: string
+    name: string
+    probability: number
+    ok: boolean
+    costM: number | null
+    openIds: string[]
+    servicePct?: number
+  }[]
+  stableWaitAndSeeOpenIds?: string[]
+  robustOpenIds?: string[]
+  opensOnlyInRobust?: string[]
+  opensOnlyInWaitAndSeeStable?: string[]
+}
+
+export type ApiStochasticResponse = {
+  ok: boolean
+  solver: string
+  status: string
+  model?: string
+  objective: StochasticObjective | string
+  cvarAlpha?: number | null
+  solveSeconds?: number
+  openedIds: string[]
+  closedIds: string[]
+  openIds?: string[]
+  openFacilities?: ApiOpenFacility[]
+  firstStage: {
+    openIds: string[]
+    capexM: number
+    opexM: number
+    fixedCostM?: number
+  }
+  scenarios: ApiStochasticScenarioRow[]
+  objectiveValueM: number
+  expectedCostM: number
+  worstCostM: number
+  evpi?: ApiStochasticEvpi | null
+  kpis?: {
+    expectedCostM?: number
+    worstCostM?: number
+    objectiveValueM?: number
+    scenarioCount?: number
+    openCount?: number
+    evpiGapM?: number | null
+    servicePctMin?: number
+  }
+  log: string[]
+  infeasibilityReport?: ApiInfeasibilityReport
+}
+
+export type StochasticTreePayload = {
+  objective: StochasticObjective
+  cvarAlpha?: number
+  computeEvpi?: boolean
+  scenarios: StochasticScenarioInput[]
+}
+
+export async function postStochasticOptimize(args: {
+  network: UploadedNetwork | {
+    nodes: UploadedNetwork['nodes']
+    lanes: UploadedNetwork['lanes']
+    demandVolume: Record<string, number>
+  }
+  constraints: NetworkConstraints
+  scenarioTree: StochasticTreePayload
+  reference?: Scenario
+  baseUrl?: string
+}): Promise<ApiStochasticResponse> {
+  const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
+  const net = args.network
+  const res = await fetch(`${base}/optimize/stochastic`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      network: {
+        nodes: net.nodes,
+        lanes: net.lanes,
+        demandVolume: net.demandVolume,
+      },
+      constraints: args.constraints,
+      scenarioTree: args.scenarioTree,
+      reference: args.reference
+        ? {
+            id: args.reference.id,
+            name: args.reference.name,
+            kpis: args.reference.kpis,
+          }
+        : undefined,
+    }),
+  })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const err = (await res.json()) as { detail?: string }
+      if (err.detail) detail = err.detail
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`API stochastic optimize ${res.status}: ${detail}`)
+  }
+  return (await res.json()) as ApiStochasticResponse
+}

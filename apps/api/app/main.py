@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from .multi_period import solve_multi_period
 from .solver import solve_optimize
+from .stochastic import solve_stochastic
 
 app = FastAPI(
     title="Flowform Optimize API",
@@ -18,9 +19,9 @@ app = FastAPI(
         "open/close DCs & plants, capacitated flows plant→DC→customer, "
         "optional supplier→plant BOM, multi-SKU/product-group flows, hard service constraints, "
         "infeasibility diagnostics, objective breakdown + capacity duals. "
-        "Multi-period CapEx NPV: POST /optimize/multi-period."
+        "Multi-period CapEx NPV: POST /optimize/multi-period. Stochastic scenario-tree / robust: POST /optimize/stochastic."
     ),
-    version="0.4.0",
+    version="0.5.0",
 )
 
 app.add_middleware(
@@ -144,6 +145,49 @@ class OptimizeRequest(BaseModel):
     )
 
 
+
+
+class StochasticScenarioIn(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    probability: float = 1.0
+    demandScale: float | None = 1.0
+    costScale: float | None = 1.0
+    demandVolume: dict[str, float] | None = None
+
+
+class ScenarioTreeIn(BaseModel):
+    objective: str = Field(
+        default="expected",
+        description="expected | minimax | cvar_lite",
+    )
+    cvarAlpha: float | None = Field(
+        default=0.3,
+        description="Weight on worst-case for cvar_lite (0–1)",
+    )
+    computeEvpi: bool | None = True
+    scenarios: list[StochasticScenarioIn] | list[dict[str, Any]] = Field(
+        default_factory=list
+    )
+
+
+class StochasticOptimizeRequest(OptimizeRequest):
+    scenarioTree: ScenarioTreeIn | dict[str, Any] | None = Field(
+        default=None,
+        description="2–5 demand/cost scenarios with probabilities + objective",
+    )
+    scenarios: list[StochasticScenarioIn] | list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Shorthand: scenario list (objective via body.objective)",
+    )
+    objective: str | None = Field(
+        default=None,
+        description="expected | minimax | cvar_lite (when using scenarios shorthand)",
+    )
+    cvarAlpha: float | None = None
+    computeEvpi: bool | None = True
+
+
 class MultiPeriodOptimizeRequest(OptimizeRequest):
     roadmap: CapexRoadmapIn | dict[str, Any] = Field(
         ...,
@@ -159,7 +203,7 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "service": "flowform-api",
-        "model": "fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1",
+        "model": "fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1+stochastic-scenario-tree-v1",
     }
 
 
@@ -214,4 +258,52 @@ def optimize_multi_period(body: MultiPeriodOptimizeRequest) -> dict[str, Any]:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(
             status_code=500, detail=f"Multi-period optimize failed: {e}"
+        ) from e
+
+
+@app.post("/optimize/stochastic")
+def optimize_stochastic(body: StochasticOptimizeRequest) -> dict[str, Any]:
+    try:
+        tree: dict[str, Any]
+        if body.scenarioTree is not None:
+            tree = (
+                body.scenarioTree
+                if isinstance(body.scenarioTree, dict)
+                else body.scenarioTree.model_dump()
+            )
+        else:
+            scenarios = body.scenarios or []
+            tree = {
+                "scenarios": [
+                    s if isinstance(s, dict) else s.model_dump() for s in scenarios
+                ],
+                "objective": body.objective or "expected",
+                "cvarAlpha": body.cvarAlpha,
+                "computeEvpi": body.computeEvpi if body.computeEvpi is not None else True,
+            }
+        if body.objective and not tree.get("objective"):
+            tree["objective"] = body.objective
+        return solve_stochastic(
+            {
+                "network": body.network,
+                "constraints": body.constraints,
+                "reference": body.reference or {},
+                "bom": body.bom if isinstance(body.bom, dict) else (
+                    body.bom.model_dump() if body.bom else {}
+                ),
+                "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
+                "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
+                "scenarioTree": tree,
+                "objective": tree.get("objective") or body.objective or "expected",
+                "cvarAlpha": tree.get("cvarAlpha", body.cvarAlpha),
+                "computeEvpi": tree.get("computeEvpi", body.computeEvpi),
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500, detail=f"Stochastic optimize failed: {e}"
         ) from e

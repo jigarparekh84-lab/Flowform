@@ -20,6 +20,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Handoff-ready** — enriched S&OP package (sites, lanes, preferred territory, CapEx years, product mix, BOM implied RM, inventory targets, scenarios) with schema README; JSON + Markdown ops brief toward Ritara.
 - **Multi-SKU MIP** — enterprise demand-by-SKU/group commodities, facility capability, hard service constraints + infeasibility diagnostics; soft uncovered penalty optional
 - **Multi-period CapEx NPV** — roadmap events linked to capacity-by-year; choose timing or force timeline; minimize discounted CapEx+OpEx+transport
+- **Stochastic / robust scenario-tree** — 2–5 demand/cost scenarios with shared first-stage opens; expected, minimax, or CVaR-lite; EVPI-ish gap vs wait-and-see
 - **Multi-commodity** — product groups (Ambient/Chilled/Hazmat or Finished/WIP/RM) tag demand, lanes, and facility capacity; filter Network / Compare KPIs by group.
 - **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 - **Bill-of-materials** — FG ← components/RM with qty per unit; implied RM demand + Plant←Supplier / FG←RM echelon flows; optional inbound-lane scenario.
@@ -38,8 +39,8 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
 | **Territory** | Service territory / coverage — assign demand to servers, gaps/overlaps, preferred lanes + scenario |
 | **Roadmap** | CapEx phasing — multi-year open/close/expand events, Gantt-lite, **Optimize timing** (NPV), cumulative CapEx/capacity, year-slice scenarios |
-| **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
-| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** (tornado + MC) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** + **decision log** |
+| **Scenarios** | Named what-ifs + sensitivity presets + **Robust optimize** (scenario-tree) |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** / **Robust** (scenario-tree) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** + **decision log** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export, **decision log** |
 | **Data** | CSV upload + **enterprise pack** (`enterprise-data-v1`: sites, SKUs, demand by SKU+customer, lanes, BOM, cost factors) with validation scorecard / export-import; CO₂ factors, product groups, lane bids, BOM |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
@@ -75,7 +76,7 @@ Flowform/
 | Piece | Stack | Port | Role |
 |-------|-------|------|------|
 | **web** | Vite, React 19, TypeScript, MapLibre GL | **5180** | Studio UI; Projects persist in localStorage; Run prefers API then heuristic |
-| **api** | FastAPI, PuLP, HiGHS (highspy) / CBC | **5182** | `POST /optimize` MIP; `POST /optimize/multi-period` CapEx NPV timing |
+| **api** | FastAPI, PuLP, HiGHS (highspy) / CBC | **5182** | `POST /optimize` MIP; `POST /optimize/multi-period` CapEx NPV; `POST /optimize/stochastic` scenario-tree |
 
 > Ports are **5180 / 5182**, not 5173 (Ritara). Preview build uses 5181 locally.
 

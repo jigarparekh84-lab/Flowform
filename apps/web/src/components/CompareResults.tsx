@@ -77,6 +77,7 @@ type ViewMode =
   | 'bids'
   | 'bom'
   | 'territory'
+  | 'robust'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -198,6 +199,11 @@ export function CompareResults() {
     bom,
     applyBomInboundScenario,
     applyTerritoryNetwork,
+    stochasticResult,
+    stochasticStatus,
+    runStochasticOptimize,
+    exportStochasticToBrief,
+    clearStochasticResult,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -369,6 +375,7 @@ export function CompareResults() {
               ['bids', 'Bids'],
               ['bom', 'BOM'],
               ['territory', 'Territory'],
+              ['robust', 'Robust'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -509,6 +516,17 @@ export function CompareResults() {
       </div>
 
       <div className="compare-comments-wrap">
+        {view === 'robust' && (
+          <RobustOptimizeView
+            selected={selected}
+            result={stochasticResult}
+            status={stochasticStatus}
+            onRun={(opts) => runStochasticOptimize(opts)}
+            onExport={() => exportStochasticToBrief()}
+            onClear={() => clearStochasticResult()}
+          />
+        )}
+
         <CommentsPanel scenarioId={focus?.id ?? activeScenarioId} compact />
         <DecisionLogPanel compact />
       </div>
@@ -2916,6 +2934,256 @@ function CostSensitivityView({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+
+function RobustOptimizeView({
+  selected,
+  result,
+  status,
+  onRun,
+  onExport,
+  onClear,
+}: {
+  selected: Scenario[]
+  result: import('../data/stochasticOptimize').StochasticOptimizeResult | null
+  status: { phase: string; message?: string }
+  onRun: (opts?: {
+    objective?: import('../data/optimizeApi').StochasticObjective
+    cvarAlpha?: number
+    fromScenarioChips?: Scenario[]
+  }) => Promise<unknown>
+  onExport: () => boolean
+  onClear: () => void
+}) {
+  const [objective, setObjective] = useState<
+    import('../data/optimizeApi').StochasticObjective
+  >('expected')
+  const [cvarAlpha, setCvarAlpha] = useState(0.3)
+  const [useChips, setUseChips] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [localMsg, setLocalMsg] = useState<string | null>(null)
+
+  const chipCount = selected.length
+
+  async function handleRun() {
+    setBusy(true)
+    setLocalMsg(null)
+    try {
+      const r = await onRun({
+        objective,
+        cvarAlpha: objective === 'cvar_lite' ? cvarAlpha : undefined,
+        fromScenarioChips:
+          useChips && chipCount >= 2 ? selected.slice(0, 5) : undefined,
+      })
+      if (!r) {
+        setLocalMsg(status.message || 'Robust optimize failed or API down.')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const opens = result?.firstStage.openIds ?? []
+  const wsStable = result?.evpi?.stableWaitAndSeeOpenIds ?? []
+
+  return (
+    <div className="compare-panel robust-panel">
+      <div className="library-card-head">
+        <h2>Robust / stochastic optimize</h2>
+        <span className="muted tiny">scenario-tree · shared first-stage opens</span>
+      </div>
+      <p className="hint pad" style={{ paddingTop: 0 }}>
+        Two-stage MIP: open/close decisions shared across 2–5 demand (or cost)
+        scenarios; flows recourse per scenario. Use Compare chips as demand
+        shocks, or built-in Base / Soft −15% / Surge +25%.
+      </p>
+
+      <div className="sens-cost-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+        <label className="field" style={{ minWidth: '10rem' }}>
+          <span>Objective</span>
+          <select
+            value={objective}
+            onChange={(e) =>
+              setObjective(
+                e.target.value as import('../data/optimizeApi').StochasticObjective,
+              )
+            }
+          >
+            <option value="expected">Expected cost</option>
+            <option value="minimax">Minimax (robust)</option>
+            <option value="cvar_lite">CVaR-lite</option>
+          </select>
+        </label>
+        {objective === 'cvar_lite' && (
+          <label className="field" style={{ minWidth: '8rem' }}>
+            <span>α (worst weight)</span>
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={cvarAlpha}
+              onChange={(e) => setCvarAlpha(Number(e.target.value))}
+            />
+          </label>
+        )}
+        <label className="toggle-row" style={{ alignSelf: 'end' }}>
+          <input
+            type="checkbox"
+            checked={useChips}
+            onChange={(e) => setUseChips(e.target.checked)}
+          />
+          <span>
+            Use selected chips as shocks
+            {useChips ? ` (${Math.min(5, Math.max(0, chipCount))} selected)` : ''}
+          </span>
+        </label>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={busy || status.phase === 'running'}
+          onClick={() => void handleRun()}
+        >
+          {busy || status.phase === 'running' ? 'Solving…' : 'Robust optimize'}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={!result?.ok}
+          onClick={() => {
+            const ok = onExport()
+            setLocalMsg(ok ? 'Exported to Decision Brief notes.' : 'Nothing to export.')
+          }}
+        >
+          Export to Brief
+        </button>
+        <button type="button" className="btn ghost" disabled={!result} onClick={onClear}>
+          Clear
+        </button>
+      </div>
+      {(status.message || localMsg) && (
+        <p className="status-line">{localMsg || status.message}</p>
+      )}
+      {useChips && chipCount < 2 && (
+        <p className="hint pad">
+          Select ≥2 scenario chips above (or uncheck to use built-in Base/Soft/Surge
+          shocks).
+        </p>
+      )}
+
+      {result?.ok && (
+        <>
+          <div className="kpi-mini-row" style={{ marginTop: '0.75rem' }}>
+            <div className="kpi-mini">
+              <span className="muted tiny">Objective</span>
+              <strong>{result.objective}</strong>
+            </div>
+            <div className="kpi-mini">
+              <span className="muted tiny">E[cost]</span>
+              <strong>${result.expectedCostM.toFixed(2)}M</strong>
+            </div>
+            <div className="kpi-mini">
+              <span className="muted tiny">Worst</span>
+              <strong>${result.worstCostM.toFixed(2)}M</strong>
+            </div>
+            <div className="kpi-mini">
+              <span className="muted tiny">Obj value</span>
+              <strong>${result.objectiveValueM.toFixed(2)}M</strong>
+            </div>
+            {result.evpi?.evpiGapM != null && (
+              <div className="kpi-mini">
+                <span className="muted tiny">EVPI-ish</span>
+                <strong>${result.evpi.evpiGapM.toFixed(2)}M</strong>
+              </div>
+            )}
+          </div>
+
+          <section style={{ marginTop: '1rem' }}>
+            <h3 className="cts-side-h">First-stage opens (stable across scenarios)</h3>
+            <ul className="delta-sites">
+              {opens.length === 0 ? (
+                <li className="muted">No facilities open</li>
+              ) : (
+                opens.map((id) => (
+                  <li key={id}>
+                    <strong>{id}</strong>
+                    {wsStable.includes(id) ? (
+                      <span className="chip-tag">also WS-stable</span>
+                    ) : (
+                      <span className="chip-tag">robust hedge</span>
+                    )}
+                  </li>
+                ))
+              )}
+            </ul>
+            <p className="muted tiny">
+              Same open set used in every scenario (here-and-now). Wait-and-see
+              stable ∩ = {wsStable.join(', ') || '—'}.
+            </p>
+          </section>
+
+          <section style={{ marginTop: '1rem' }}>
+            <h3 className="cts-side-h">Per-scenario cost / service</h3>
+            <table className="matrix-table">
+              <thead>
+                <tr>
+                  <th>Scenario</th>
+                  <th>p</th>
+                  <th>Scale</th>
+                  <th>Cost $M</th>
+                  <th>Transport</th>
+                  <th>Service</th>
+                  <th>Flows</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.scenarios.map((s) => (
+                  <tr key={s.id}>
+                    <td>{s.name}</td>
+                    <td>{(s.probability * 100).toFixed(0)}%</td>
+                    <td>
+                      d×{s.demandScale?.toFixed(2) ?? '1'}
+                      {s.costScale != null && s.costScale !== 1
+                        ? ` · c×${s.costScale.toFixed(2)}`
+                        : ''}
+                    </td>
+                    <td>{s.totalCostM.toFixed(2)}</td>
+                    <td>{s.transportM.toFixed(2)}</td>
+                    <td>{s.servicePct.toFixed(1)}%</td>
+                    <td>
+                      {s.flowsSummary
+                        ? `${s.flowsSummary.arcCount} arcs / ${s.flowsSummary.totalVolume.toFixed(0)} u`
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          {result.evpi?.waitAndSeeByScenario &&
+            result.evpi.waitAndSeeByScenario.length > 0 && (
+              <section style={{ marginTop: '1rem' }}>
+                <h3 className="cts-side-h">Wait-and-see opens (perfect info)</h3>
+                <ul className="des-scenario-list">
+                  {result.evpi.waitAndSeeByScenario.map((w) => (
+                    <li key={w.id}>
+                      <strong>{w.name}</strong>
+                      <span className="muted tiny">
+                        {' '}
+                        opens {w.openIds.join(', ') || '—'}
+                        {w.costM != null ? ` · $${w.costM.toFixed(2)}M` : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+        </>
+      )}
     </div>
   )
 }

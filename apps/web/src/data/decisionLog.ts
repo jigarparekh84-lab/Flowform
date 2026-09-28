@@ -21,6 +21,7 @@ export type DecisionActionType =
   | 'apply_territory'
   | 'apply_roadmap'
   | 'optimize_timing'
+  | 'robust_optimize'
   | 'apply_bom'
   | 'apply_bids'
   | 'apply_sensitivity'
@@ -35,6 +36,7 @@ export const DECISION_ACTION_TYPES: DecisionActionType[] = [
   'apply_territory',
   'apply_roadmap',
   'optimize_timing',
+  'robust_optimize',
   'apply_bom',
   'apply_bids',
   'apply_sensitivity',
@@ -50,6 +52,7 @@ export const DECISION_ACTION_LABELS: Record<DecisionActionType, string> = {
   apply_territory: 'Apply territory',
   apply_roadmap: 'Apply roadmap',
   optimize_timing: 'Optimize CapEx timing',
+  robust_optimize: 'Robust / stochastic optimize',
   apply_bom: 'Apply BOM',
   apply_bids: 'Apply bids',
   apply_sensitivity: 'Apply sensitivity',

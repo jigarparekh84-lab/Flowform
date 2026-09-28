@@ -10,7 +10,7 @@ Fixed-charge **multi-echelon MIP** (PuLP + HiGHS preferred, CBC fallback):
 
 - Default port: **5182**
 - CORS: `http://localhost:5180` (Flowform web)
-- Endpoints: `POST /optimize`, `POST /optimize/multi-period`
+- Endpoints: `POST /optimize`, `POST /optimize/multi-period`, `POST /optimize/stochastic`
 
 ## Setup
 
@@ -161,4 +161,36 @@ Response: `npv`, `eventTiming`, `years[]` (open set, CapEx, flows summary, NPV c
 
 ```bash
 pytest -q tests/test_multi_period.py
+```
+
+## Depth slice 6 — Stochastic / scenario-tree (robust)
+
+`POST /optimize/stochastic` accepts network/constraints plus a `scenarioTree`:
+
+```json
+{
+  "scenarioTree": {
+    "objective": "expected",
+    "cvarAlpha": 0.3,
+    "computeEvpi": true,
+    "scenarios": [
+      { "id": "soft", "name": "Soft", "probability": 0.5, "demandScale": 0.85 },
+      { "id": "surge", "name": "Surge", "probability": 0.5, "demandScale": 1.25 }
+    ]
+  }
+}
+```
+
+| Objective | Behavior |
+|-----------|----------|
+| `expected` | Minimize fixed CapEx+OpEx + Σ p_s · (transport + uncovered)_s |
+| `minimax` | Minimize worst-scenario total cost |
+| `cvar_lite` | (1−α)·E[total] + α·worst |
+
+First-stage open/close binaries are **shared**; second-stage flows are per scenario.
+Optional `costScale` multiplies transport unit cost. Response includes `firstStage`,
+per-scenario costs/flows, and an EVPI-ish gap (here-and-now E[cost] − wait-and-see E[cost]).
+
+```bash
+pytest -q tests/test_stochastic.py
 ```

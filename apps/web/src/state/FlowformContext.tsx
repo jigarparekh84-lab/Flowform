@@ -28,6 +28,7 @@ import {
   checkApiHealth,
   postOptimize,
   postMultiPeriodOptimize,
+  postStochasticOptimize,
   type ApiOptimizeResponse,
   type MultiPeriodMode,
 } from '../data/optimizeApi'
@@ -174,6 +175,14 @@ import {
   type ApplyYearSliceResult,
   type MultiPeriodOptimizeResult,
 } from '../data/capexRoadmap'
+import {
+  apiToStochasticResult,
+  formatStochasticBriefSection,
+  shocksFromScenarioChips,
+  DEFAULT_DEMAND_SHOCKS,
+  type StochasticOptimizeResult,
+} from '../data/stochasticOptimize'
+import type { StochasticObjective, StochasticScenarioInput } from '../data/optimizeApi'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -500,6 +509,19 @@ type FlowformContextValue = {
   }) => Promise<MultiPeriodOptimizeResult | null>
   exportMultiPeriodToBrief: () => boolean
   clearMultiPeriodResult: () => void
+  /** Stochastic / robust scenario-tree optimize (API). */
+  stochasticResult: StochasticOptimizeResult | null
+  stochasticStatus: { phase: 'idle' | 'running' | 'done' | 'error'; message?: string }
+  runStochasticOptimize: (opts?: {
+    objective?: StochasticObjective
+    cvarAlpha?: number
+    scenarios?: StochasticScenarioInput[]
+    /** When set, map these scenario chips to demand/cost shocks. */
+    fromScenarioChips?: Scenario[]
+    computeEvpi?: boolean
+  }) => Promise<StochasticOptimizeResult | null>
+  exportStochasticToBrief: () => boolean
+  clearStochasticResult: () => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -577,6 +599,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [multiPeriodResult, setMultiPeriodResult] =
     useState<MultiPeriodOptimizeResult | null>(null)
   const [multiPeriodStatus, setMultiPeriodStatus] = useState<{
+    phase: 'idle' | 'running' | 'done' | 'error'
+    message?: string
+  }>({ phase: 'idle' })
+
+  const [stochasticResult, setStochasticResult] =
+    useState<StochasticOptimizeResult | null>(null)
+  const [stochasticStatus, setStochasticStatus] = useState<{
     phase: 'idle' | 'running' | 'done' | 'error'
     message?: string
   }>({ phase: 'idle' })
@@ -2276,6 +2305,99 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setMultiPeriodStatus({ phase: 'idle' })
   }, [])
 
+  const runStochasticOptimize = useCallback(
+    async (opts?: {
+      objective?: StochasticObjective
+      cvarAlpha?: number
+      scenarios?: StochasticScenarioInput[]
+      fromScenarioChips?: Scenario[]
+      computeEvpi?: boolean
+    }): Promise<StochasticOptimizeResult | null> => {
+      const objective = opts?.objective ?? 'expected'
+      const cvarAlpha = opts?.cvarAlpha ?? 0.3
+      const computeEvpi = opts?.computeEvpi !== false
+      let scenarios: StochasticScenarioInput[]
+      if (opts?.scenarios && opts.scenarios.length >= 2) {
+        scenarios = opts.scenarios.slice(0, 5)
+      } else if (opts?.fromScenarioChips && opts.fromScenarioChips.length >= 2) {
+        scenarios = shocksFromScenarioChips(opts.fromScenarioChips)
+      } else {
+        scenarios = DEFAULT_DEMAND_SHOCKS
+      }
+      setStochasticStatus({
+        phase: 'running',
+        message: `Solving ${objective} scenario-tree (${scenarios.length} scenarios)…`,
+      })
+      try {
+        const apiUp = await checkApiHealth()
+        if (!apiUp) {
+          setStochasticStatus({
+            phase: 'error',
+            message: 'Optimize API unreachable — start apps/api on :5182.',
+          })
+          return null
+        }
+        const api = await postStochasticOptimize({
+          network,
+          constraints,
+          reference: activeScenario,
+          scenarioTree: {
+            objective,
+            cvarAlpha: objective === 'cvar_lite' ? cvarAlpha : undefined,
+            computeEvpi,
+            scenarios,
+          },
+        })
+        const result = apiToStochasticResult(api)
+        setStochasticResult(result)
+        setDecisionLog((prev) =>
+          appendDecisionEntry(prev, {
+            action: 'robust_optimize',
+            summary: api.ok
+              ? `Robust ${objective}: E[cost] $${api.expectedCostM.toFixed(2)}M · worst $${api.worstCostM.toFixed(2)}M · opens ${api.firstStage.openIds.join(',') || '—'}`
+              : `Robust optimize ${api.status}`,
+            scenarioId: activeScenario.id,
+          }),
+        )
+        setStochasticStatus({
+          phase: api.ok ? 'done' : 'error',
+          message: api.ok
+            ? `E[cost] $${api.expectedCostM.toFixed(2)}M · worst $${api.worstCostM.toFixed(2)}M · ${api.firstStage.openIds.length} opens · ${api.solveSeconds ?? '?'}s`
+            : api.infeasibilityReport?.summary || api.status,
+        })
+        return result
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setStochasticStatus({ phase: 'error', message: msg })
+        return null
+      }
+    },
+    [network, constraints, activeScenario],
+  )
+
+  const exportStochasticToBrief = useCallback(() => {
+    if (!stochasticResult) return false
+    const section = formatStochasticBriefSection(stochasticResult)
+    setBrief((prev) => {
+      let notes = prev.notes.trim()
+      if (notes.includes('## Robust / stochastic optimize')) {
+        notes = notes.replace(
+          /## Robust \/ stochastic optimize[\s\S]*?(?=\n## |$)/,
+          section.trim() + '\n\n',
+        )
+      } else {
+        notes = (notes ? notes + '\n\n' : '') + section
+      }
+      return { ...prev, notes: notes.trim() + '\n' }
+    })
+    return true
+  }, [stochasticResult])
+
+  const clearStochasticResult = useCallback(() => {
+    setStochasticResult(null)
+    setStochasticStatus({ phase: 'idle' })
+  }, [])
+
   const value = useMemo<FlowformContextValue>(
     () => ({
       horizon,
@@ -2384,6 +2506,11 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       runMultiPeriodOptimize,
       exportMultiPeriodToBrief,
       clearMultiPeriodResult,
+      stochasticResult,
+      stochasticStatus,
+      runStochasticOptimize,
+      exportStochasticToBrief,
+      clearStochasticResult,
     }),
     [
       horizon,
@@ -2484,6 +2611,11 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       runMultiPeriodOptimize,
       exportMultiPeriodToBrief,
       clearMultiPeriodResult,
+      stochasticResult,
+      stochasticStatus,
+      runStochasticOptimize,
+      exportStochasticToBrief,
+      clearStochasticResult,
     ],
   )
 

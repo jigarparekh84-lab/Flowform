@@ -18,12 +18,20 @@ export function ScenariosLibrary() {
     applySensitivityPreset,
     runCostSensitivity,
     activeScenario,
+    stochasticResult,
+    stochasticStatus,
+    runStochasticOptimize,
+    exportStochasticToBrief,
   } = useFlowform()
 
   const [name, setName] = useState('')
   const [baseId, setBaseId] = useState('baseline')
   const [pickedDeltas, setPickedDeltas] = useState<string[]>([])
   const [status, setStatus] = useState<string | null>(null)
+  const [robustObj, setRobustObj] = useState<'expected' | 'minimax' | 'cvar_lite'>(
+    'expected',
+  )
+  const [robustBusy, setRobustBusy] = useState(false)
 
   const baselines = useMemo(
     () => scenarios.filter((s) => !s.deltaIds?.length || s.id === 'baseline'),
@@ -136,6 +144,88 @@ export function ScenariosLibrary() {
               </span>
             )}
           </div>
+        </div>
+      </section>
+
+
+      <section className="library-card sensitivity-card" aria-label="Robust optimize">
+        <div className="library-card-head">
+          <h2>Robust optimize</h2>
+          <span className="muted tiny">scenario-tree · Compare → Robust</span>
+        </div>
+        <p className="hint pad" style={{ paddingTop: 0 }}>
+          Shared first-stage opens across demand shocks (Base / Soft −15% / Surge
+          +25%, or selected library scenarios). Objectives: expected, minimax, or
+          CVaR-lite. Full table under Compare → Robust.
+        </p>
+        <div className="sens-cost-actions">
+          <label className="field">
+            <span>Objective</span>
+            <select
+              value={robustObj}
+              onChange={(e) =>
+                setRobustObj(
+                  e.target.value as 'expected' | 'minimax' | 'cvar_lite',
+                )
+              }
+            >
+              <option value="expected">Expected cost</option>
+              <option value="minimax">Minimax</option>
+              <option value="cvar_lite">CVaR-lite</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={robustBusy || stochasticStatus.phase === 'running'}
+            onClick={() => {
+              void (async () => {
+                setRobustBusy(true)
+                const chips =
+                  scenarios.length >= 2 ? scenarios.slice(0, 5) : undefined
+                const r = await runStochasticOptimize({
+                  objective: robustObj,
+                  fromScenarioChips: chips,
+                })
+                setRobustBusy(false)
+                if (r?.ok) {
+                  setStatus(
+                    `Robust ${robustObj}: E[cost] $${r.expectedCostM.toFixed(1)}M · opens ${r.firstStage.openIds.join(', ') || '—'} · EVPI $${r.evpi?.evpiGapM?.toFixed(2) ?? '—'}M. See Compare → Robust.`,
+                  )
+                } else {
+                  setStatus(
+                    stochasticStatus.message ||
+                      'Robust optimize failed — is API on :5182?',
+                  )
+                }
+              })()
+            }}
+          >
+            {robustBusy || stochasticStatus.phase === 'running'
+              ? 'Solving…'
+              : 'Run robust optimize'}
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={!stochasticResult?.ok}
+            onClick={() => {
+              const ok = exportStochasticToBrief()
+              setStatus(
+                ok
+                  ? 'Robust result exported to Decision Brief.'
+                  : 'Nothing to export.',
+              )
+            }}
+          >
+            Export to Brief
+          </button>
+          {stochasticResult?.ok && (
+            <span className="muted tiny">
+              Last E[cost] ${stochasticResult.expectedCostM.toFixed(1)}M ·{' '}
+              {stochasticResult.firstStage.openIds.length} opens
+            </span>
+          )}
         </div>
       </section>
 

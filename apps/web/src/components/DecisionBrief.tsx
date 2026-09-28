@@ -10,6 +10,7 @@ import {
   formatMultiPeriodBriefSection,
   formatRoadmapBriefSection,
 } from '../data/capexRoadmap'
+import { formatStochasticBriefSection } from '../data/stochasticOptimize'
 import {
   parseMoneyM,
   parsePercent,
@@ -34,6 +35,7 @@ export function DecisionBrief({ onHandoff }: Props) {
     capexRoadmap,
     network,
     multiPeriodResult,
+    stochasticResult,
   } = useFlowform()
 
   const reference =
@@ -86,6 +88,9 @@ export function DecisionBrief({ onHandoff }: Props) {
     const parts = [formatRoadmapBriefSection(capexRoadmap, network)]
     if (multiPeriodResult?.ok) {
       parts.push(formatMultiPeriodBriefSection(multiPeriodResult))
+    }
+    if (stochasticResult?.ok) {
+      parts.push(formatStochasticBriefSection(stochasticResult))
     }
     return parts.join('\n\n')
   }
