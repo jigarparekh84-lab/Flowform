@@ -354,6 +354,12 @@ type FlowformContextValue = {
     draftScenario?: Scenario,
   ) => void
 
+  /** Apply service territory / preferred demand lanes + draft scenario. */
+  applyTerritoryNetwork: (
+    net: import('../data/csvParsers').UploadedNetwork,
+    draftScenario?: Scenario,
+  ) => void
+
   /** Multi-commodity / product groups. */
   productMix: ProductMixState
   setProductCatalog: (catalog: ProductCatalogId) => void
@@ -1390,6 +1396,28 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const applyTerritoryNetwork = useCallback(
+    (
+      net: import('../data/csvParsers').UploadedNetwork,
+      draftScenario?: Scenario,
+    ) => {
+      setNetwork(net)
+      setConstraints((prev) => mergeConstraints(prev, net))
+      setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+      setProductMix((prev) => mergeProductMix(prev, net))
+      setLaneRates((prev) => mergeLaneRates(prev, net))
+      setBom((prev) => mergeBom(prev, net))
+      setSelection({ ids: [], kind: null })
+      if (draftScenario) {
+        setScenarios((prev) => {
+          if (prev.some((s) => s.id === draftScenario.id)) return prev
+          return [...prev, draftScenario]
+        })
+        setActiveScenarioId(draftScenario.id)
+      }
+    },
+    [],
+  )
 
   const setProductCatalog = useCallback(
     (catalog: ProductCatalogId) => {
@@ -1665,6 +1693,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       shareProject,
       applyMergedNetwork,
       applyHubSpokeNetwork,
+      applyTerritoryNetwork,
       productMix,
       setProductCatalog,
       setProductFilter,
@@ -1745,6 +1774,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       shareProject,
       applyMergedNetwork,
       applyHubSpokeNetwork,
+      applyTerritoryNetwork,
       productMix,
       setProductCatalog,
       setProductFilter,

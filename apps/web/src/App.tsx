@@ -5,6 +5,7 @@ import { DataRoom } from './components/DataRoom'
 import { DecisionBrief } from './components/DecisionBrief'
 import { GreenfieldStudio } from './components/GreenfieldStudio'
 import { HubSpokeStudio } from './components/HubSpokeStudio'
+import { TerritoryStudio } from './components/TerritoryStudio'
 import { HandoffRoom } from './components/HandoffRoom'
 import { LeftNav, type NavItem } from './components/LeftNav'
 import { MergeStudio } from './components/MergeStudio'
@@ -38,6 +39,7 @@ function App() {
           {room === 'Network' && <NetworkCanvas />}
           {room === 'Greenfield' && <GreenfieldStudio />}
           {room === 'Hubs' && <HubSpokeStudio />}
+          {room === 'Territory' && <TerritoryStudio />}
           {room === 'Scenarios' && <ScenariosLibrary />}
           {room === 'Compare' && <CompareResults />}
           {room === 'Brief' && (

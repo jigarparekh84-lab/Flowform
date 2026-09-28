@@ -45,6 +45,12 @@ import {
   deriveImpliedRmDemand,
   previewBomInboundLanes,
 } from '../data/bom'
+import {
+  applyTerritoryDesign,
+  previewTerritory,
+  suggestServingIds,
+  type TerritoryAssignMode,
+} from '../data/serviceTerritory'
 import { useFlowform } from '../state/FlowformContext'
 
 type ViewMode =
@@ -59,6 +65,7 @@ type ViewMode =
   | 'products'
   | 'bids'
   | 'bom'
+  | 'territory'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -178,6 +185,7 @@ export function CompareResults() {
     applyRateBid,
     bom,
     applyBomInboundScenario,
+    applyTerritoryNetwork,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -345,6 +353,7 @@ export function CompareResults() {
               ['products', 'Products'],
               ['bids', 'Bids'],
               ['bom', 'BOM'],
+              ['territory', 'Territory'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -460,6 +469,13 @@ export function CompareResults() {
             network={network}
             kpis={focus?.kpis ?? activeScenario.kpis}
             onDraftInbound={() => applyBomInboundScenario()}
+          />
+        )}
+        {view === 'territory' && (
+          <TerritoryView
+            network={network}
+            kpis={focus?.kpis ?? activeScenario.kpis}
+            applyTerritoryNetwork={applyTerritoryNetwork}
           />
         )}
       </div>
@@ -2170,6 +2186,236 @@ function BomView({
           </table>
         </div>
         <p className="hint">{preview.summary}. Edit BOM in Data room.</p>
+      </section>
+    </div>
+  )
+}
+
+function TerritoryView({
+  network,
+  kpis,
+  applyTerritoryNetwork,
+}: {
+  network: import('../data/csvParsers').UploadedNetwork
+  kpis: KpiSnapshot
+  applyTerritoryNetwork: (
+    net: import('../data/csvParsers').UploadedNetwork,
+    draftScenario?: Scenario,
+  ) => void
+}) {
+  const [mode, setMode] = useState<TerritoryAssignMode>('distance')
+  const [coverageMiles, setCoverageMiles] = useState(400)
+  const [coverageLeadDays, setCoverageLeadDays] = useState(3)
+  const [status, setStatus] = useState<string | null>(null)
+
+  const preview = useMemo(
+    () =>
+      previewTerritory(
+        network,
+        {
+          facilityIds: suggestServingIds(network.nodes),
+          mode,
+          coverageMiles,
+          coverageLeadDays,
+          replaceDemandLanes: true,
+          laneMode: 'Truck',
+        },
+        kpis,
+      ),
+    [network, mode, coverageMiles, coverageLeadDays, kpis],
+  )
+
+  function handleApply() {
+    const result = applyTerritoryDesign(
+      network,
+      {
+        facilityIds: suggestServingIds(network.nodes),
+        mode,
+        coverageMiles,
+        coverageLeadDays,
+        replaceDemandLanes: true,
+        laneMode: 'Truck',
+      },
+      kpis,
+    )
+    applyTerritoryNetwork(result.network, result.draftScenario)
+    setStatus(
+      `${result.preview.summary} Draft “${result.draftScenario.name}” Active.`,
+    )
+  }
+
+  const m = preview.metrics
+
+  return (
+    <div className="compare-panel territory-compare">
+      <section className="library-card" aria-label="Service territory">
+        <div className="products-head">
+          <h2>Service territory / coverage</h2>
+          <div className="products-actions">
+            <label className="field inline-field">
+              <span>Assign</span>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as TerritoryAssignMode)}
+              >
+                <option value="distance">Distance</option>
+                <option value="capacity">Capacity</option>
+                <option value="lanes">Current lanes</option>
+              </select>
+            </label>
+            <label className="field inline-field">
+              <span>Miles</span>
+              <input
+                type="number"
+                min={50}
+                max={2000}
+                step={25}
+                value={coverageMiles}
+                onChange={(e) => setCoverageMiles(Number(e.target.value) || 400)}
+              />
+            </label>
+            <label className="field inline-field">
+              <span>Lead days</span>
+              <input
+                type="number"
+                min={1}
+                max={21}
+                value={coverageLeadDays}
+                onChange={(e) =>
+                  setCoverageLeadDays(Number(e.target.value) || 3)
+                }
+              />
+            </label>
+            <button type="button" className="btn primary" onClick={handleApply}>
+              Apply scenario + preferred lanes
+            </button>
+          </div>
+        </div>
+        <p className="hint">
+          Full studio: Territory room. Network Layers → Territory for map
+          coloring. {preview.summary}
+        </p>
+        {status && <p className="status-line">{status}</p>}
+
+        <div className="data-scores merge-scores hubspoke-kpis">
+          <div className="score-card">
+            <span className="score-label">Within {coverageMiles} mi</span>
+            <strong className="score-value">{m.pctCoveredWithinMiles}%</strong>
+            <span className="score-sub">
+              {m.assignedCount}/{m.demandCount} assigned · {m.gapCount} gaps
+            </span>
+          </div>
+          <div className="score-card">
+            <span className="score-label">Within {coverageLeadDays}d lead</span>
+            <strong className="score-value">{m.pctCoveredWithinLead}%</strong>
+            <span className="score-sub">
+              Unassigned {m.unassignedVolume.toLocaleString()} · {m.overlapCount}{' '}
+              overlaps
+            </span>
+          </div>
+          <div className="score-card">
+            <span className="score-label">Territory load</span>
+            <strong className="score-value">
+              {preview.loads.filter((l) => l.utilPct > 100).length} overloaded
+            </strong>
+            <span className="score-sub">
+              {preview.loads.length} servers · after svc{' '}
+              {preview.kpis.after.service.value}
+            </span>
+          </div>
+        </div>
+
+        <div className="hubspoke-tables" style={{ marginTop: '0.75rem' }}>
+          <div className="candidate-table">
+            <div className="table-tabs">
+              <span className="table-tabs-label">Load vs capacity</span>
+            </div>
+            <div className="table-scroll">
+              <table className="compare-matrix">
+                <thead>
+                  <tr>
+                    <th>Facility</th>
+                    <th>Demand</th>
+                    <th>Volume</th>
+                    <th>Capacity</th>
+                    <th>Util %</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.loads.map((h) => (
+                    <tr key={h.facilityId}>
+                      <td>
+                        <i
+                          className="terr-swatch"
+                          style={{ background: h.color }}
+                          aria-hidden
+                        />{' '}
+                        {h.facilityName}
+                      </td>
+                      <td>{h.demandCount}</td>
+                      <td>{h.assignedVolume.toLocaleString()}</td>
+                      <td>{h.capacity.toLocaleString()}</td>
+                      <td>
+                        <span
+                          className={
+                            h.utilPct > 100
+                              ? 'util-bad'
+                              : h.utilPct > 85
+                                ? 'util-warn'
+                                : 'util-ok'
+                          }
+                        >
+                          {h.utilPct.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="candidate-table">
+            <div className="table-tabs">
+              <span className="table-tabs-label">Assignments</span>
+            </div>
+            <div className="table-scroll">
+              <table className="compare-matrix">
+                <thead>
+                  <tr>
+                    <th>Demand</th>
+                    <th>Server</th>
+                    <th>Miles</th>
+                    <th>Lead</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.assignments.map((a) => (
+                    <tr key={a.demandId}>
+                      <td>{a.demandName}</td>
+                      <td>{a.facilityName ?? '—'}</td>
+                      <td>{a.miles ?? '—'}</td>
+                      <td>{a.leadDays != null ? `${a.leadDays}d` : '—'}</td>
+                      <td>
+                        <span
+                          className={
+                            a.status === 'gap'
+                              ? 'util-bad'
+                              : a.status === 'overlap'
+                                ? 'util-warn'
+                                : 'util-ok'
+                          }
+                        >
+                          {a.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   )

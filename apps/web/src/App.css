@@ -3101,3 +3101,57 @@ tr.bom-implied td {
 [data-theme='light'] .bom-echelon.mat {
   color: #047857;
 }
+
+/* —— Service territory —— */
+.territory-studio .studio-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.territory-kpis {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.terr-swatch {
+  display: inline-block;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  vertical-align: middle;
+  margin-right: 0.25rem;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.35);
+}
+
+.terr-row-gap {
+  background: color-mix(in srgb, #f87171 12%, transparent);
+}
+
+.terr-row-overlap {
+  background: color-mix(in srgb, #fbbf24 10%, transparent);
+}
+
+.territory-compare .products-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.territory-compare .products-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+@media (max-width: 960px) {
+  .territory-kpis {
+    grid-template-columns: 1fr;
+  }
+}

@@ -21,6 +21,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Multi-commodity** — product groups (Ambient/Chilled/Hazmat or Finished/WIP/RM) tag demand, lanes, and facility capacity; filter Network / Compare KPIs by group.
 - **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 - **Bill-of-materials** — FG ← components/RM with qty per unit; implied RM demand + Plant←Supplier / FG←RM echelon flows; optional inbound-lane scenario.
+- **Service territory** — assign demand to DCs/plants by distance, capacity, or current lanes; coverage % within miles/lead-time; gaps/overlaps; apply preferred lanes + scenario.
 
 ---
 
@@ -32,8 +33,9 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Network** | Map canvas — nodes, sites, lanes, capacities, constraints inspector (primary surface) |
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
 | **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
+| **Territory** | Service territory / coverage — assign demand to servers, gaps/overlaps, preferred lanes + scenario |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
-| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
 | **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups**, **lane rate tables & bids**, **bill of materials** |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |

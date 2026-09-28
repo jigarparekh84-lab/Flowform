@@ -8,6 +8,7 @@ import type {
 import type { FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { computeCapacityUtilization } from '../data/capacityHeat'
+import { computeTerritoryColors } from '../data/serviceTerritory'
 import { basemapProvider, mapBasemapStyle, nodeLatLng } from '../data/geo'
 import {
   kindLabel,
@@ -97,7 +98,19 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
         />
       )}
       <div className="map-legend" aria-hidden>
-        {layers.utilization ? (
+        {layers.territory ? (
+          <>
+            <span>
+              <i className="dot dc" /> Territory color
+            </span>
+            <span>
+              <i className="dot util-high" /> Gap
+            </span>
+            <span>
+              <i className="dot demand" /> Demand by server
+            </span>
+          </>
+        ) : layers.utilization ? (
           <>
             <span>
               <i className="dot util-low" /> Low util
@@ -279,6 +292,9 @@ function MapLibreCanvas({
       const utilById = layers.utilization
         ? computeCapacityUtilization(network, constraints)
         : null
+      const territoryById = layers.territory
+        ? computeTerritoryColors(network).colorByNode
+        : null
       const bomLaneIds = bomDrivenLaneIds(bom, network)
       syncNetworkLayers(map, {
         nodes,
@@ -290,6 +306,7 @@ function MapLibreCanvas({
         ),
         source: network.source,
         utilById,
+        territoryById,
         productMix,
         bomLaneIds,
       })
@@ -316,11 +333,12 @@ function syncNetworkLayers(
     statusById: Map<string, string>
     source: string
     utilById?: Map<string, { color: string; label: string }> | null
+    territoryById?: Map<string, { color: string; label: string }> | null
     productMix: ProductMixState
     bomLaneIds: Set<string>
   },
 ) {
-  const { nodes, lanes, layers, selectedIds, statusById, utilById, productMix, bomLaneIds } = args
+  const { nodes, lanes, layers, selectedIds, statusById, utilById, territoryById, productMix, bomLaneIds } = args
   const selectedSet = new Set(selectedIds)
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
 
@@ -376,18 +394,29 @@ function syncNetworkLayers(
       const ll = nodeLatLng(node)
       const status = statusById.get(node.id) ?? 'open'
       const util = utilById?.get(node.id)
-      const heatOn = !!layers.utilization && !!util
+      const terr = territoryById?.get(node.id)
+      const terrOn = !!layers.territory && !!terr
+      const heatOn = !terrOn && !!layers.utilization && !!util
       const isFacility =
         node.kind === 'dc' || node.kind === 'plant' || node.kind === 'candidate'
+      const color = terrOn
+        ? terr.color
+        : heatOn && isFacility
+          ? util.color
+          : colorFor(node.kind)
+      const name = terrOn
+        ? terr.label
+        : heatOn && isFacility
+          ? `${node.name} · ${util.label}`
+          : node.name
       return {
         type: 'Feature',
         properties: {
           id: node.id,
           entityKind: 'node',
-          name: heatOn && isFacility ? `${node.name} · ${util.label}` : node.name,
+          name,
           kind: node.kind,
-          color:
-            heatOn && isFacility ? util.color : colorFor(node.kind),
+          color,
           selected: selectedSet.has(node.id) ? 1 : 0,
           closed: status === 'closed' ? 1 : 0,
           candidate: status === 'candidate' || node.kind === 'candidate' ? 1 : 0,
@@ -549,6 +578,9 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
   const utilById = layers.utilization
     ? computeCapacityUtilization(network, constraints)
     : null
+  const territoryById = layers.territory
+    ? computeTerritoryColors(network).colorByNode
+    : null
   const bomLaneIds = bomDrivenLaneIds(bom, network)
 
   const visibleLanes = layers.lanes
@@ -639,12 +671,15 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
       {nodes.filter((n) => visibleNode(n, layers) && nodeMatchesProductFilter(n, productMix)).map((node) => {
         const selected = selectedSet.has(node.id)
         const util = utilById?.get(node.id)
+        const terr = territoryById?.get(node.id)
         const isFacility =
           node.kind === 'dc' || node.kind === 'plant' || node.kind === 'candidate'
         const fill =
-          layers.utilization && util && isFacility
-            ? util.color
-            : colorFor(node.kind)
+          layers.territory && terr
+            ? terr.color
+            : layers.utilization && util && isFacility
+              ? util.color
+              : colorFor(node.kind)
         const status = statusById.get(node.id)
         const closed = status === 'closed'
         return (
@@ -696,9 +731,11 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
             <title>
               {node.name} · {kindLabel(node.kind)}
               {status ? ` · ${status}` : ''}
-              {layers.utilization && util && isFacility
-                ? ` · ${util.label}`
-                : ''}
+              {layers.territory && terr
+                ? ` · ${terr.label}`
+                : layers.utilization && util && isFacility
+                  ? ` · ${util.label}`
+                  : ''}
             </title>
           </g>
         )
