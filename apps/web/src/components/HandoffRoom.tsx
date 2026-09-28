@@ -47,6 +47,7 @@ export function HandoffRoom() {
     productMix,
     bom,
     inventoryPolicies,
+    logDecision,
   } = useFlowform()
 
   const payload = handoffPayload ?? (brief.sentToHandoffAt ? brief : null)
@@ -83,11 +84,21 @@ export function HandoffRoom() {
   function handleDownloadJson() {
     if (!pkg) return
     downloadHandoffJson(pkg, horizon)
+    logDecision({
+      action: 'handoff_export',
+      summary: `Downloaded handoff JSON (${HANDOFF_SCHEMA_VERSION})`,
+      scenarioId: payload?.recommendedScenarioId ?? undefined,
+    })
   }
 
   function handleDownloadOps() {
     if (!pkg) return
     downloadHandoffOpsBrief(pkg, horizon)
+    logDecision({
+      action: 'handoff_export',
+      summary: 'Downloaded handoff ops brief (Markdown)',
+      scenarioId: payload?.recommendedScenarioId ?? undefined,
+    })
   }
 
   return (

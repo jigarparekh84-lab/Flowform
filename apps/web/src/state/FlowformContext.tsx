@@ -111,6 +111,12 @@ import {
   type ScenarioComment,
   type SharePack,
 } from '../data/collaboration'
+import {
+  appendDecisionEntry,
+  clearDecisionLog as emptyDecisionLog,
+  type DecisionActionType,
+  type DecisionLogEntry,
+} from '../data/decisionLog'
 import { applyLaneModeChange, emissionModeKey } from '../data/modeMix'
 import {
   addBidToLane,
@@ -203,6 +209,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     laneRates: defaultLaneRates(net),
     bom: defaultBom(net),
     capexRoadmap: defaultCapexRoadmap(net),
+    decisionLog: [],
   }
 }
 
@@ -354,6 +361,15 @@ type FlowformContextValue = {
   addScenarioComment: (scenarioId: string, body: string, author?: string) => void
   deleteScenarioComment: (id: string) => void
 
+  /** Append-only decision / audit log (project localStorage). */
+  decisionLog: DecisionLogEntry[]
+  logDecision: (args: {
+    action: DecisionActionType
+    summary: string
+    scenarioId?: string
+  }) => void
+  clearDecisionLog: () => void
+
   /** Edit lane transport mode (Road/Rail/Air/Ocean/Intermodal); rescales cost + CO₂. */
   updateLaneMode: (laneId: string, mode: string) => void
 
@@ -466,7 +482,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     boot.snap.horizon,
   )
   const [scenarios, setScenarios] = useState<Scenario[]>(boot.snap.scenarios)
-  const [activeScenarioId, setActiveScenarioId] = useState(
+  const [activeScenarioId, setActiveScenarioIdState] = useState(
     boot.snap.activeScenarioId,
   )
   const [deltas, setDeltas] = useState<DeltaItem[]>(boot.snap.deltas)
@@ -504,6 +520,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [comments, setComments] = useState<ScenarioComment[]>(
     () => boot.snap.comments ?? [],
   )
+  const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>(
+    () => boot.snap.decisionLog ?? [],
+  )
   const [productMix, setProductMix] = useState<ProductMixState>(
     () => mergeProductMix(boot.snap.productMix, boot.snap.network),
   )
@@ -519,6 +538,11 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
+  const activeScenarioIdRef = useRef(boot.snap.activeScenarioId)
+
+  useEffect(() => {
+    activeScenarioIdRef.current = activeScenarioId
+  }, [activeScenarioId])
 
   const activeScenario = useMemo(
     () => scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0],
@@ -560,6 +584,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       laneRates,
       bom,
       capexRoadmap,
+      decisionLog,
     }
   }, [
     horizon,
@@ -578,6 +603,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     laneRates,
     bom,
     capexRoadmap,
+    decisionLog,
   ])
 
   const persistNow = useCallback(() => {
@@ -623,13 +649,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     laneRates,
     bom,
     capexRoadmap,
+    decisionLog,
   ])
 
   const applySnapshot = useCallback((snap: ProjectSnapshot) => {
     skipPersist.current = true
     setHorizon(snap.horizon)
     setScenarios(snap.scenarios)
-    setActiveScenarioId(snap.activeScenarioId)
+    setActiveScenarioIdState(snap.activeScenarioId)
     setDeltas(snap.deltas ?? [])
     setNetwork(snap.network)
     setConstraints(snap.constraints)
@@ -641,6 +668,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       mergeInventoryPolicies(snap.inventoryPolicies, snap.network),
     )
     setComments(snap.comments ?? [])
+    setDecisionLog(snap.decisionLog ?? [])
     setProductMix(mergeProductMix(snap.productMix, snap.network))
     setLaneRates(mergeLaneRates(snap.laneRates, snap.network))
     setBom(mergeBom(snap.bom, snap.network))
@@ -883,7 +911,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         kpis: kpisForComposedScenario(base, used),
       }
       setScenarios((prev) => [...prev, scenario])
-      setActiveScenarioId(scenario.id)
+      setActiveScenarioIdState(scenario.id)
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'create_scenario',
+          summary: `Created scenario “${scenario.name}” from ${used.length} delta(s)`,
+          scenarioId: scenario.id,
+        }),
+      )
       return scenario
     },
     [scenarios, deltas],
@@ -996,7 +1031,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         }
       }
       setScenarios((prev) => [...prev, scenario])
-      setActiveScenarioId(scenario.id)
+      setActiveScenarioIdState(scenario.id)
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_sensitivity',
+          summary: `Applied sensitivity “${preset.label}” → “${scenario.name}”`,
+          scenarioId: scenario.id,
+        }),
+      )
       return scenario
     },
     [scenarios, activeScenarioId, computedCo2Kt],
@@ -1033,6 +1075,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         prev.map((s) =>
           s.id === scenario.id ? { ...s, costSensitivity: result } : s,
         ),
+      )
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_sensitivity',
+          summary: `Ran cost tornado + Monte Carlo on “${scenario.name}” (${result.trials} trials)`,
+          scenarioId: scenario.id,
+        }),
       )
       return result
     },
@@ -1108,7 +1157,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       }))
 
       setScenarios((prev) => [...prev, scenario])
-      setActiveScenarioId(scenario.id)
+      setActiveScenarioIdState(scenario.id)
       setBrief((prev) => {
         const compared = Array.from(
           new Set([
@@ -1129,6 +1178,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         message: args.statusMessage,
         log: args.log,
       })
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'run_optimize',
+          summary: `Ran optimize “${scenario.name}” (${args.heuristic}) — open ${openedIds.length}, close ${closedIds.length}`,
+          scenarioId: scenario.id,
+        }),
+      )
       return scenario
     },
     [network.nodes],
@@ -1365,6 +1421,44 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setComments((prev) => deleteComment(prev, id))
   }, [])
 
+  const logDecision = useCallback(
+    (args: {
+      action: DecisionActionType
+      summary: string
+      scenarioId?: string
+    }) => {
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: args.action,
+          summary: args.summary,
+          scenarioId: args.scenarioId,
+        }),
+      )
+    },
+    [],
+  )
+
+  const clearDecisionLog = useCallback(() => {
+    setDecisionLog(emptyDecisionLog())
+  }, [])
+
+  const setActiveScenarioId = useCallback(
+    (id: string) => {
+      if (activeScenarioIdRef.current === id) return
+      const name =
+        scenarios.find((s) => s.id === id)?.name ?? id
+      setActiveScenarioIdState(id)
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'activate_scenario',
+          summary: `Activated “${name}”`,
+          scenarioId: id,
+        }),
+      )
+    },
+    [scenarios],
+  )
+
   const updateLaneMode = useCallback(
     (laneId: string, mode: string) => {
       setNetwork((prev) => {
@@ -1407,6 +1501,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       if (mode === 'download' || mode === 'both') {
         parts.push('Share pack downloaded')
       }
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'share',
+          summary: `Shared project “${projectMeta.name}” (${mode})`,
+          scenarioId: activeScenarioIdRef.current,
+        }),
+      )
       return {
         ok: true,
         deepLink: pack.deepLink,
@@ -1434,7 +1535,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           if (prev.some((s) => s.id === draftScenario.id)) return prev
           return [...prev, draftScenario]
         })
-        setActiveScenarioId(draftScenario.id)
+        setActiveScenarioIdState(draftScenario.id)
       }
     },
     [],
@@ -1457,8 +1558,17 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           if (prev.some((s) => s.id === draftScenario.id)) return prev
           return [...prev, draftScenario]
         })
-        setActiveScenarioId(draftScenario.id)
+        setActiveScenarioIdState(draftScenario.id)
       }
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_hub',
+          summary: draftScenario
+            ? `Applied hub-and-spoke design → “${draftScenario.name}”`
+            : 'Applied hub-and-spoke network redesign',
+          scenarioId: draftScenario?.id,
+        }),
+      )
     },
     [],
   )
@@ -1480,8 +1590,17 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           if (prev.some((s) => s.id === draftScenario.id)) return prev
           return [...prev, draftScenario]
         })
-        setActiveScenarioId(draftScenario.id)
+        setActiveScenarioIdState(draftScenario.id)
       }
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_territory',
+          summary: draftScenario
+            ? `Applied territory design → “${draftScenario.name}”`
+            : 'Applied territory / coverage network',
+          scenarioId: draftScenario?.id,
+        }),
+      )
     },
     [],
   )
@@ -1575,6 +1694,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           l.id === laneId ? applyBidToLane(l, bid, net.nodes) : l,
         ),
       }))
+      setDecisionLog((log) =>
+        appendDecisionEntry(log, {
+          action: 'apply_bids',
+          summary: `Applied bid “${bid.carrier}” on lane ${laneId} ($${bid.rate}/${bid.rateUnit})`,
+          scenarioId: activeScenarioIdRef.current,
+        }),
+      )
       return setSelectedBid(prev, laneId, bidId)
     })
   }, [])
@@ -1616,6 +1742,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         }
         return next
       })
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_bids',
+          summary: `Applied ${winners.length} winning bid(s) (${strat}${laneId ? ` · lane ${laneId}` : ' · all lanes'})`,
+          scenarioId: activeScenarioIdRef.current,
+        }),
+      )
       return winners.length
     },
     [laneRates, network],
@@ -1672,8 +1805,15 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         if (prev.some((s) => s.id === result.draftScenario.id)) return prev
         return [...prev, result.draftScenario]
       })
-      setActiveScenarioId(result.draftScenario.id)
+      setActiveScenarioIdState(result.draftScenario.id)
       setSelection({ ids: [], kind: null })
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_bom',
+          summary: `Applied BOM inbound lanes (+${result.preview.newLanes.length}) → “${result.draftScenario.name}”`,
+          scenarioId: result.draftScenario.id,
+        }),
+      )
       return {
         addedLanes: result.preview.newLanes.length,
         scenarioId: result.draftScenario.id,
@@ -1694,6 +1834,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     }
     setBrief(payload)
     setHandoffPayload(payload)
+    setDecisionLog((prev) =>
+      appendDecisionEntry(prev, {
+        action: 'handoff_export',
+        summary: 'Sent Decision Brief to Handoff',
+        scenarioId: payload.recommendedScenarioId ?? undefined,
+      }),
+    )
   }, [brief])
 
 
@@ -1737,7 +1884,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         if (prev.some((s) => s.id === result.draftScenario.id)) return prev
         return [...prev, result.draftScenario]
       })
-      setActiveScenarioId(result.draftScenario.id)
+      setActiveScenarioIdState(result.draftScenario.id)
+      setDecisionLog((prev) =>
+        appendDecisionEntry(prev, {
+          action: 'apply_roadmap',
+          summary: `Applied CapEx roadmap through ${throughYear} → “${result.draftScenario.name}”`,
+          scenarioId: result.draftScenario.id,
+        }),
+      )
       return result
     },
     [network, constraints, capexRoadmap, activeScenario.kpis],
@@ -1835,6 +1989,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       comments,
       addScenarioComment,
       deleteScenarioComment,
+      decisionLog,
+      logDecision,
+      clearDecisionLog,
       updateLaneMode,
       shareProject,
       applyMergedNetwork,
@@ -1925,6 +2082,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       comments,
       addScenarioComment,
       deleteScenarioComment,
+      decisionLog,
+      logDecision,
+      clearDecisionLog,
       updateLaneMode,
       shareProject,
       applyMergedNetwork,

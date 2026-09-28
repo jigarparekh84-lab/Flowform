@@ -4,6 +4,7 @@
  */
 
 import type { ScenarioComment } from './collaboration'
+import type { DecisionLogEntry } from './decisionLog'
 import type { UploadedNetwork } from './csvParsers'
 import type { EmissionFactor } from './emissions'
 import type { InventoryPolicyState } from './inventoryPolicy'
@@ -60,6 +61,8 @@ export type ProjectSnapshot = {
   bom?: BomState
   /** CapEx phasing / multi-year roadmap. */
   capexRoadmap?: CapexRoadmapState
+  /** Append-only decision / audit log. */
+  decisionLog?: DecisionLogEntry[]
 }
 
 export type ProjectExportFile = {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CommentsPanel } from './CommentsPanel'
+import { DecisionLogPanel } from './DecisionLogPanel'
 import {
   computeCostToServe,
   ctsByRegion,
@@ -500,6 +501,7 @@ export function CompareResults() {
 
       <div className="compare-comments-wrap">
         <CommentsPanel scenarioId={focus?.id ?? activeScenarioId} compact />
+        <DecisionLogPanel compact />
       </div>
     </div>
   )

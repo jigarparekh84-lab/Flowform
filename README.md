@@ -37,8 +37,8 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Territory** | Service territory / coverage — assign demand to servers, gaps/overlaps, preferred lanes + scenario |
 | **Roadmap** | CapEx phasing — multi-year open/close/expand events, Gantt-lite, cumulative CapEx/capacity, year-slice scenarios |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
-| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** (tornado + MC) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** |
-| **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** (tornado + MC) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** + **decision log** |
+| **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export, **decision log** |
 | **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups**, **lane rate tables & bids**, **bill of materials** |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
 | **Handoff** | S&OP package: sites/lanes, preferred territory lanes, CapEx years, product mix, BOM RM, inventory targets, scenario meta — JSON + Markdown ops brief (Ritara intake stub) |
@@ -159,6 +159,7 @@ In **Compare → Sensitivity** (and a quick-run panel under **Scenarios → Sens
 ### Collaboration, M&A, mode mix
 
 - **Share** (top chrome) — copies a read-only `flowform://share?…` deep-link stub and downloads a `.share.json` pack (project JSON embed).
+- **Decision log** — append-only audit of meaningful actions (create/activate scenario, optimize, apply hub/territory/roadmap/BOM/bids/sensitivity, handoff export, share). Persists on `ProjectSnapshot.decisionLog`. Panel in **Compare**, **Brief**, and **Projects** with type filter, clear, and JSON export.
 - **Comments** — per-scenario threads (author, timestamp, body) in project localStorage; panel on **Compare** and **Brief**.
 - **Merge** room — import/sample acquired network, conflict list for duplicate ids, apply merged network + draft baseline scenario.
 - **Hubs** room — hub-and-spoke design: designate hubs, assign spokes by distance/volume/balanced, generate hub↔spoke lanes, draft scenario with before/after KPIs.
@@ -178,7 +179,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Sensitivity tornado/MC, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory), Brief export + comments, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Sensitivity tornado/MC, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory), Brief export + comments + decision log, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, Docker Compose, CI.
 
 **Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 

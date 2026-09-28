@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { downloadProjectFile } from '../data/projects'
+import { DecisionLogPanel } from './DecisionLogPanel'
 import { useFlowform } from '../state/FlowformContext'
 
 function formatWhen(iso: string): string {
@@ -237,6 +238,10 @@ export function ProjectsRoom() {
           })}
         </div>
         {status && <p className="projects-status">{status}</p>}
+
+        <div className="projects-decision-log-wrap">
+          <DecisionLogPanel />
+        </div>
       </div>
     </div>
   )

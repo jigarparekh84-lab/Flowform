@@ -2865,6 +2865,9 @@
 .compare-comments-wrap {
   padding: 0 1.25rem 1.25rem;
   max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
 /* —— Mode mix —— */
@@ -3664,4 +3667,101 @@ tr.bom-implied td {
   .roadmap-body {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* —— Decision / audit log —— */
+.decision-log-panel {
+  border: 1px solid var(--ff-border);
+  border-radius: 0.75rem;
+  background: var(--ff-bg-panel);
+  padding: 1rem 1.1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.decision-log-panel.compact {
+  padding: 0.85rem 1rem;
+}
+
+.decision-log-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.decision-log-head h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.decision-log-head .muted {
+  margin: 0.2rem 0 0;
+}
+
+.decision-log-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.decision-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.decision-log-item {
+  border: 1px solid var(--ff-border);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  background: color-mix(in srgb, var(--ff-bg-chrome) 55%, transparent);
+}
+
+.decision-log-item p {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.decision-log-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.decision-log-type {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ff-accent, #5b8def);
+  background: color-mix(in srgb, var(--ff-accent, #5b8def) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+}
+
+.decision-log-actor {
+  margin-left: auto;
+}
+
+.decision-log-scenario {
+  margin: 0.15rem 0 0 !important;
+}
+
+
+.projects-decision-log-wrap {
+  margin-top: 1.25rem;
+  max-width: 720px;
 }
