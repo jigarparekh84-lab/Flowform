@@ -15,9 +15,9 @@ app = FastAPI(
     description=(
         "Fixed-charge multi-echelon MIP (PuLP + HiGHS/CBC): "
         "open/close DCs & plants, capacitated flows plant→DC→customer, "
-        "optional supplier→plant BOM, objective breakdown + capacity duals."
+        "optional supplier→plant BOM, multi-SKU/product-group flows, hard service constraints, infeasibility diagnostics, objective breakdown + capacity duals."
     ),
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -41,6 +41,9 @@ class FacilityConstraintIn(BaseModel):
     capacityMax: float | None = None
     fixedCapexM: float | None = None
     fixedOpexM: float | None = None
+    capableProductIds: list[str] | None = None
+    capableGroupIds: list[str] | None = None
+    capacityByProduct: dict[str, float] | None = None
 
 
 class BomRowIn(BaseModel):
@@ -70,14 +73,19 @@ class BomDemandIn(BaseModel):
 class OptimizeRequest(BaseModel):
     network: dict[str, Any] = Field(
         ...,
-        description="nodes, lanes, demandVolume; optional bomDemand",
+        description=(
+            "nodes, lanes, demandVolume; optional demandByProduct, skus, "
+            "productGroups, bomDemand, facilityProducts"
+        ),
     )
     constraints: dict[str, Any] = Field(
         ...,
         description=(
             "globals (serviceRadiusMiles, capexBudgetM, maxFacilities, "
-            "serviceTargetPct, optimizePlants, forceOpenSeed, allowCloseOpen) "
-            "+ facilities[] with capacity/fixedCapexM/fixedOpexM"
+            "serviceTargetPct, hardServiceConstraints, maxLeadTimeDays, "
+            "aggregateProductsByGroup, maxProductCommodities, "
+            "optimizePlants, forceOpenSeed) "
+            "+ facilities[] with capacity/fixedCapexM/capableProductIds"
         ),
     )
     reference: dict[str, Any] | None = Field(

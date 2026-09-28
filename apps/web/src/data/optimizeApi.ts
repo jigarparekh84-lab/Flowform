@@ -21,6 +21,8 @@ export type ApiFlow = {
   echelon?: string
   unitCost?: number
   transportCostM?: number
+  productId?: string
+  productLabel?: string
 }
 
 export type ApiObjectiveBreakdown = {
@@ -53,6 +55,34 @@ export type ApiShadowPrice = {
   method?: string
 }
 
+
+export type ApiProductBreakdown = {
+  productId: string
+  label: string
+  demand: number
+  served: number
+  uncovered: number
+  servicePct: number
+  transportM: number
+}
+
+export type ApiInfeasibilityHint = {
+  code: string
+  severity?: string
+  message: string
+  entities?: string[]
+  hint?: string
+}
+
+export type ApiInfeasibilityReport = {
+  status: string
+  summary: string
+  hints: ApiInfeasibilityHint[]
+  metrics?: Record<string, number | boolean | string>
+  method?: string
+  note?: string
+}
+
 export type ApiOptimizeResponse = {
   ok: boolean
   solver: string
@@ -68,6 +98,10 @@ export type ApiOptimizeResponse = {
   objectiveBreakdown?: ApiObjectiveBreakdown
   shadowPrices?: ApiShadowPrice[]
   sensitivity?: { method?: string; note?: string }
+  commodityMode?: string
+  hardServiceConstraints?: boolean
+  productBreakdown?: ApiProductBreakdown[]
+  infeasibilityReport?: ApiInfeasibilityReport
   kpis: {
     servicePct: number
     capexUsedM: number
@@ -78,6 +112,7 @@ export type ApiOptimizeResponse = {
     uncoveredDemand: number
     targetPct?: number
     objectiveTotalM?: number
+    productCount?: number
   }
   log: string[]
 }
@@ -114,6 +149,14 @@ export async function postOptimize(args: {
     lanes: UploadedNetwork['lanes']
     demandVolume: Record<string, number>
     bomDemand?: OptimizeBomDemand[]
+    demandByProduct?: {
+      customerId: string
+      productId: string
+      skuId?: string
+      volume: number
+    }[]
+    skus?: { id: string; name?: string; code?: string; groupId?: string }[]
+    productGroups?: { id: string; name?: string; code?: string }[]
   }
   constraints: NetworkConstraints
   reference: Scenario
@@ -135,15 +178,32 @@ export async function postOptimize(args: {
     args.bomDemand ??
     ('bomDemand' in args.network ? args.network.bomDemand : undefined) ??
     []
+  const net = args.network as {
+    nodes: UploadedNetwork['nodes']
+    lanes: UploadedNetwork['lanes']
+    demandVolume: Record<string, number>
+    bomDemand?: OptimizeBomDemand[]
+    demandByProduct?: {
+      customerId: string
+      productId: string
+      skuId?: string
+      volume: number
+    }[]
+    skus?: { id: string; name?: string; code?: string; groupId?: string }[]
+    productGroups?: { id: string; name?: string; code?: string }[]
+  }
   const res = await fetch(`${base}/optimize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       network: {
-        nodes: args.network.nodes,
-        lanes: args.network.lanes,
-        demandVolume: args.network.demandVolume,
+        nodes: net.nodes,
+        lanes: net.lanes,
+        demandVolume: net.demandVolume,
         bomDemand: bomDemand.length ? bomDemand : undefined,
+        demandByProduct: net.demandByProduct,
+        skus: net.skus,
+        productGroups: net.productGroups,
       },
       constraints: args.constraints,
       reference: {

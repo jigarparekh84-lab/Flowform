@@ -40,6 +40,9 @@ export type EnterpriseSite = {
   fixedCostM: number
   fixedOpexM?: number
   status: EnterpriseSiteStatus
+  /** Product or group ids this site may handle (omit = all). */
+  capableProductIds?: string[]
+  capacityByProduct?: Record<string, number>
 }
 
 export type EnterpriseSku = {
@@ -110,6 +113,10 @@ export type EnterprisePack = {
     serviceRadiusMiles?: number
     capexBudgetM?: number
     maxFacilities?: number
+    hardServiceConstraints?: boolean
+    maxLeadTimeDays?: number
+    aggregateProductsByGroup?: boolean | 'auto' | 'always' | 'never'
+    maxProductCommodities?: number
   }
 }
 
@@ -664,6 +671,7 @@ export function buildEnterprisePack(args: {
     const status: EnterpriseSiteStatus =
       c?.status ??
       (n.kind === 'candidate' ? 'candidate' : 'open')
+    const facCap = productMix.facilityCaps.find((f) => f.nodeId === n.id)
     return {
       id: n.id,
       name: n.name,
@@ -681,6 +689,22 @@ export function buildEnterprisePack(args: {
         : 0,
       fixedOpexM: c?.fixedOpexM,
       status: n.kind === 'demand' || n.kind === 'supplier' ? 'open' : status,
+      ...(isFac && (c?.capableProductIds?.length || facCap?.capableGroupIds?.length)
+        ? {
+            capableProductIds:
+              c?.capableProductIds ??
+              facCap?.capableGroupIds ??
+              undefined,
+          }
+        : {}),
+      ...(isFac &&
+      (c?.capacityByProduct ||
+        (facCap && Object.keys(facCap.capacityByGroup || {}).length > 0))
+        ? {
+            capacityByProduct:
+              c?.capacityByProduct ?? facCap?.capacityByGroup ?? undefined,
+          }
+        : {}),
     }
   })
 
@@ -829,6 +853,18 @@ export function buildEnterprisePack(args: {
       serviceRadiusMiles: constraints.serviceRadiusMiles,
       capexBudgetM: constraints.capexBudgetM,
       maxFacilities: constraints.maxFacilities,
+      ...(constraints.hardServiceConstraints != null
+        ? { hardServiceConstraints: constraints.hardServiceConstraints }
+        : {}),
+      ...(constraints.maxLeadTimeDays != null
+        ? { maxLeadTimeDays: constraints.maxLeadTimeDays }
+        : {}),
+      ...(constraints.aggregateProductsByGroup != null
+        ? { aggregateProductsByGroup: constraints.aggregateProductsByGroup }
+        : {}),
+      ...(constraints.maxProductCommodities != null
+        ? { maxProductCommodities: constraints.maxProductCommodities }
+        : {}),
     },
   }
 }
@@ -923,6 +959,12 @@ export function packToConstraints(pack: EnterprisePack): NetworkConstraints {
       capacityMax: s.capacityMax,
       fixedCapexM: s.fixedCostM,
       ...(s.fixedOpexM != null ? { fixedOpexM: s.fixedOpexM } : {}),
+      ...(s.capableProductIds?.length
+        ? { capableProductIds: s.capableProductIds }
+        : {}),
+      ...(s.capacityByProduct
+        ? { capacityByProduct: s.capacityByProduct }
+        : {}),
     }))
 
   const g = pack.globals ?? {}
@@ -931,6 +973,16 @@ export function packToConstraints(pack: EnterprisePack): NetworkConstraints {
     serviceRadiusMiles: g.serviceRadiusMiles ?? 250,
     capexBudgetM: g.capexBudgetM ?? 30,
     maxFacilities: g.maxFacilities ?? Math.max(3, Math.min(8, facilities.length)),
+    ...(g.hardServiceConstraints != null
+      ? { hardServiceConstraints: g.hardServiceConstraints }
+      : {}),
+    ...(g.maxLeadTimeDays != null ? { maxLeadTimeDays: g.maxLeadTimeDays } : {}),
+    ...(g.aggregateProductsByGroup != null
+      ? { aggregateProductsByGroup: g.aggregateProductsByGroup }
+      : {}),
+    ...(g.maxProductCommodities != null
+      ? { maxProductCommodities: g.maxProductCommodities }
+      : {}),
     facilities,
   }
 }
@@ -961,6 +1013,14 @@ export type OptimizePayloadFromPack = {
       plantId: string
       qtyPerUnit: number
     }[]
+    demandByProduct?: {
+      customerId: string
+      productId: string
+      skuId?: string
+      volume: number
+    }[]
+    skus?: EnterpriseSku[]
+    productGroups?: EnterpriseProductGroup[]
   }
   constraints: NetworkConstraints
   bom: { rows: BomRow[] }
@@ -996,12 +1056,26 @@ export function packToOptimizePayload(
     })
   }
 
+  const demandByProduct = pack.demand
+    .filter((d) => d.volume > 0 && d.skuId)
+    .map((d) => ({
+      customerId: d.customerId,
+      productId: d.skuId,
+      skuId: d.skuId,
+      volume: d.volume,
+    }))
+
   return {
     network: {
       nodes: network.nodes,
       lanes: network.lanes,
       demandVolume: network.demandVolume,
       bomDemand,
+      ...(demandByProduct.length ? { demandByProduct } : {}),
+      ...(pack.skus.length ? { skus: pack.skus } : {}),
+      ...(pack.productGroups.length
+        ? { productGroups: pack.productGroups }
+        : {}),
     },
     constraints,
     bom: { rows: bomRows },

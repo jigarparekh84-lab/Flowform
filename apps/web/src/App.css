@@ -4026,3 +4026,48 @@ td.empty-cell .empty-state {
   display: inline-flex;
   align-items: center;
 }
+
+
+.run-chip.danger {
+  background: color-mix(in srgb, var(--ff-bad, #f87171) 28%, transparent);
+  color: var(--ff-bad, #f87171);
+  border-color: color-mix(in srgb, var(--ff-bad, #f87171) 45%, transparent);
+}
+
+.infeas-card .infeas-summary {
+  margin: 0.35rem 0 0.5rem;
+  color: var(--ff-bad, #f87171);
+}
+
+.infeas-hints {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.infeas-code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.infeas-code.sev-high {
+  color: var(--ff-bad, #f87171);
+}
+
+.infeas-block + .infeas-block {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--ff-border, #333);
+}
+
+.checkbox-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.checkbox-field input[type='checkbox'] {
+  width: auto;
+}

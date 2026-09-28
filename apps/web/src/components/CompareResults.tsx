@@ -598,6 +598,80 @@ function MatrixView({
           )}
         </section>
       )}
+
+      {selected.some((s) => s.optimizeMeta?.infeasibilityReport) && (
+        <section className="library-card infeas-card" aria-label="Infeasibility report" style={{ marginBottom: '1rem' }}>
+          <h2>Infeasibility diagnostics</h2>
+          <p className="muted tiny">
+            Best-effort conflict hints when the MIP is Infeasible (no full IIS).
+          </p>
+          {selected
+            .filter((s) => s.optimizeMeta?.infeasibilityReport)
+            .map((s) => {
+              const rep = s.optimizeMeta!.infeasibilityReport!
+              return (
+                <div key={s.id} className="infeas-block">
+                  <strong>{s.name}</strong>
+                  <p className="infeas-summary">{rep.summary}</p>
+                  <ul className="infeas-hints">
+                    {(rep.hints ?? []).map((h) => (
+                      <li key={h.code}>
+                        <span className={`infeas-code sev-${h.severity ?? 'medium'}`}>{h.code}</span>
+                        {' '}
+                        {h.message}
+                        {h.hint ? (
+                          <span className="muted tiny"> — {h.hint}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            })}
+        </section>
+      )}
+
+      {selected.some(
+        (s) => (s.optimizeMeta?.productBreakdown?.length ?? 0) > 1,
+      ) && (
+        <section className="library-card" aria-label="SKU / product breakdown" style={{ marginBottom: '1rem' }}>
+          <h2>SKU / product-group breakdown</h2>
+          <p className="muted tiny">
+            Demand satisfaction and transport by commodity (SKU or product group).
+          </p>
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th scope="col">Scenario</th>
+                <th scope="col">Product</th>
+                <th scope="col">Demand</th>
+                <th scope="col">Served</th>
+                <th scope="col">Service %</th>
+                <th scope="col">Transport</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selected.flatMap((s) =>
+                (s.optimizeMeta?.productBreakdown ?? [])
+                  .filter(() => (s.optimizeMeta?.productBreakdown?.length ?? 0) > 1)
+                  .map((row) => (
+                    <tr key={`${s.id}-${row.productId}`}>
+                      <td>{s.name}</td>
+                      <td>
+                        <strong>{row.label}</strong>
+                        <span className="muted tiny"> · {row.productId}</span>
+                      </td>
+                      <td>{row.demand.toLocaleString()}</td>
+                      <td>{row.served.toLocaleString()}</td>
+                      <td>{row.servicePct.toFixed(1)}%</td>
+                      <td>${row.transportM.toFixed(3)}M</td>
+                    </tr>
+                  )),
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
       <table className="compare-matrix">
         <thead>
           <tr>

@@ -85,6 +85,8 @@ export type OptimizeMeta = {
     echelon?: string
     unitCost?: number
     transportCostM?: number
+    productId?: string
+    productLabel?: string
   }[]
   /** Objective cost stack from fixed-charge MIP. */
   objectiveBreakdown?: OptimizeObjectiveBreakdown
@@ -97,6 +99,31 @@ export type OptimizeMeta = {
   solveSeconds?: number
   /** ISO timestamp when this optimize finished. */
   solvedAt?: string
+  commodityMode?: string
+  hardServiceConstraints?: boolean
+  productBreakdown?: {
+    productId: string
+    label: string
+    demand: number
+    served: number
+    uncovered: number
+    servicePct: number
+    transportM: number
+  }[]
+  infeasibilityReport?: {
+    status: string
+    summary: string
+    hints: {
+      code: string
+      severity?: string
+      message: string
+      entities?: string[]
+      hint?: string
+    }[]
+    metrics?: Record<string, number | boolean | string>
+    method?: string
+    note?: string
+  }
   /** Positions for map-diff when nodes are not in the sample set. */
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }
@@ -195,6 +222,9 @@ export type FacilityConstraint = {
   fixedCapexM: number
   /** Annualized fixed OpEx $M while open (optional; API defaults by kind). */
   fixedOpexM?: number
+  /** Product / group ids this facility may handle (omit = all). */
+  capableProductIds?: string[]
+  capacityByProduct?: Record<string, number>
 }
 
 export type NetworkConstraints = {
@@ -202,6 +232,12 @@ export type NetworkConstraints = {
   serviceRadiusMiles: number
   capexBudgetM: number
   maxFacilities: number
+  /** When true, MIP forbids uncovered demand (may return Infeasible + diagnostics). */
+  hardServiceConstraints?: boolean
+  /** Optional max customer→server lead-time (days) in addition to radius. */
+  maxLeadTimeDays?: number
+  aggregateProductsByGroup?: boolean | 'auto' | 'always' | 'never'
+  maxProductCommodities?: number
   facilities: FacilityConstraint[]
 }
 
@@ -232,8 +268,15 @@ export type OptimizeRunStatus =
       status?: string
       model?: string
       solver?: string
+      infeasibilityReport?: OptimizeMeta['infeasibilityReport']
+      productBreakdown?: OptimizeMeta['productBreakdown']
     }
-  | { phase: 'error'; message: string }
+  | {
+      phase: 'error'
+      message: string
+      infeasibilityReport?: OptimizeMeta['infeasibilityReport']
+      log?: string[]
+    }
 
 export const PROJECT_NAME = 'NA Footprint 2027'
 

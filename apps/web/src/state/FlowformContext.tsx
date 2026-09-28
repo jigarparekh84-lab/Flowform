@@ -320,6 +320,10 @@ type FlowformContextValue = {
         | 'serviceRadiusMiles'
         | 'capexBudgetM'
         | 'maxFacilities'
+        | 'hardServiceConstraints'
+        | 'maxLeadTimeDays'
+        | 'aggregateProductsByGroup'
+        | 'maxProductCommodities'
       >
     >,
   ) => void
@@ -1047,6 +1051,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           | 'serviceRadiusMiles'
           | 'capexBudgetM'
           | 'maxFacilities'
+          | 'hardServiceConstraints'
+          | 'maxLeadTimeDays'
+          | 'aggregateProductsByGroup'
+          | 'maxProductCommodities'
         >
       >,
     ) => {
@@ -1181,10 +1189,15 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       model?: string
       status?: string
       solveSeconds?: number
+      commodityMode?: string
+      hardServiceConstraints?: boolean
+      productBreakdown?: ApiOptimizeResponse['productBreakdown']
+      infeasibilityReport?: ApiOptimizeResponse['infeasibilityReport']
       log: string[]
       name: string
       kpis: Scenario['kpis']
       statusMessage: string
+      skipConstraintApply?: boolean
     }) => {
       const { openedIds, closedIds } = args
       const facilities = network.nodes.filter(
@@ -1209,6 +1222,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           model: args.model,
           status: args.status,
           solveSeconds: args.solveSeconds,
+          commodityMode: args.commodityMode,
+          hardServiceConstraints: args.hardServiceConstraints,
+          productBreakdown: args.productBreakdown,
+          infeasibilityReport: args.infeasibilityReport,
           solvedAt: new Date().toISOString(),
           marks: [
             ...openedIds.map((id) => {
@@ -1235,18 +1252,20 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         },
       }
 
-      setConstraints((prev) => ({
-        ...prev,
-        facilities: prev.facilities.map((f) => {
-          if (openedIds.includes(f.nodeId)) {
-            return { ...f, status: 'open' as const }
-          }
-          if (closedIds.includes(f.nodeId)) {
-            return { ...f, status: 'closed' as const }
-          }
-          return f
-        }),
-      }))
+      if (!args.skipConstraintApply) {
+        setConstraints((prev) => ({
+          ...prev,
+          facilities: prev.facilities.map((f) => {
+            if (openedIds.includes(f.nodeId)) {
+              return { ...f, status: 'open' as const }
+            }
+            if (closedIds.includes(f.nodeId)) {
+              return { ...f, status: 'closed' as const }
+            }
+            return f
+          }),
+        }))
+      }
 
       setScenarios((prev) => [...prev, scenario])
       setActiveScenarioIdState(scenario.id)
@@ -1273,6 +1292,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         status: args.status,
         model: args.model,
         solver: args.heuristic,
+        infeasibilityReport: args.infeasibilityReport,
+        productBreakdown: args.productBreakdown,
       })
       setDecisionLog((prev) =>
         appendDecisionEntry(prev, {
@@ -1342,9 +1363,18 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           const solveSec = api.solveSeconds
           const timeMsg =
             solveSec != null ? ` · ${solveSec.toFixed(3)}s` : ''
+          const infeas = api.status === 'Infeasible' || api.ok === false
+          const report = api.infeasibilityReport
+          const reportMsg = report
+            ? ` · ${report.summary.slice(0, 120)}`
+            : ''
+          const skuMsg =
+            api.productBreakdown && api.productBreakdown.length > 1
+              ? ` · ${api.productBreakdown.length} SKUs/groups`
+              : ''
           return applyOptimizeResult({
-            openedIds: api.openedIds,
-            closedIds: api.closedIds,
+            openedIds: api.openedIds ?? [],
+            closedIds: api.closedIds ?? [],
             servicePct: api.kpis.servicePct,
             capexUsedM: api.kpis.capexUsedM,
             heuristic: api.solver,
@@ -1355,10 +1385,19 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             model: api.model,
             status: api.status,
             solveSeconds: api.solveSeconds,
+            commodityMode: api.commodityMode,
+            hardServiceConstraints: api.hardServiceConstraints,
+            productBreakdown: api.productBreakdown,
+            infeasibilityReport: report,
             log: api.log,
-            name: `Optimize MIP ${new Date().toLocaleTimeString()}`,
+            name: infeas
+              ? `Optimize Infeasible ${new Date().toLocaleTimeString()}`
+              : `Optimize MIP ${new Date().toLocaleTimeString()}`,
             kpis: kpisFromApi(api, reference),
-            statusMessage: `API ${api.solver} · ${api.status}${timeMsg} · ${api.model ?? 'MIP'} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}`,
+            skipConstraintApply: infeas,
+            statusMessage: infeas
+              ? `API ${api.solver} · Infeasible${timeMsg}${reportMsg}${skuMsg}`
+              : `API ${api.solver} · ${api.status}${timeMsg} · ${api.model ?? 'MIP'} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}${skuMsg}`,
           })
         } catch (apiErr) {
           const msg =

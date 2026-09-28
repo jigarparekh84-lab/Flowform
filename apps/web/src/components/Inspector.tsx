@@ -644,6 +644,35 @@ function ConstraintsPanel({
           }
         />
       </label>
+      <label className="field checkbox-field">
+        <span>Hard service constraints</span>
+        <input
+          type="checkbox"
+          checked={!!constraints.hardServiceConstraints}
+          onChange={(e) =>
+            onGlobals({ hardServiceConstraints: e.target.checked })
+          }
+        />
+        <span className="muted tiny">
+          Fail infeasible (no uncovered) vs soft penalty
+        </span>
+      </label>
+      <label className="field">
+        <span>Max lead-time (days, optional)</span>
+        <input
+          type="number"
+          min={0}
+          step={0.5}
+          value={constraints.maxLeadTimeDays ?? ''}
+          placeholder="—"
+          onChange={(e) => {
+            const v = e.target.value
+            onGlobals({
+              maxLeadTimeDays: v === '' ? undefined : Number(v),
+            })
+          }}
+        />
+      </label>
       <h3>Facilities</h3>
       <ul className="facility-status-list">
         {constraints.facilities.map((f) => {

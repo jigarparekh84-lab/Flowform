@@ -18,6 +18,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Inventory policy** — multi-echelon lite safety stock (ASCM combined or simple z·σ·√LT); Inv $ / units on Active KPIs.
 - **Resilience** — SPOF scoring: nodes whose removal drops service below threshold.
 - **Handoff-ready** — enriched S&OP package (sites, lanes, preferred territory, CapEx years, product mix, BOM implied RM, inventory targets, scenarios) with schema README; JSON + Markdown ops brief toward Ritara.
+- **Multi-SKU MIP** — enterprise demand-by-SKU/group commodities, facility capability, hard service constraints + infeasibility diagnostics; soft uncovered penalty optional
 - **Multi-commodity** — product groups (Ambient/Chilled/Hazmat or Finished/WIP/RM) tag demand, lanes, and facility capacity; filter Network / Compare KPIs by group.
 - **Lane rate tables** — carrier bids per corridor ($/unit or $/mile, transit, capacity); compare cheapest / fastest / balanced and apply onto lane cost.
 - **Bill-of-materials** — FG ← components/RM with qty per unit; implied RM demand + Plant←Supplier / FG←RM echelon flows; optional inbound-lane scenario.

@@ -115,3 +115,10 @@ Loads `tests/fixtures/stress-{120,200}-demand.enterprise.json`, times `solve_opt
 | Model | `fixed-charge-multi-echelon-v1` |
 
 Response includes `solveSeconds`, `objectiveBreakdown`, `openIds`, and multi-echelon `flows` used by Compare CTS.
+
+## Depth slice 4
+
+- **Multi-SKU / product-group flows** — `network.demandByProduct` + `skus` / `productGroups`; auto-aggregates to groups when commodity count exceeds `maxProductCommodities` (default 8). Facility `capableProductIds` / `capacityByProduct`. Response `productBreakdown` + flow `productId`.
+- **Hard service** — `constraints.hardServiceConstraints=true` forbids uncovered demand; optional `maxLeadTimeDays`. Soft mode keeps uncovered penalty.
+- **Infeasibility diagnostics** — on `status: Infeasible`, `infeasibilityReport` with best-effort hints (`UNREACHABLE_DEMAND`, `SERVICE_RADIUS_TOO_TIGHT`, `CAPACITY_SHORTFALL`, …) without full IIS.
+

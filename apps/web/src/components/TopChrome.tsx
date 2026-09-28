@@ -109,7 +109,13 @@ export function TopChrome({
                   <span className="run-chip">{optimizeStatus.model}</span>
                 )}
                 {optimizeStatus.status && (
-                  <span className="run-chip">{optimizeStatus.status}</span>
+                  <span
+                    className={`run-chip${
+                      optimizeStatus.status === 'Infeasible' ? ' danger' : ''
+                    }`}
+                  >
+                    {optimizeStatus.status}
+                  </span>
                 )}
                 {optimizeStatus.solveSeconds != null && (
                   <span className="run-chip">
@@ -118,6 +124,23 @@ export function TopChrome({
                 )}
                 {optimizeStatus.solver && (
                   <span className="run-chip muted">{optimizeStatus.solver}</span>
+                )}
+                {optimizeStatus.productBreakdown &&
+                  optimizeStatus.productBreakdown.length > 1 && (
+                    <span className="run-chip muted">
+                      {optimizeStatus.productBreakdown.length} SKUs
+                    </span>
+                  )}
+                {optimizeStatus.infeasibilityReport && (
+                  <span
+                    className="run-chip danger"
+                    title={optimizeStatus.infeasibilityReport.hints
+                      .map((h) => `${h.code}: ${h.message}`)
+                      .join('\n')}
+                  >
+                    {(optimizeStatus.infeasibilityReport.hints[0]?.code) ??
+                      'INFEASIBLE'}
+                  </span>
                 )}
               </span>
             )}

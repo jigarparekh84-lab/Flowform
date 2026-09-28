@@ -46,9 +46,21 @@ def pack_to_optimize_payload(pack: dict[str, Any]) -> dict[str, Any]:
         )
 
     demand_volume: dict[str, float] = {}
+    demand_by_product: list[dict[str, Any]] = []
     for row in pack.get("demand") or []:
         cid = row["customerId"]
-        demand_volume[cid] = demand_volume.get(cid, 0.0) + float(row.get("volume") or 0)
+        vol = float(row.get("volume") or 0)
+        demand_volume[cid] = demand_volume.get(cid, 0.0) + vol
+        sku = row.get("skuId") or row.get("productId")
+        if sku and vol > 0:
+            demand_by_product.append(
+                {
+                    "customerId": cid,
+                    "productId": str(sku),
+                    "skuId": str(sku),
+                    "volume": vol,
+                }
+            )
 
     lanes: list[dict[str, Any]] = []
     for i, lane in enumerate(pack.get("lanes") or []):
@@ -65,23 +77,45 @@ def pack_to_optimize_payload(pack: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    skus = list(pack.get("skus") or [])
+    product_groups = list(pack.get("productGroups") or [])
+    group_ids = {str(g["id"]) for g in product_groups}
+
     facilities: list[dict[str, Any]] = []
+    facility_products: list[dict[str, Any]] = []
     for s in sites:
         if s.get("kind") not in ("dc", "plant", "candidate"):
             continue
         status = s.get("status") or (
             "candidate" if s.get("kind") == "candidate" else "open"
         )
-        facilities.append(
-            {
-                "nodeId": s["id"],
-                "status": status,
-                "capacityMin": float(s.get("capacityMin") or 0),
-                "capacityMax": float(s.get("capacityMax") or 25000),
-                "fixedCapexM": float(s.get("fixedCostM") or 0),
-                "fixedOpexM": float(s.get("fixedOpexM") or 0.7),
-            }
-        )
+        capable = s.get("capableProductIds") or s.get("capableGroupIds")
+        # Default: all product groups (or all SKUs) when pack has multi-SKU
+        if not capable and group_ids:
+            capable = sorted(group_ids)
+        elif not capable and skus:
+            capable = [str(x["id"]) for x in skus if x.get("groupId") or True]
+        fac: dict[str, Any] = {
+            "nodeId": s["id"],
+            "status": status,
+            "capacityMin": float(s.get("capacityMin") or 0),
+            "capacityMax": float(s.get("capacityMax") or 25000),
+            "fixedCapexM": float(s.get("fixedCostM") or 0),
+            "fixedOpexM": float(s.get("fixedOpexM") or 0.7),
+        }
+        if capable:
+            fac["capableProductIds"] = list(capable)
+        if s.get("capacityByProduct"):
+            fac["capacityByProduct"] = dict(s["capacityByProduct"])
+        facilities.append(fac)
+        if capable:
+            facility_products.append(
+                {
+                    "nodeId": s["id"],
+                    "capableProductIds": list(capable),
+                    "capacityByProduct": dict(s.get("capacityByProduct") or {}),
+                }
+            )
 
     g = pack.get("globals") or {}
     bom_rows = []
@@ -107,20 +141,32 @@ def pack_to_optimize_payload(pack: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
+    constraints: dict[str, Any] = {
+        "serviceTargetPct": float(g.get("serviceTargetPct") or 95),
+        "serviceRadiusMiles": float(g.get("serviceRadiusMiles") or 800),
+        "capexBudgetM": float(g.get("capexBudgetM") or 40),
+        "maxFacilities": int(g.get("maxFacilities") or 12),
+        "facilities": facilities,
+        "aggregateProductsByGroup": g.get("aggregateProductsByGroup", "auto"),
+        "maxProductCommodities": int(g.get("maxProductCommodities") or 8),
+        "hardServiceConstraints": bool(g.get("hardServiceConstraints", False)),
+    }
+    if g.get("maxLeadTimeDays") is not None:
+        constraints["maxLeadTimeDays"] = float(g["maxLeadTimeDays"])
+    if facility_products:
+        constraints["facilityProducts"] = facility_products
+
     return {
         "network": {
             "nodes": nodes,
             "lanes": lanes,
             "demandVolume": demand_volume,
+            "demandByProduct": demand_by_product or None,
+            "skus": skus or None,
+            "productGroups": product_groups or None,
             "bomDemand": bom_demand or None,
         },
-        "constraints": {
-            "serviceTargetPct": float(g.get("serviceTargetPct") or 95),
-            "serviceRadiusMiles": float(g.get("serviceRadiusMiles") or 800),
-            "capexBudgetM": float(g.get("capexBudgetM") or 40),
-            "maxFacilities": int(g.get("maxFacilities") or 12),
-            "facilities": facilities,
-        },
+        "constraints": constraints,
         "bom": {"rows": bom_rows} if bom_rows else {},
         "enterpriseSchemaVersion": pack.get("schemaVersion") or "enterprise-data-v1",
     }
