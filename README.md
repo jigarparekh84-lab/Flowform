@@ -15,6 +15,8 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 - **Map-primary** — the network is the canvas, not a sidebar afterthought.
 - **Scenario-native** — diverge, name, and compare futures without leaving the map.
 - **Service stress-test** — DES-lite Monte Carlo (lead-time + demand noise → fill rate / late demand %).
+- **Inventory policy** — multi-echelon lite safety stock (ASCM combined or simple z·σ·√LT); Inv $ / units on Active KPIs.
+- **Resilience** — SPOF scoring: nodes whose removal drops service below threshold.
 - **Handoff-ready** — export a clean brief of nodes, lanes, and assumptions into Ritara when design is done.
 
 ---
@@ -26,8 +28,8 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Projects** | Workspace home; create / rename / duplicate / delete design studies (localStorage) |
 | **Network** | Map canvas — nodes, sites, lanes, capacities, constraints inspector (primary surface) |
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
-| **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage) |
-| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / **DES-lite** service sim |
+| **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
 | **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors |
 | **Handoff** | Export / sync design payload toward Ritara (contract stub only) |
@@ -128,9 +130,17 @@ Open http://localhost:5180.
 
 Optional: `VITE_API_URL` (default `http://127.0.0.1:5182`) so **Run** can reach the API.
 
+Optional Carto basemap key: copy `apps/web/.env.example` → `.env.local` and set `VITE_CARTO_API_KEY` (gitignored). MapLibre appends it to CartoCDN tile URLs when present.
+
 ### DES-lite
 
 In **Compare → DES-lite**: run Monte Carlo on the **Active** scenario (lead-time noise + demand noise → fill rate / late demand %). Results are stored on the scenario (`desLite`) and persist with the project in localStorage.
+
+### Inventory & Resilience
+
+- **Compare → Inventory** — edit per DC/plant service target, lead time, demand σ, holding cost; choose simple or ASCM combined safety stock; **Apply to Active KPIs** attaches Inv $ / units.
+- **Compare → Resilience** — score SPOFs (critical nodes); score and critical list store on the Active scenario and update Risk KPI.
+- **Scenarios → Tariff / duty** — sensitivity preset for inbound lanes from MX / nearshore region.
 
 ---
 
@@ -145,7 +155,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre, Greenfield, Scenarios + sensitivity, Compare (incl. DES-lite), Brief export, Data CSV + CO₂, Handoff stub, PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage), Network + MapLibre, Greenfield, Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience), Brief export, Data CSV + CO₂, Handoff stub, PuLP optimize API, Docker Compose, CI.
 
 **Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 

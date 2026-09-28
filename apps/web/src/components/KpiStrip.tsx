@@ -1,13 +1,18 @@
 import { useMemo } from 'react'
 import { formatCo2Kt } from '../data/emissions'
-import type { KpiSnapshot } from '../data/sampleNetwork'
+import {
+  computeInventoryRollup,
+  formatInvDollars,
+  formatInvUnits,
+} from '../data/inventoryPolicy'
+import type { KpiCell, KpiSnapshot } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
 type Props = {
   kpis: KpiSnapshot
 }
 
-const ORDER: { key: keyof KpiSnapshot; label: string }[] = [
+const CORE: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
   { key: 'service', label: 'Service' },
   { key: 'capex', label: 'CapEx' },
@@ -16,27 +21,78 @@ const ORDER: { key: keyof KpiSnapshot; label: string }[] = [
 ]
 
 export function KpiStrip({ kpis }: Props) {
-  const { computedCo2Kt, lanes, nodes } = useFlowform()
-  const display = useMemo(() => {
-    // When lanes + nodes exist, prefer factor-based CO₂ over static KPI.
-    if (lanes.length === 0 || nodes.length === 0) return kpis
-    return {
-      ...kpis,
-      co2: {
-        ...kpis.co2,
-        value: formatCo2Kt(computedCo2Kt),
-        delta: kpis.co2.delta === '—' ? 'from factors' : kpis.co2.delta,
-      },
+  const { computedCo2Kt, lanes, nodes, inventoryPolicies, network, activeScenario } =
+    useFlowform()
+
+  const liveInv = useMemo(() => {
+    if (kpis.inventory && kpis.invUnits) {
+      return { inventory: kpis.inventory, invUnits: kpis.invUnits }
     }
-  }, [kpis, computedCo2Kt, lanes.length, nodes.length])
+    // Live preview from current policies (even before Apply)
+    if (inventoryPolicies.nodes.length === 0) return null
+    const rollup = computeInventoryRollup(inventoryPolicies, network)
+    return {
+      inventory: {
+        value: formatInvDollars(rollup.totalDollars),
+        delta: activeScenario.inventoryRollup
+          ? inventoryPolicies.formula === 'simple'
+            ? 'simple'
+            : 'ASCM'
+          : 'preview',
+        better: true,
+      } satisfies KpiCell,
+      invUnits: {
+        value: formatInvUnits(rollup.totalUnits),
+        delta: `${rollup.nodes.length} sites`,
+        better: true,
+      } satisfies KpiCell,
+    }
+  }, [kpis, inventoryPolicies, network, activeScenario.inventoryRollup])
+
+  const display = useMemo(() => {
+    let next: KpiSnapshot = { ...kpis }
+    if (lanes.length > 0 && nodes.length > 0) {
+      next = {
+        ...next,
+        co2: {
+          ...kpis.co2,
+          value: formatCo2Kt(computedCo2Kt),
+          delta: kpis.co2.delta === '—' ? 'from factors' : kpis.co2.delta,
+        },
+      }
+    }
+    if (liveInv) {
+      next = {
+        ...next,
+        inventory: liveInv.inventory,
+        invUnits: liveInv.invUnits,
+      }
+    }
+    return next
+  }, [kpis, computedCo2Kt, lanes.length, nodes.length, liveInv])
+
+  const order: { key: keyof KpiSnapshot; label: string }[] = [
+    ...CORE,
+    ...(display.inventory ? [{ key: 'inventory' as const, label: 'Inv $' }] : []),
+    ...(display.invUnits ? [{ key: 'invUnits' as const, label: 'Inv units' }] : []),
+  ]
 
   return (
     <div className="kpi-strip" role="group" aria-label="Scenario KPIs">
-      {ORDER.map(({ key, label }) => {
+      {order.map(({ key, label }) => {
         const cell = display[key]
+        if (!cell) return null
         const deltaClass =
-          cell.delta === '—' || cell.delta === 'from factors'
-            ? 'neutral'
+          cell.delta === '—' ||
+          cell.delta === 'from factors' ||
+          cell.delta === 'preview' ||
+          cell.delta === 'simple' ||
+          cell.delta === 'ASCM' ||
+          cell.delta.endsWith('sites') ||
+          cell.delta.includes('SPOF')
+            ? cell.delta.includes('SPOF') && !cell.better
+              ? 'down'
+              : 'neutral'
             : cell.better
               ? 'up'
               : 'down'

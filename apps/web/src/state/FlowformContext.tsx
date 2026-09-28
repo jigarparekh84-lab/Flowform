@@ -69,6 +69,21 @@ import {
   type SensitivityPresetId,
 } from '../data/sensitivity'
 import {
+  computeInventoryRollup,
+  defaultInventoryPolicies,
+  formatInvDollars,
+  formatInvUnits,
+  mergeInventoryPolicies,
+  type InventoryNodePolicy,
+  type InventoryPolicyState,
+  type SafetyStockFormula,
+} from '../data/inventoryPolicy'
+import {
+  resilienceRiskLabel,
+  scoreResilience,
+  type ResilienceResult,
+} from '../data/resilience'
+import {
   runDesLiteSim as runDesLiteEngine,
   type DesLiteParams,
   type DesLiteResult,
@@ -120,6 +135,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     emissionFactors: structuredClone(DEFAULT_EMISSION_FACTORS),
     lastCandidates: [],
     theme,
+    inventoryPolicies: defaultInventoryPolicies(net),
   }
 }
 
@@ -233,6 +249,20 @@ type FlowformContextValue = {
   /** DES-lite Monte Carlo service sim — stores result on active scenario. */
   runDesLite: (params?: DesLiteParams) => DesLiteResult | null
 
+  /** Multi-echelon lite inventory policies (per DC/plant). */
+  inventoryPolicies: InventoryPolicyState
+  setInventoryFormula: (formula: SafetyStockFormula) => void
+  updateInventoryNode: (
+    nodeId: string,
+    patch: Partial<InventoryNodePolicy>,
+  ) => void
+  resetInventoryPolicies: () => void
+  /** Recompute rollup and attach inventory $ / units to Active scenario KPIs. */
+  applyInventoryToActive: () => InventoryPolicyState | null
+
+  /** Resilience / SPOF scoring — stores result on active scenario. */
+  runResilience: (thresholdPct?: number) => ResilienceResult | null
+
   /** Projects room */
   projectMeta: ProjectMeta | null
   projects: ProjectMeta[]
@@ -294,6 +324,14 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [emissionFactors, setEmissionFactors] = useState<EmissionFactor[]>(
     boot.snap.emissionFactors,
   )
+  const [inventoryPolicies, setInventoryPolicies] =
+    useState<InventoryPolicyState>(
+      () =>
+        mergeInventoryPolicies(
+          boot.snap.inventoryPolicies,
+          boot.snap.network,
+        ),
+    )
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -332,6 +370,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       emissionFactors,
       lastCandidates,
       theme,
+      inventoryPolicies,
     }
   }, [
     horizon,
@@ -344,6 +383,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     handoffPayload,
     emissionFactors,
     lastCandidates,
+    inventoryPolicies,
   ])
 
   const persistNow = useCallback(() => {
@@ -383,6 +423,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     handoffPayload,
     emissionFactors,
     lastCandidates,
+    inventoryPolicies,
   ])
 
   const applySnapshot = useCallback((snap: ProjectSnapshot) => {
@@ -397,6 +438,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setHandoffPayload(snap.handoffPayload)
     setEmissionFactors(snap.emissionFactors ?? DEFAULT_EMISSION_FACTORS)
     setLastCandidates(snap.lastCandidates ?? [])
+    setInventoryPolicies(
+      mergeInventoryPolicies(snap.inventoryPolicies, snap.network),
+    )
     setSelection({ ids: [], kind: null })
     setOptimizeStatus({ phase: 'idle' })
     if (snap.theme === 'light' || snap.theme === 'dark') {
@@ -644,6 +688,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const loadUploadedNetwork = useCallback((net: UploadedNetwork) => {
     setNetwork(net)
     setConstraints((prev) => mergeConstraints(prev, net))
+    setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -651,6 +696,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     const sample = sampleUploadedNetwork()
     setNetwork(sample)
     setConstraints(defaultConstraintsFromNetwork(sample))
+    setInventoryPolicies(defaultInventoryPolicies(sample))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -969,6 +1015,111 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     }
   }, [scenarios, network, constraints, applyOptimizeResult])
 
+  const setInventoryFormula = useCallback((formula: SafetyStockFormula) => {
+    setInventoryPolicies((prev) => ({ ...prev, formula }))
+  }, [])
+
+  const updateInventoryNode = useCallback(
+    (nodeId: string, patch: Partial<InventoryNodePolicy>) => {
+      setInventoryPolicies((prev) => ({
+        ...prev,
+        nodes: prev.nodes.map((n) =>
+          n.nodeId === nodeId ? { ...n, ...patch } : n,
+        ),
+      }))
+    },
+    [],
+  )
+
+  const resetInventoryPolicies = useCallback(() => {
+    setInventoryPolicies(defaultInventoryPolicies(network))
+  }, [network])
+
+  const applyInventoryToActive = useCallback((): InventoryPolicyState | null => {
+    const scenario =
+      scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0]
+    if (!scenario) return null
+    const rollup = computeInventoryRollup(inventoryPolicies, network)
+    const invCell = {
+      value: formatInvDollars(rollup.totalDollars),
+      delta: inventoryPolicies.formula === 'simple' ? 'simple' : 'ASCM',
+      better: true,
+    }
+    const unitsCell = {
+      value: formatInvUnits(rollup.totalUnits),
+      delta: `${rollup.nodes.length} sites`,
+      better: true,
+    }
+    setScenarios((prev) =>
+      prev.map((s) =>
+        s.id === scenario.id
+          ? {
+              ...s,
+              kpis: {
+                ...s.kpis,
+                inventory: invCell,
+                invUnits: unitsCell,
+              },
+              inventoryRollup: {
+                formula: rollup.formula,
+                totalUnits: rollup.totalUnits,
+                totalDollars: rollup.totalDollars,
+                totalDollarsM: rollup.totalDollarsM,
+                appliedAt: new Date().toISOString(),
+              },
+            }
+          : s,
+      ),
+    )
+    return inventoryPolicies
+  }, [scenarios, activeScenarioId, inventoryPolicies, network])
+
+  const runResilience = useCallback(
+    (thresholdPct?: number): ResilienceResult | null => {
+      const scenario =
+        scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0]
+      if (!scenario) return null
+      const result = scoreResilience({
+        network,
+        constraints,
+        scenario,
+        thresholdPct,
+      })
+      const risk = resilienceRiskLabel(result.score)
+      setScenarios((prev) =>
+        prev.map((s) =>
+          s.id === scenario.id
+            ? {
+                ...s,
+                resilience: {
+                  runAt: result.runAt,
+                  thresholdPct: result.thresholdPct,
+                  baselineServicePct: result.baselineServicePct,
+                  score: result.score,
+                  criticalNodeIds: result.critical.map((c) => c.nodeId),
+                  criticalNames: result.critical.map((c) => c.name),
+                  facilityCount: result.facilityCount,
+                },
+                kpis: {
+                  ...s.kpis,
+                  risk: {
+                    value: risk,
+                    delta:
+                      result.critical.length === 0
+                        ? 'no SPOF'
+                        : `${result.critical.length} SPOF`,
+                    better: result.score >= 60,
+                  },
+                },
+              }
+            : s,
+        ),
+      )
+      return result
+    },
+    [scenarios, activeScenarioId, network, constraints],
+  )
+
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
     setBrief((prev) => ({ ...prev, ...patch }))
   }, [])
@@ -1021,6 +1172,12 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       computedCo2Kt,
       applySensitivityPreset,
       runDesLite,
+      inventoryPolicies,
+      setInventoryFormula,
+      updateInventoryNode,
+      resetInventoryPolicies,
+      applyInventoryToActive,
+      runResilience,
       projectMeta,
       projects,
       activeProjectId: projectMeta?.id ?? null,
@@ -1067,6 +1224,12 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       computedCo2Kt,
       applySensitivityPreset,
       runDesLite,
+      inventoryPolicies,
+      setInventoryFormula,
+      updateInventoryNode,
+      resetInventoryPolicies,
+      applyInventoryToActive,
+      runResilience,
       projectMeta,
       projects,
       createProject,

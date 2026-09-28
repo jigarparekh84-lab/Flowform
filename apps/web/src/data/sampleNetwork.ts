@@ -23,12 +23,18 @@ export type NetworkLane = {
   co2Kg: number
 }
 
+export type KpiCell = { value: string; delta: string; better: boolean }
+
 export type KpiSnapshot = {
-  cost: { value: string; delta: string; better: boolean }
-  service: { value: string; delta: string; better: boolean }
-  capex: { value: string; delta: string; better: boolean }
-  co2: { value: string; delta: string; better: boolean }
-  risk: { value: string; delta: string; better: boolean }
+  cost: KpiCell
+  service: KpiCell
+  capex: KpiCell
+  co2: KpiCell
+  risk: KpiCell
+  /** Network inventory $ (safety-stock holding) from Inventory policy. */
+  inventory?: KpiCell
+  /** Safety-stock units rollup. */
+  invUnits?: KpiCell
 }
 
 export type OptimizeMeta = {
@@ -72,6 +78,30 @@ export type Scenario = {
   optimizeMeta?: OptimizeMeta
   /** Latest DES-lite Monte Carlo service sim for this scenario. */
   desLite?: DesLiteResult
+  /** Latest resilience / SPOF score for this scenario. */
+  resilience?: ScenarioResilience
+  /** Latest inventory rollup attached to KPIs. */
+  inventoryRollup?: InventoryRollupSummary
+}
+
+/** Compact inventory rollup stored on a scenario. */
+export type InventoryRollupSummary = {
+  formula: 'simple' | 'ascm-combined'
+  totalUnits: number
+  totalDollars: number
+  totalDollarsM: number
+  appliedAt: string
+}
+
+/** Compact resilience result stored on a scenario. */
+export type ScenarioResilience = {
+  runAt: string
+  thresholdPct: number
+  baselineServicePct: number
+  score: number
+  criticalNodeIds: string[]
+  criticalNames: string[]
+  facilityCount: number
 }
 
 export type CandidateSite = {

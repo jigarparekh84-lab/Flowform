@@ -5,6 +5,7 @@
 
 import type { UploadedNetwork } from './csvParsers'
 import type { EmissionFactor } from './emissions'
+import type { InventoryPolicyState } from './inventoryPolicy'
 import type {
   BriefState,
   CandidateSite,
@@ -42,6 +43,8 @@ export type ProjectSnapshot = {
   lastCandidates: CandidateSite[]
   /** Optional — applied on import when present. */
   theme?: ThemeMode
+  /** Optional inventory policy state (multi-echelon lite). */
+  inventoryPolicies?: InventoryPolicyState
 }
 
 export type ProjectExportFile = {

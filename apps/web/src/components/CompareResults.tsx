@@ -5,6 +5,17 @@ import {
   type CtsRow,
 } from '../data/costToServe'
 import {
+  computeInventoryRollup,
+  formatInvDollars,
+  formatInvUnits,
+  type SafetyStockFormula,
+} from '../data/inventoryPolicy'
+import {
+  scoreResilience,
+  type CriticalNode,
+  type ResilienceResult,
+} from '../data/resilience'
+import {
   LANES,
   NODES,
   mapDiffForScenario,
@@ -17,7 +28,14 @@ import {
 } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
-type ViewMode = 'matrix' | 'map' | 'waterfall' | 'cts' | 'des'
+type ViewMode =
+  | 'matrix'
+  | 'map'
+  | 'waterfall'
+  | 'cts'
+  | 'des'
+  | 'inventory'
+  | 'resilience'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -25,6 +43,8 @@ const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'capex', label: 'CapEx' },
   { key: 'co2', label: 'CO₂' },
   { key: 'risk', label: 'Risk' },
+  { key: 'inventory', label: 'Inv $' },
+  { key: 'invUnits', label: 'Inv units' },
 ]
 
 const MAX_SCENARIOS = 5
@@ -118,7 +138,14 @@ export function CompareResults() {
     nodes,
     lanes,
     network,
+    constraints,
     runDesLite,
+    inventoryPolicies,
+    setInventoryFormula,
+    updateInventoryNode,
+    resetInventoryPolicies,
+    applyInventoryToActive,
+    runResilience,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -207,8 +234,8 @@ export function CompareResults() {
           <h1>Results</h1>
           <p className="studio-sub">
             Multi-scenario KPI matrix, map opens/closes vs Reference, cost
-            waterfall, and DES-lite Monte Carlo service sim. Defaults: Active +
-            Baseline as Reference.
+            waterfall, DES-lite, inventory policy, and resilience (SPOF).
+            Defaults: Active + Baseline as Reference.
           </p>
         </div>
       </header>
@@ -270,6 +297,8 @@ export function CompareResults() {
               ['waterfall', 'Waterfall'],
               ['cts', 'Cost-to-serve'],
               ['des', 'DES-lite'],
+              ['inventory', 'Inventory'],
+              ['resilience', 'Resilience'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -331,6 +360,34 @@ export function CompareResults() {
             onRun={() => runDesLite()}
           />
         )}
+        {view === 'inventory' && (
+          <InventoryView
+            active={activeScenario}
+            formula={inventoryPolicies.formula}
+            onFormula={setInventoryFormula}
+            onUpdateNode={updateInventoryNode}
+            onReset={resetInventoryPolicies}
+            onApply={() => applyInventoryToActive()}
+            rollup={computeInventoryRollup(inventoryPolicies, network)}
+          />
+        )}
+        {view === 'resilience' && (
+          <ResilienceView
+            active={activeScenario}
+            onRun={(thr) => runResilience(thr)}
+            thresholdDefault={constraints.serviceTargetPct}
+            liveResult={
+              activeScenario.resilience
+                ? scoreResilience({
+                    network,
+                    constraints,
+                    scenario: activeScenario,
+                    thresholdPct: activeScenario.resilience.thresholdPct,
+                  })
+                : null
+            }
+          />
+        )}
       </div>
     </div>
   )
@@ -368,17 +425,32 @@ function MatrixView({
           </tr>
         </thead>
         <tbody>
-          {KPI_ROWS.map(({ key, label }) => (
+          {KPI_ROWS.filter((row) =>
+            selected.some((s) => s.kpis[row.key] != null) ||
+            reference.kpis[row.key] != null ||
+            (row.key !== 'inventory' && row.key !== 'invUnits'),
+          ).map(({ key, label }) => (
             <tr key={key}>
               <th scope="row">{label}</th>
               {selected.map((s) => {
                 const cell = s.kpis[key]
                 const isRef = s.id === reference.id
-                const d = isRef
+                if (!cell) {
+                  return (
+                    <td key={s.id} className={isRef ? 'is-ref' : undefined}>
+                      <div className="matrix-cell">
+                        <strong className="muted">—</strong>
+                        <span className="kpi-delta neutral">—</span>
+                      </div>
+                    </td>
+                  )
+                }
+                const refCell = reference.kpis[key]
+                const d = isRef || !refCell
                   ? { text: '—', tone: 'neutral' as const }
                   : deltaVsReference(
                       cell.value,
-                      reference.kpis[key].value,
+                      refCell.value,
                       key,
                       cell.better,
                     )
@@ -1123,6 +1195,389 @@ function DesLiteView({
             <button type="button" className="btn ghost des-rerun" onClick={onRun}>
               Re-run DES-lite
             </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
+function InventoryView({
+  active,
+  formula,
+  onFormula,
+  onUpdateNode,
+  onReset,
+  onApply,
+  rollup,
+}: {
+  active: Scenario
+  formula: SafetyStockFormula
+  onFormula: (f: SafetyStockFormula) => void
+  onUpdateNode: (
+    nodeId: string,
+    patch: Partial<{
+      serviceTargetPct: number
+      leadTimeDays: number
+      demandSigma: number
+      meanDemandPerDay: number
+      leadTimeSigma: number
+      holdingCostPerUnit: number
+    }>,
+  ) => void
+  onReset: () => void
+  onApply: () => void
+  rollup: ReturnType<typeof computeInventoryRollup>
+}) {
+  return (
+    <div className="compare-inv-layout">
+      <aside className="compare-side">
+        <h2>Inventory policy</h2>
+        <p className="des-active-name">{active.name}</p>
+        <p className="muted tiny">
+          Multi-echelon lite: per DC/plant service target, lead time, demand σ,
+          holding cost. Safety stock via simple z·σ·√LT or ASCM combined
+          uncertainty. Apply attaches Inv $ / units to Active KPIs.
+        </p>
+        <label className="field">
+          <span>Formula</span>
+          <select
+            value={formula}
+            onChange={(e) => onFormula(e.target.value as SafetyStockFormula)}
+          >
+            <option value="ascm-combined">ASCM combined (LT + σ_LT)</option>
+            <option value="simple">Simple z · σ · √LT</option>
+          </select>
+        </label>
+        <div className="des-kpi-row inv-rollup-kpis" aria-label="Inventory rollup">
+          <div className="des-kpi">
+            <span className="des-kpi-label">Network Inv $</span>
+            <strong>{formatInvDollars(rollup.totalDollars)}</strong>
+          </div>
+          <div className="des-kpi">
+            <span className="des-kpi-label">Safety stock</span>
+            <strong>{formatInvUnits(rollup.totalUnits)}</strong>
+          </div>
+        </div>
+        <div className="inv-actions">
+          <button type="button" className="btn primary" onClick={onApply}>
+            Apply to Active KPIs
+          </button>
+          <button type="button" className="btn ghost" onClick={onReset}>
+            Reset defaults
+          </button>
+        </div>
+        {active.inventoryRollup && (
+          <p className="muted tiny">
+            Last applied {new Date(active.inventoryRollup.appliedAt).toLocaleString()}{' '}
+            · {active.inventoryRollup.formula}
+          </p>
+        )}
+      </aside>
+
+      <div className="inv-main">
+        <div className="table-scroll data-table inv-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Kind</th>
+                <th>Svc %</th>
+                <th>LT d</th>
+                <th>σ_d</th>
+                <th>d̄/d</th>
+                <th>σ_LT</th>
+                <th>$/u</th>
+                <th>z</th>
+                <th>SS u</th>
+                <th>Inv $</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rollup.nodes.map((r) => (
+                <tr key={r.nodeId}>
+                  <td>
+                    <strong>{r.name}</strong>
+                    <div className="muted tiny">{r.region}</div>
+                  </td>
+                  <td>{r.kind}</td>
+                  <td>
+                    <input
+                      className="inv-input"
+                      type="number"
+                      min={50}
+                      max={99.9}
+                      step={0.5}
+                      value={r.serviceTargetPct}
+                      onChange={(e) =>
+                        onUpdateNode(r.nodeId, {
+                          serviceTargetPct: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="inv-input"
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={r.leadTimeDays}
+                      onChange={(e) =>
+                        onUpdateNode(r.nodeId, {
+                          leadTimeDays: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="inv-input"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={r.demandSigma}
+                      onChange={(e) =>
+                        onUpdateNode(r.nodeId, {
+                          demandSigma: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="inv-input"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={r.meanDemandPerDay}
+                      onChange={(e) =>
+                        onUpdateNode(r.nodeId, {
+                          meanDemandPerDay: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="inv-input"
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={r.leadTimeSigma}
+                      onChange={(e) =>
+                        onUpdateNode(r.nodeId, {
+                          leadTimeSigma: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="inv-input"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={r.holdingCostPerUnit}
+                      onChange={(e) =>
+                        onUpdateNode(r.nodeId, {
+                          holdingCostPerUnit: Number(e.target.value),
+                        })
+                      }
+                    />
+                  </td>
+                  <td className="mono">{r.z.toFixed(2)}</td>
+                  <td className="mono">{r.safetyStockUnits.toLocaleString()}</td>
+                  <td className="mono">
+                    ${r.inventoryDollars.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="muted tiny matrix-footnote">
+          {formula === 'simple'
+            ? 'SS = z · σ_d · √LT'
+            : 'SS = z · √(LT · σ_d² + d̄² · σ_LT²) (ASCM combined uncertainty)'}
+          . z from service target via Φ⁻¹.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function ResilienceView({
+  active,
+  onRun,
+  thresholdDefault,
+  liveResult,
+}: {
+  active: Scenario
+  onRun: (thresholdPct?: number) => ResilienceResult | null
+  thresholdDefault: number
+  liveResult: ResilienceResult | null
+}) {
+  const [threshold, setThreshold] = useState(thresholdDefault)
+  const [local, setLocal] = useState<ResilienceResult | null>(null)
+
+  useEffect(() => {
+    setThreshold(thresholdDefault)
+  }, [thresholdDefault])
+
+  const result = local ?? liveResult
+  const stored = active.resilience
+
+  function handleRun() {
+    const r = onRun(threshold)
+    if (r) setLocal(r)
+  }
+
+  const critical: CriticalNode[] = result?.critical ?? []
+  const ranked: CriticalNode[] = result?.ranked ?? []
+
+  return (
+    <div className="compare-res-layout">
+      <aside className="compare-side">
+        <h2>Resilience</h2>
+        <p className="des-active-name">{active.name}</p>
+        <p className="muted tiny">
+          Single points of failure: nodes whose removal drops service below the
+          threshold. Builds on the same coverage heuristic as node-outage
+          sensitivity.
+        </p>
+        <label className="field">
+          <span>Service threshold (%)</span>
+          <input
+            type="number"
+            min={50}
+            max={100}
+            step={0.5}
+            value={threshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+          />
+        </label>
+        <button type="button" className="btn primary des-run-btn" onClick={handleRun}>
+          Score resilience
+        </button>
+        {(result || stored) && (
+          <div className="des-kpi-row" aria-label="Resilience score">
+            <div className="des-kpi">
+              <span className="des-kpi-label">Score</span>
+              <strong>{(result?.score ?? stored?.score ?? 0).toFixed(0)}</strong>
+            </div>
+            <div className="des-kpi">
+              <span className="des-kpi-label">Critical</span>
+              <strong>
+                {(result?.critical.length ?? stored?.criticalNodeIds.length ?? 0)}
+              </strong>
+            </div>
+            <div className="des-kpi">
+              <span className="des-kpi-label">Baseline svc</span>
+              <strong>
+                {(
+                  result?.baselineServicePct ??
+                  stored?.baselineServicePct ??
+                  0
+                ).toFixed(1)}
+                %
+              </strong>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      <div className="res-main">
+        {!result && !stored ? (
+          <div className="des-empty">
+            <p>
+              No resilience score on <strong>{active.name}</strong> yet. Run to
+              list critical nodes (SPOFs).
+            </p>
+            <button type="button" className="btn primary" onClick={handleRun}>
+              Score resilience
+            </button>
+          </div>
+        ) : (
+          <>
+            <h3 className="cts-side-h">Critical nodes (SPOF)</h3>
+            {critical.length === 0 && (result?.critical.length === 0 || (stored && stored.criticalNodeIds.length === 0 && !result)) ? (
+              <p className="hint pad">
+                No single points of failure at {threshold}% service threshold.
+                {(stored?.criticalNames?.length ?? 0) > 0 && !result
+                  ? ` Stored: ${stored!.criticalNames.join(', ')}`
+                  : ''}
+              </p>
+            ) : (
+              <ul className="res-critical-list">
+                {(critical.length
+                  ? critical
+                  : (stored?.criticalNames ?? []).map((name, i) => ({
+                      nodeId: stored!.criticalNodeIds[i] ?? `c-${i}`,
+                      name,
+                      kind: '—',
+                      region: '—',
+                      serviceAfterPct: 0,
+                      dropPp: 0,
+                      coveredVolume: 0,
+                    }))
+                ).map((c) => (
+                  <li key={c.nodeId} className="res-critical-item">
+                    <div>
+                      <strong>{c.name}</strong>
+                      <span className="chip-tag">{c.kind}</span>
+                      <span className="muted tiny">{c.region}</span>
+                    </div>
+                    <div className="res-critical-meta">
+                      {c.dropPp > 0 && (
+                        <span className="kpi-delta down">−{c.dropPp.toFixed(1)}pp</span>
+                      )}
+                      {c.serviceAfterPct > 0 && (
+                        <span className="mono">
+                          svc after {c.serviceAfterPct.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {ranked.length > 0 && (
+              <>
+                <h3 className="cts-side-h">All open facilities (by impact)</h3>
+                <div className="table-scroll data-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Node</th>
+                        <th>Kind</th>
+                        <th>Drop</th>
+                        <th>Svc after</th>
+                        <th>Covered vol</th>
+                        <th>Critical?</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ranked.map((r) => {
+                        const isCrit = critical.some((c) => c.nodeId === r.nodeId)
+                        return (
+                          <tr key={r.nodeId} className={isCrit ? 'res-row-crit' : undefined}>
+                            <td>{r.name}</td>
+                            <td>{r.kind}</td>
+                            <td className="mono">−{r.dropPp.toFixed(1)}pp</td>
+                            <td className="mono">{r.serviceAfterPct.toFixed(1)}%</td>
+                            <td className="mono">{Math.round(r.coveredVolume).toLocaleString()}</td>
+                            <td>{isCrit ? 'Yes' : '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

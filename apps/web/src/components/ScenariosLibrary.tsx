@@ -64,8 +64,8 @@ export function ScenariosLibrary() {
           <span className="muted tiny">from Active · {activeScenario.name}</span>
         </div>
         <p className="hint pad" style={{ paddingTop: 0 }}>
-          One-click delta scenarios: fuel shock, demand shift, or DC outage.
-          Creates a new what-if branched from Active and sets it Active.
+          One-click delta scenarios: fuel shock, demand shift, DC outage, or
+          tariff/duty on MX inbound. Creates a new what-if from Active.
         </p>
         <div className="sensitivity-grid">
           {SENSITIVITY_PRESETS.map((p) => (

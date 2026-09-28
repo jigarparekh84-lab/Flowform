@@ -9,7 +9,11 @@ import {
   type Scenario,
 } from './sampleNetwork'
 
-export type SensitivityPresetId = 'fuel-20' | 'demand-shift' | 'node-outage'
+export type SensitivityPresetId =
+  | 'fuel-20'
+  | 'demand-shift'
+  | 'node-outage'
+  | 'tariff-duty'
 
 export type SensitivityPreset = {
   id: SensitivityPresetId
@@ -35,6 +39,13 @@ export const SENSITIVITY_PRESETS: SensitivityPreset[] = [
     id: 'node-outage',
     label: 'Node outage (DC)',
     description: 'Soft-close primary DC: service drop, cost + risk up.',
+    tag: 'Sensitivity',
+  },
+  {
+    id: 'tariff-duty',
+    label: 'Tariff / duty (MX inbound)',
+    description:
+      'Duty shock on inbound lanes from MX / nearshore region (~+25% landed).',
     tag: 'Sensitivity',
   },
 ]
@@ -103,9 +114,17 @@ export function kpisForSensitivity(
     co2v = Math.round((co20 + 1.1) * 10) / 10
     risk = 'High'
     riskBetter = false
+  } else if (presetId === 'tariff-duty') {
+    // Inbound MX share ~18% of network cost → +25% duty ≈ +4.5% total
+    cost = Math.round(cost0 * 1.045 * 10) / 10
+    service = service0
+    capex = capex0
+    co2v = co20
+    risk = 'Med'
+    riskBetter = true
   }
 
-  return {
+  const kpis: KpiSnapshot = {
     cost: {
       value: money(cost),
       delta: deltaPct(cost0, cost),
@@ -135,6 +154,12 @@ export function kpisForSensitivity(
       better: riskBetter,
     },
   }
+
+  // Preserve inventory KPIs from base when present
+  if (base.kpis.inventory) kpis.inventory = { ...base.kpis.inventory }
+  if (base.kpis.invUnits) kpis.invUnits = { ...base.kpis.invUnits }
+
+  return kpis
 }
 
 export function sensitivityScenarioName(

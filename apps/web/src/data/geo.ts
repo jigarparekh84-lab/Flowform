@@ -80,7 +80,14 @@ export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
   )
   return {
     version: 8,
-    name: theme === 'dark' ? 'Flowform Dark (Carto)' : 'Flowform Light (Carto)',
+    name:
+      theme === 'dark'
+        ? key
+          ? 'Flowform Dark (Carto · keyed)'
+          : 'Flowform Dark (Carto)'
+        : key
+          ? 'Flowform Light (Carto · keyed)'
+          : 'Flowform Light (Carto)',
     sources: {
       carto: {
         type: 'raster',
