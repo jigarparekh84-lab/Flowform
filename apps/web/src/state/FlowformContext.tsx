@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -23,6 +24,27 @@ import {
   mergeConstraints,
   runHeuristicOptimize,
 } from '../data/optimize'
+import {
+  checkApiHealth,
+  postOptimize,
+  type ApiOptimizeResponse,
+} from '../data/optimizeApi'
+import {
+  createProject as createProjectStorage,
+  DEFAULT_PROJECT_NAME,
+  deleteProject as deleteProjectStorage,
+  duplicateProject as duplicateProjectStorage,
+  ensureDefaultProject,
+  exportProjectJson,
+  importProjectFromJson,
+  listProjectMeta,
+  loadProjectState,
+  renameProject as renameProjectStorage,
+  saveProjectState,
+  setActiveProjectId,
+  type ProjectMeta,
+  type ProjectSnapshot,
+} from '../data/projects'
 import {
   HORIZON_OPTIONS,
   INITIAL_SCENARIOS,
@@ -46,6 +68,7 @@ import {
   sensitivityScenarioName,
   type SensitivityPresetId,
 } from '../data/sensitivity'
+import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
 
@@ -58,7 +81,7 @@ const DEFAULT_ASSUMPTIONS: AssumptionItem[] = [
   { id: 'a1', label: 'Demand is FY27 steady-state (no promotional spikes)', checked: true },
   { id: 'a2', label: 'Service radius uses Euclidean miles on canvas map', checked: true },
   { id: 'a3', label: 'CapEx is overnight build — no phased construction', checked: true },
-  { id: 'a4', label: 'Optimize is heuristic v1 (greedy), not a full MIP', checked: true },
+  { id: 'a4', label: 'Optimize prefers API MIP (PuLP) when available; else heuristic v1', checked: true },
   { id: 'a5', label: 'Lane rates held constant vs Reference', checked: false },
   { id: 'a6', label: 'CO₂ factors are planning estimates only', checked: true },
 ]
@@ -74,6 +97,70 @@ function defaultBrief(scenarios: Scenario[]): BriefState {
     assumptions: DEFAULT_ASSUMPTIONS,
     notes: '',
     sentToHandoffAt: null,
+  }
+}
+
+function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
+  const net = sampleUploadedNetwork()
+  return {
+    version: 1,
+    horizon: 'FY27',
+    scenarios: structuredClone(INITIAL_SCENARIOS),
+    activeScenarioId: INITIAL_SCENARIOS[0].id,
+    deltas: [],
+    network: net,
+    constraints: defaultConstraintsFromNetwork(net),
+    brief: defaultBrief(INITIAL_SCENARIOS),
+    handoffPayload: null,
+    emissionFactors: structuredClone(DEFAULT_EMISSION_FACTORS),
+    lastCandidates: [],
+    theme,
+  }
+}
+
+function kpisFromApi(
+  api: ApiOptimizeResponse,
+  reference: Scenario,
+): Scenario['kpis'] {
+  const refCost = parseFloat(
+    String(reference.kpis.cost.value).replace(/[^0-9.]/g, ''),
+  ) || 48.2
+  const refService =
+    parseFloat(String(reference.kpis.service.value).replace(/[^0-9.]/g, '')) ||
+    94.1
+  const refCo2 =
+    parseFloat(String(reference.kpis.co2.value).replace(/[^0-9.]/g, '')) || 12.4
+  const cost = api.kpis.costM
+  const service = api.kpis.servicePct
+  const co2 = api.kpis.co2Kt
+  const costDeltaPct = ((cost - refCost) / refCost) * 100
+  const serviceDelta = service - refService
+  return {
+    cost: {
+      value: `$${cost.toFixed(1)}M`,
+      delta: `${costDeltaPct >= 0 ? '+' : '−'}${Math.abs(costDeltaPct).toFixed(1)}%`,
+      better: costDeltaPct <= 0,
+    },
+    service: {
+      value: `${service.toFixed(1)}%`,
+      delta: `${serviceDelta >= 0 ? '+' : '−'}${Math.abs(serviceDelta).toFixed(1)}pp`,
+      better: serviceDelta >= 0,
+    },
+    capex: {
+      value: `$${api.kpis.capexUsedM.toFixed(0)}M`,
+      delta: `+$${api.kpis.capexUsedM.toFixed(0)}M`,
+      better: api.kpis.capexUsedM === 0,
+    },
+    co2: {
+      value: `${co2.toFixed(1)} kt`,
+      delta: `${co2 <= refCo2 ? '−' : '+'}${Math.abs(((co2 - refCo2) / refCo2) * 100).toFixed(0)}%`,
+      better: co2 <= refCo2,
+    },
+    risk: {
+      value: service >= 96 ? 'Low' : service >= 92 ? 'Med' : 'High',
+      delta: service >= refService ? '↓' : '↑',
+      better: service >= refService,
+    },
   }
 }
 
@@ -97,7 +184,6 @@ type FlowformContextValue = {
     deltaIds: string[]
   }) => Scenario | null
 
-  /** Active network (sample or uploaded). */
   network: UploadedNetwork
   nodes: NetworkNode[]
   lanes: NetworkLane[]
@@ -135,10 +221,23 @@ type FlowformContextValue = {
   emissionFactors: EmissionFactor[]
   setEmissionFactors: (f: EmissionFactor[]) => void
   updateEmissionFactor: (mode: string, kgPerTonMile: number) => void
-  /** Network CO₂ (kt) from lane miles × mode factors when distances present. */
   computedCo2Kt: number
 
   applySensitivityPreset: (presetId: SensitivityPresetId) => Scenario | null
+
+  /** Projects room */
+  projectMeta: ProjectMeta | null
+  projects: ProjectMeta[]
+  activeProjectId: string | null
+  projectName: string
+  createProject: (name?: string) => ProjectMeta
+  renameProject: (id: string, name: string) => boolean
+  duplicateProject: (id: string) => ProjectMeta | null
+  deleteProject: (id: string) => void
+  switchProject: (id: string) => void
+  exportActiveProject: () => boolean
+  importProjectFile: (raw: unknown) => ProjectMeta | null
+  refreshProjects: () => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -148,36 +247,48 @@ function uid(prefix: string): string {
 }
 
 export function FlowformProvider({ children }: { children: ReactNode }) {
-  const [horizon, setHorizon] =
-    useState<(typeof HORIZON_OPTIONS)[number]>('FY27')
-  const [scenarios, setScenarios] = useState<Scenario[]>(INITIAL_SCENARIOS)
-  const [activeScenarioId, setActiveScenarioId] = useState(
-    INITIAL_SCENARIOS[0].id,
+  const boot = useMemo(() => {
+    const meta = ensureDefaultProject(() => buildFreshSnapshot(readStoredTheme()))
+    const snap = loadProjectState(meta.id) ?? buildFreshSnapshot(readStoredTheme())
+    return { meta, snap, list: listProjectMeta() }
+  }, [])
+
+  const [projectMeta, setProjectMeta] = useState<ProjectMeta | null>(boot.meta)
+  const [projects, setProjects] = useState<ProjectMeta[]>(boot.list)
+  const [horizon, setHorizon] = useState<(typeof HORIZON_OPTIONS)[number]>(
+    boot.snap.horizon,
   )
-  const [deltas, setDeltas] = useState<DeltaItem[]>([])
+  const [scenarios, setScenarios] = useState<Scenario[]>(boot.snap.scenarios)
+  const [activeScenarioId, setActiveScenarioId] = useState(
+    boot.snap.activeScenarioId,
+  )
+  const [deltas, setDeltas] = useState<DeltaItem[]>(boot.snap.deltas)
   const [selection, setSelection] = useState<SelectionState>({
     ids: [],
     kind: null,
   })
-  const [lastCandidates, setLastCandidates] = useState<CandidateSite[]>([])
+  const [lastCandidates, setLastCandidates] = useState<CandidateSite[]>(
+    boot.snap.lastCandidates ?? [],
+  )
   const [lastParams, setLastParams] = useState<GreenfieldParams | null>(null)
 
-  const initialNet = useMemo(() => sampleUploadedNetwork(), [])
-  const [network, setNetwork] = useState<UploadedNetwork>(initialNet)
-  const [constraints, setConstraints] = useState<NetworkConstraints>(() =>
-    defaultConstraintsFromNetwork(initialNet),
+  const [network, setNetwork] = useState<UploadedNetwork>(boot.snap.network)
+  const [constraints, setConstraints] = useState<NetworkConstraints>(
+    boot.snap.constraints,
   )
   const [optimizeStatus, setOptimizeStatus] = useState<OptimizeRunStatus>({
     phase: 'idle',
   })
-  const [brief, setBrief] = useState<BriefState>(() =>
-    defaultBrief(INITIAL_SCENARIOS),
+  const [brief, setBrief] = useState<BriefState>(boot.snap.brief)
+  const [handoffPayload, setHandoffPayload] = useState<BriefState | null>(
+    boot.snap.handoffPayload,
   )
-  const [handoffPayload, setHandoffPayload] = useState<BriefState | null>(null)
   const [emissionFactors, setEmissionFactors] = useState<EmissionFactor[]>(
-    DEFAULT_EMISSION_FACTORS,
+    boot.snap.emissionFactors,
   )
   const optimizeLock = useRef(false)
+  const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const skipPersist = useRef(true)
 
   const activeScenario = useMemo(
     () => scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0],
@@ -190,6 +301,216 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const nodeById = useCallback(
     (id: string) => nodes.find((n) => n.id === id),
     [nodes],
+  )
+
+  const captureSnapshot = useCallback((): ProjectSnapshot => {
+    let theme: ThemeMode | undefined
+    try {
+      const t = localStorage.getItem('flowform-theme')
+      if (t === 'light' || t === 'dark') theme = t
+    } catch {
+      /* ignore */
+    }
+    return {
+      version: 1,
+      horizon,
+      scenarios,
+      activeScenarioId,
+      deltas,
+      network,
+      constraints,
+      brief,
+      handoffPayload,
+      emissionFactors,
+      lastCandidates,
+      theme,
+    }
+  }, [
+    horizon,
+    scenarios,
+    activeScenarioId,
+    deltas,
+    network,
+    constraints,
+    brief,
+    handoffPayload,
+    emissionFactors,
+    lastCandidates,
+  ])
+
+  const persistNow = useCallback(() => {
+    if (!projectMeta) return
+    saveProjectState(projectMeta.id, captureSnapshot())
+    setProjects(listProjectMeta())
+    setProjectMeta(
+      listProjectMeta().find((p) => p.id === projectMeta.id) ?? projectMeta,
+    )
+  }, [projectMeta, captureSnapshot])
+
+  // Debounced auto-save of active project
+  useEffect(() => {
+    if (skipPersist.current) {
+      skipPersist.current = false
+      return
+    }
+    if (!projectMeta) return
+    if (persistTimer.current) clearTimeout(persistTimer.current)
+    persistTimer.current = setTimeout(() => {
+      saveProjectState(projectMeta.id, captureSnapshot())
+      setProjects(listProjectMeta())
+    }, 400)
+    return () => {
+      if (persistTimer.current) clearTimeout(persistTimer.current)
+    }
+  }, [
+    projectMeta,
+    captureSnapshot,
+    horizon,
+    scenarios,
+    activeScenarioId,
+    deltas,
+    network,
+    constraints,
+    brief,
+    handoffPayload,
+    emissionFactors,
+    lastCandidates,
+  ])
+
+  const applySnapshot = useCallback((snap: ProjectSnapshot) => {
+    skipPersist.current = true
+    setHorizon(snap.horizon)
+    setScenarios(snap.scenarios)
+    setActiveScenarioId(snap.activeScenarioId)
+    setDeltas(snap.deltas ?? [])
+    setNetwork(snap.network)
+    setConstraints(snap.constraints)
+    setBrief(snap.brief)
+    setHandoffPayload(snap.handoffPayload)
+    setEmissionFactors(snap.emissionFactors ?? DEFAULT_EMISSION_FACTORS)
+    setLastCandidates(snap.lastCandidates ?? [])
+    setSelection({ ids: [], kind: null })
+    setOptimizeStatus({ phase: 'idle' })
+    if (snap.theme === 'light' || snap.theme === 'dark') {
+      try {
+        localStorage.setItem('flowform-theme', snap.theme)
+        document.documentElement.setAttribute('data-theme', snap.theme)
+        document.documentElement.style.colorScheme = snap.theme
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [])
+
+  const refreshProjects = useCallback(() => {
+    setProjects(listProjectMeta())
+  }, [])
+
+  const switchProject = useCallback(
+    (id: string) => {
+      if (projectMeta?.id === id) return
+      // Save current first
+      if (projectMeta) {
+        saveProjectState(projectMeta.id, captureSnapshot())
+      }
+      const snap = loadProjectState(id)
+      if (!snap) return
+      setActiveProjectId(id)
+      const meta = listProjectMeta().find((p) => p.id === id) ?? null
+      setProjectMeta(meta)
+      setProjects(listProjectMeta())
+      applySnapshot(snap)
+    },
+    [projectMeta, captureSnapshot, applySnapshot],
+  )
+
+  const createProject = useCallback(
+    (name?: string) => {
+      if (projectMeta) {
+        saveProjectState(projectMeta.id, captureSnapshot())
+      }
+      const snap = buildFreshSnapshot(readStoredTheme())
+      const meta = createProjectStorage(
+        name?.trim() || `Study ${listProjectMeta().length + 1}`,
+        snap,
+      )
+      setProjectMeta(meta)
+      setProjects(listProjectMeta())
+      applySnapshot(snap)
+      return meta
+    },
+    [projectMeta, captureSnapshot, applySnapshot],
+  )
+
+  const renameProject = useCallback(
+    (id: string, name: string) => {
+      const updated = renameProjectStorage(id, name)
+      if (!updated) return false
+      setProjects(listProjectMeta())
+      if (projectMeta?.id === id) setProjectMeta(updated)
+      return true
+    },
+    [projectMeta],
+  )
+
+  const duplicateProject = useCallback(
+    (id: string) => {
+      if (projectMeta?.id === id) {
+        saveProjectState(id, captureSnapshot())
+      }
+      const meta = duplicateProjectStorage(id)
+      if (!meta) return null
+      setProjects(listProjectMeta())
+      // Stay on current; user can Open the copy
+      setActiveProjectId(projectMeta?.id ?? meta.id)
+      // duplicateProjectStorage sets active to new — restore prior active
+      if (projectMeta) setActiveProjectId(projectMeta.id)
+      setProjects(listProjectMeta())
+      return meta
+    },
+    [projectMeta, captureSnapshot],
+  )
+
+  const deleteProject = useCallback(
+    (id: string) => {
+      const remaining = listProjectMeta().filter((p) => p.id !== id)
+      if (remaining.length === 0) return
+      deleteProjectStorage(id)
+      setProjects(listProjectMeta())
+      if (projectMeta?.id === id) {
+        const next = listProjectMeta()[0]
+        if (next) {
+          const snap = loadProjectState(next.id) ?? buildFreshSnapshot()
+          setProjectMeta(next)
+          setActiveProjectId(next.id)
+          applySnapshot(snap)
+        }
+      }
+    },
+    [projectMeta, applySnapshot],
+  )
+
+  const exportActiveProject = useCallback(() => {
+    if (!projectMeta) return false
+    saveProjectState(projectMeta.id, captureSnapshot())
+    return !!exportProjectJson(projectMeta.id)
+  }, [projectMeta, captureSnapshot])
+
+  const importProjectFile = useCallback(
+    (raw: unknown) => {
+      if (projectMeta) {
+        saveProjectState(projectMeta.id, captureSnapshot())
+      }
+      const meta = importProjectFromJson(raw)
+      if (!meta) return null
+      const snap = loadProjectState(meta.id)
+      if (!snap) return null
+      setProjectMeta(meta)
+      setProjects(listProjectMeta())
+      applySnapshot(snap)
+      return meta
+    },
+    [projectMeta, captureSnapshot, applySnapshot],
   )
 
   const selectEntity = useCallback(
@@ -245,7 +566,6 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       }
       setDeltas((prev) => [item, ...prev])
 
-      // Register candidates into network + constraints so Optimize can open them
       setNetwork((prev) => {
         const existingIds = new Set(prev.nodes.map((n) => n.id))
         const added: NetworkNode[] = picks
@@ -399,7 +719,6 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         baseId: base.id,
         kpis: kpisForSensitivity(base, presetId),
       }
-      // Lightly adjust CO₂ KPI from factors when fuel preset
       if (presetId === 'fuel-20') {
         const kt = Math.round(computedCo2Kt * 1.03 * 10) / 10
         scenario.kpis = {
@@ -417,61 +736,68 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [scenarios, activeScenarioId, computedCo2Kt],
   )
 
-  const runOptimize = useCallback(async (): Promise<Scenario | null> => {
-    if (optimizeLock.current) return null
-    optimizeLock.current = true
-    try {
-      setOptimizeStatus({
-        phase: 'running',
-        progress: 8,
-        message: 'Heuristic v1 — seeding open facilities…',
-      })
-      await sleep(280)
-      setOptimizeStatus({
-        phase: 'running',
-        progress: 32,
-        message: 'Scoring candidates under CapEx + service radius…',
-      })
-      await sleep(320)
-      setOptimizeStatus({
-        phase: 'running',
-        progress: 58,
-        message: 'Greedy open / soft-close pass…',
-      })
-      await sleep(300)
-
-      const reference =
-        scenarios.find((s) => s.id === 'baseline') ?? scenarios[0]
-      const result = runHeuristicOptimize({
-        network,
-        constraints,
-        reference,
-      })
-
-      setOptimizeStatus({
-        phase: 'running',
-        progress: 88,
-        message: 'Packaging scenario KPIs…',
-      })
-      await sleep(220)
-
+  const applyOptimizeResult = useCallback(
+    (args: {
+      openedIds: string[]
+      closedIds: string[]
+      servicePct: number
+      capexUsedM: number
+      heuristic: string
+      flows?: ApiOptimizeResponse['flows']
+      log: string[]
+      name: string
+      kpis: Scenario['kpis']
+      statusMessage: string
+    }) => {
+      const { openedIds, closedIds } = args
+      const facilities = network.nodes.filter(
+        (n) => n.kind === 'dc' || n.kind === 'plant' || n.kind === 'candidate',
+      )
       const scenario: Scenario = {
         id: uid('opt'),
-        name: result.scenario.name,
-        tag: result.scenario.tag,
-        baseId: result.scenario.baseId,
-        kpis: result.scenario.kpis,
-        optimizeMeta: result.scenario.optimizeMeta,
+        name: args.name,
+        tag: 'Optimize',
+        baseId: 'baseline',
+        kpis: args.kpis,
+        optimizeMeta: {
+          heuristic: args.heuristic,
+          openedIds,
+          closedIds,
+          servicePct: Math.round(args.servicePct * 10) / 10,
+          capexUsedM: Math.round(args.capexUsedM * 10) / 10,
+          flows: args.flows,
+          marks: [
+            ...openedIds.map((id) => {
+              const n = facilities.find((f) => f.id === id)
+              return {
+                id: `opt-open-${id}`,
+                kind: 'open' as const,
+                label: `${n?.name ?? id} (open)`,
+                x: n?.x ?? 50,
+                y: n?.y ?? 50,
+              }
+            }),
+            ...closedIds.map((id) => {
+              const n = facilities.find((f) => f.id === id)
+              return {
+                id: `opt-close-${id}`,
+                kind: 'close' as const,
+                label: `${n?.name ?? id} (close)`,
+                x: n?.x ?? 50,
+                y: n?.y ?? 50,
+              }
+            }),
+          ],
+        },
       }
 
-      // Apply open/close to constraints for map fidelity
       setConstraints((prev) => ({
         ...prev,
         facilities: prev.facilities.map((f) => {
-          if (result.openedIds.includes(f.nodeId)) {
+          if (openedIds.includes(f.nodeId)) {
             return { ...f, status: 'open' as const }
           }
-          if (result.closedIds.includes(f.nodeId)) {
+          if (closedIds.includes(f.nodeId)) {
             return { ...f, status: 'closed' as const }
           }
           return f
@@ -497,10 +823,113 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setOptimizeStatus({
         phase: 'done',
         scenarioId: scenario.id,
-        message: `Optimize complete · ${scenario.name} · service ${result.servicePct.toFixed(1)}%`,
-        log: result.log,
+        message: args.statusMessage,
+        log: args.log,
       })
       return scenario
+    },
+    [network.nodes],
+  )
+
+  const runOptimize = useCallback(async (): Promise<Scenario | null> => {
+    if (optimizeLock.current) return null
+    optimizeLock.current = true
+    try {
+      setOptimizeStatus({
+        phase: 'running',
+        progress: 10,
+        message: 'Checking optimize API…',
+      })
+
+      const apiUp = await checkApiHealth()
+      const reference =
+        scenarios.find((s) => s.id === 'baseline') ?? scenarios[0]
+
+      if (apiUp) {
+        setOptimizeStatus({
+          phase: 'running',
+          progress: 35,
+          message: 'API available — running PuLP MIP…',
+        })
+        try {
+          const api = await postOptimize({
+            network,
+            constraints,
+            reference,
+          })
+          setOptimizeStatus({
+            phase: 'running',
+            progress: 85,
+            message: `Packaging ${api.solver} result…`,
+          })
+          await sleep(120)
+          return applyOptimizeResult({
+            openedIds: api.openedIds,
+            closedIds: api.closedIds,
+            servicePct: api.kpis.servicePct,
+            capexUsedM: api.kpis.capexUsedM,
+            heuristic: api.solver,
+            flows: api.flows,
+            log: api.log,
+            name: `Optimize MIP ${new Date().toLocaleTimeString()}`,
+            kpis: kpisFromApi(api, reference),
+            statusMessage: `API ${api.solver} · ${api.status} · service ${api.kpis.servicePct.toFixed(1)}%`,
+          })
+        } catch (apiErr) {
+          const msg =
+            apiErr instanceof Error ? apiErr.message : 'API optimize failed'
+          setOptimizeStatus({
+            phase: 'running',
+            progress: 45,
+            message: `API failed (${msg}) — falling back to heuristic v1…`,
+          })
+          await sleep(280)
+        }
+      } else {
+        setOptimizeStatus({
+          phase: 'running',
+          progress: 28,
+          message: 'API offline — client heuristic v1…',
+        })
+        await sleep(220)
+      }
+
+      setOptimizeStatus({
+        phase: 'running',
+        progress: 55,
+        message: 'Heuristic v1 — greedy open/close…',
+      })
+      await sleep(260)
+
+      const result = runHeuristicOptimize({
+        network,
+        constraints,
+        reference,
+      })
+
+      setOptimizeStatus({
+        phase: 'running',
+        progress: 88,
+        message: 'Packaging scenario KPIs…',
+      })
+      await sleep(160)
+
+      return applyOptimizeResult({
+        openedIds: result.openedIds,
+        closedIds: result.closedIds,
+        servicePct: result.servicePct,
+        capexUsedM: result.capexUsedM,
+        heuristic: 'v1-greedy',
+        log: [
+          ...(apiUp
+            ? ['Fell back to client heuristic after API issue.']
+            : ['Optimize API unreachable — used client heuristic v1.']),
+          ...result.log,
+        ],
+        name: result.scenario.name,
+        kpis: result.scenario.kpis,
+        statusMessage: `Heuristic v1 · service ${result.servicePct.toFixed(1)}% (API offline or fallback)`,
+      })
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Optimize failed unexpectedly'
@@ -509,7 +938,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     } finally {
       optimizeLock.current = false
     }
-  }, [scenarios, network, constraints])
+  }, [scenarios, network, constraints, applyOptimizeResult])
 
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
     setBrief((prev) => ({ ...prev, ...patch }))
@@ -562,6 +991,18 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateEmissionFactor,
       computedCo2Kt,
       applySensitivityPreset,
+      projectMeta,
+      projects,
+      activeProjectId: projectMeta?.id ?? null,
+      projectName: projectMeta?.name ?? DEFAULT_PROJECT_NAME,
+      createProject,
+      renameProject,
+      duplicateProject,
+      deleteProject,
+      switchProject,
+      exportActiveProject,
+      importProjectFile,
+      refreshProjects,
     }),
     [
       horizon,
@@ -595,8 +1036,21 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateEmissionFactor,
       computedCo2Kt,
       applySensitivityPreset,
+      projectMeta,
+      projects,
+      createProject,
+      renameProject,
+      duplicateProject,
+      deleteProject,
+      switchProject,
+      exportActiveProject,
+      importProjectFile,
+      refreshProjects,
     ],
   )
+
+  // silence unused persistNow (available for explicit flush)
+  void persistNow
 
   return (
     <FlowformContext.Provider value={value}>{children}</FlowformContext.Provider>

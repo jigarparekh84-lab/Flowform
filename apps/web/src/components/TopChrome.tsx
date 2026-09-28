@@ -1,4 +1,4 @@
-import { PROJECT_NAME, HORIZON_OPTIONS, type Scenario } from '../data/sampleNetwork'
+import { HORIZON_OPTIONS, type Scenario } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 import type { ThemeMode } from '../state/theme'
 
@@ -7,6 +7,7 @@ type Props = {
   horizon: (typeof HORIZON_OPTIONS)[number]
   onHorizon: (h: (typeof HORIZON_OPTIONS)[number]) => void
   onCompare?: () => void
+  onOpenProjects?: () => void
   theme: ThemeMode
   onToggleTheme: () => void
 }
@@ -16,10 +17,11 @@ export function TopChrome({
   horizon,
   onHorizon,
   onCompare,
+  onOpenProjects,
   theme,
   onToggleTheme,
 }: Props) {
-  const { optimizeStatus, runOptimize } = useFlowform()
+  const { optimizeStatus, runOptimize, projectName } = useFlowform()
   const running = optimizeStatus.phase === 'running'
 
   return (
@@ -43,9 +45,14 @@ export function TopChrome({
           <strong>Flowform</strong>
         </div>
         <span className="chrome-divider" aria-hidden />
-        <button type="button" className="project-stub" title="Project (stub)">
+        <button
+          type="button"
+          className="project-stub"
+          title="Open Projects room"
+          onClick={onOpenProjects}
+        >
           <span className="project-label">Project</span>
-          <span className="project-name">{PROJECT_NAME}</span>
+          <span className="project-name">{projectName}</span>
           <span className="chev" aria-hidden>
             ▾
           </span>
@@ -110,7 +117,7 @@ export function TopChrome({
           className="btn ghost"
           disabled={running}
           onClick={() => void runOptimize()}
-          title="Heuristic v1 — greedy open/close under CapEx + service radius (not a full MIP)"
+          title="Calls optimize API (PuLP MIP) when available; else client heuristic v1"
         >
           {running ? 'Running…' : 'Run'}
         </button>

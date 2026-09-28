@@ -32,11 +32,14 @@ export type KpiSnapshot = {
 }
 
 export type OptimizeMeta = {
-  heuristic: 'v1-greedy'
+  /** Client heuristic or API MIP solver id (e.g. pulp-highs, pulp-cbc). */
+  heuristic: 'v1-greedy' | 'pulp-highs' | 'pulp-cbc' | string
   openedIds: string[]
   closedIds: string[]
   servicePct: number
   capexUsedM: number
+  /** Assignment flows from MIP when available. */
+  flows?: { from: string; to: string; volume: number; miles?: number }[]
   /** Positions for map-diff when nodes are not in the sample set. */
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }

@@ -2179,3 +2179,119 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+/* —— Projects room —— */
+.projects-room .studio-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.projects-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding-top: 0.35rem;
+}
+
+.projects-body {
+  grid-template-columns: 1fr !important;
+  overflow: auto;
+}
+
+.projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 0;
+}
+
+.project-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--ff-border);
+  border-radius: 0.65rem;
+  background: var(--ff-bg-panel);
+}
+
+.project-card.active {
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ff-accent) 35%, transparent);
+}
+
+.project-card h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.project-meta-line {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ff-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.active-pill {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ff-accent) 22%, transparent);
+  color: var(--ff-accent);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.project-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.project-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.project-rename-form input {
+  appearance: none;
+  background: var(--ff-bg-input);
+  color: var(--ff-text);
+  border: 1px solid var(--ff-border-strong);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.55rem;
+  font: inherit;
+  font-size: 0.9rem;
+  min-width: 14rem;
+}
+
+.btn.sm {
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+.btn.danger {
+  color: var(--ff-bad, #f07178);
+}
+
+.btn.danger:hover:not(:disabled) {
+  border-color: var(--ff-bad, #f07178);
+}
+
+.projects-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ff-text-secondary);
+}

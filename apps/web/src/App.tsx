@@ -7,7 +7,7 @@ import { GreenfieldStudio } from './components/GreenfieldStudio'
 import { HandoffRoom } from './components/HandoffRoom'
 import { LeftNav, type NavItem } from './components/LeftNav'
 import { NetworkCanvas } from './components/NetworkCanvas'
-import { PlaceholderRoom } from './components/PlaceholderRoom'
+import { ProjectsRoom } from './components/ProjectsRoom'
 import { ScenariosLibrary } from './components/ScenariosLibrary'
 import { TopChrome } from './components/TopChrome'
 import { useFlowform } from './state/FlowformContext'
@@ -25,12 +25,14 @@ function App() {
         horizon={horizon}
         onHorizon={setHorizon}
         onCompare={() => setRoom('Compare')}
+        onOpenProjects={() => setRoom('Projects')}
         theme={theme}
         onToggleTheme={toggleTheme}
       />
       <div className="app-body">
         <LeftNav active={room} onSelect={setRoom} />
         <main className="main-stage" aria-label={room}>
+          {room === 'Projects' && <ProjectsRoom />}
           {room === 'Network' && <NetworkCanvas />}
           {room === 'Greenfield' && <GreenfieldStudio />}
           {room === 'Scenarios' && <ScenariosLibrary />}
@@ -40,7 +42,6 @@ function App() {
           )}
           {room === 'Data' && <DataRoom />}
           {room === 'Handoff' && <HandoffRoom />}
-          {room === 'Projects' && <PlaceholderRoom room={room} />}
         </main>
       </div>
     </div>

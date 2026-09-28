@@ -7,7 +7,6 @@ import {
 import {
   parseMoneyM,
   parsePercent,
-  PROJECT_NAME,
   type Scenario,
 } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
@@ -25,6 +24,7 @@ export function DecisionBrief({ onHandoff }: Props) {
     activeScenarioId,
     setActiveScenarioId,
     horizon,
+    projectName,
   } = useFlowform()
 
   const reference =
@@ -77,7 +77,7 @@ export function DecisionBrief({ onHandoff }: Props) {
     const body = buildBriefMarkdown({
       brief,
       scenarios,
-      projectName: PROJECT_NAME,
+      projectName,
       horizon,
     })
     downloadTextFile(
@@ -91,7 +91,7 @@ export function DecisionBrief({ onHandoff }: Props) {
     const body = buildBriefHtml({
       brief,
       scenarios,
-      projectName: PROJECT_NAME,
+      projectName,
       horizon,
     })
     downloadTextFile(

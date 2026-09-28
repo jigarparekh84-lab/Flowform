@@ -43,3 +43,9 @@ coverage/
 
 # Vite
 .vite/
+
+# Python API
+apps/api/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
