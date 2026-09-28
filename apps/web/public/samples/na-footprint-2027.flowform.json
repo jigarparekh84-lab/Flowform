@@ -1,0 +1,1120 @@
+{
+  "format": "flowform-project",
+  "version": 1,
+  "meta": {
+    "id": "proj-sample-na-footprint-2027",
+    "name": "NA Footprint 2027 (sample)",
+    "createdAt": "2026-09-28T17:54:44.207Z",
+    "updatedAt": "2026-09-28T17:54:44.207Z"
+  },
+  "state": {
+    "version": 1,
+    "horizon": "FY27",
+    "scenarios": [
+      {
+        "id": "baseline",
+        "name": "Baseline",
+        "tag": "Live",
+        "kpis": {
+          "cost": {
+            "value": "$48.2M",
+            "delta": "—",
+            "better": true
+          },
+          "service": {
+            "value": "94.1%",
+            "delta": "—",
+            "better": true
+          },
+          "capex": {
+            "value": "$0",
+            "delta": "—",
+            "better": true
+          },
+          "co2": {
+            "value": "12.4 kt",
+            "delta": "—",
+            "better": true
+          },
+          "risk": {
+            "value": "Med",
+            "delta": "—",
+            "better": true
+          }
+        }
+      },
+      {
+        "id": "east-dc",
+        "name": "East Coast DC",
+        "tag": "What-if",
+        "baseId": "baseline",
+        "kpis": {
+          "cost": {
+            "value": "$46.1M",
+            "delta": "−4.4%",
+            "better": true
+          },
+          "service": {
+            "value": "96.8%",
+            "delta": "+2.7pp",
+            "better": true
+          },
+          "capex": {
+            "value": "$18M",
+            "delta": "+$18M",
+            "better": false
+          },
+          "co2": {
+            "value": "11.1 kt",
+            "delta": "−10%",
+            "better": true
+          },
+          "risk": {
+            "value": "Low",
+            "delta": "↓",
+            "better": true
+          }
+        }
+      },
+      {
+        "id": "nearshore",
+        "name": "Nearshore MX",
+        "tag": "What-if",
+        "baseId": "baseline",
+        "kpis": {
+          "cost": {
+            "value": "$44.9M",
+            "delta": "−6.8%",
+            "better": true
+          },
+          "service": {
+            "value": "92.4%",
+            "delta": "−1.7pp",
+            "better": false
+          },
+          "capex": {
+            "value": "$9M",
+            "delta": "+$9M",
+            "better": false
+          },
+          "co2": {
+            "value": "10.2 kt",
+            "delta": "−18%",
+            "better": true
+          },
+          "risk": {
+            "value": "Med",
+            "delta": "→",
+            "better": true
+          }
+        }
+      },
+      {
+        "id": "lean-lanes",
+        "name": "Lean Lanes",
+        "tag": "Sketch",
+        "baseId": "baseline",
+        "kpis": {
+          "cost": {
+            "value": "$47.0M",
+            "delta": "−2.5%",
+            "better": true
+          },
+          "service": {
+            "value": "93.0%",
+            "delta": "−1.1pp",
+            "better": false
+          },
+          "capex": {
+            "value": "$1.2M",
+            "delta": "+$1.2M",
+            "better": false
+          },
+          "co2": {
+            "value": "11.8 kt",
+            "delta": "−5%",
+            "better": true
+          },
+          "risk": {
+            "value": "High",
+            "delta": "↑",
+            "better": false
+          }
+        }
+      }
+    ],
+    "activeScenarioId": "baseline",
+    "deltas": [],
+    "network": {
+      "nodes": [
+        {
+          "id": "n1",
+          "name": "Austin Plant",
+          "kind": "plant",
+          "region": "South",
+          "capacity": "42k u/wk",
+          "x": 28,
+          "y": 62,
+          "lat": 30.27,
+          "lng": -97.74
+        },
+        {
+          "id": "n2",
+          "name": "Columbus DC",
+          "kind": "dc",
+          "region": "Midwest",
+          "capacity": "18k pallet",
+          "x": 52,
+          "y": 38,
+          "lat": 39.96,
+          "lng": -82.99
+        },
+        {
+          "id": "n3",
+          "name": "Atlanta DC",
+          "kind": "dc",
+          "region": "Southeast",
+          "capacity": "14k pallet",
+          "x": 62,
+          "y": 58,
+          "lat": 33.75,
+          "lng": -84.39
+        },
+        {
+          "id": "n4",
+          "name": "Chicago Hub",
+          "kind": "demand",
+          "region": "Midwest",
+          "capacity": "9.2k u/wk",
+          "x": 48,
+          "y": 28,
+          "lat": 41.88,
+          "lng": -87.63
+        },
+        {
+          "id": "n5",
+          "name": "Dallas Metro",
+          "kind": "demand",
+          "region": "South",
+          "capacity": "7.1k u/wk",
+          "x": 36,
+          "y": 55,
+          "lat": 32.78,
+          "lng": -96.8
+        },
+        {
+          "id": "n6",
+          "name": "NYC Corridor",
+          "kind": "demand",
+          "region": "Northeast",
+          "capacity": "11.4k u/wk",
+          "x": 78,
+          "y": 32,
+          "lat": 40.71,
+          "lng": -74.01
+        },
+        {
+          "id": "n7",
+          "name": "Monterrey Sup",
+          "kind": "supplier",
+          "region": "MX",
+          "capacity": "22k u/wk",
+          "x": 22,
+          "y": 72,
+          "lat": 25.67,
+          "lng": -100.31
+        },
+        {
+          "id": "n8",
+          "name": "Reno DC",
+          "kind": "dc",
+          "region": "West",
+          "capacity": "12k pallet",
+          "x": 14,
+          "y": 36,
+          "lat": 39.53,
+          "lng": -119.81
+        }
+      ],
+      "lanes": [
+        {
+          "id": "l1",
+          "from": "n7",
+          "to": "n1",
+          "mode": "Truck",
+          "costPerUnit": 1.12,
+          "leadDays": 3,
+          "co2Kg": 18
+        },
+        {
+          "id": "l2",
+          "from": "n1",
+          "to": "n2",
+          "mode": "Rail",
+          "costPerUnit": 0.64,
+          "leadDays": 5,
+          "co2Kg": 9
+        },
+        {
+          "id": "l3",
+          "from": "n1",
+          "to": "n3",
+          "mode": "Truck",
+          "costPerUnit": 0.88,
+          "leadDays": 2,
+          "co2Kg": 14
+        },
+        {
+          "id": "l4",
+          "from": "n2",
+          "to": "n4",
+          "mode": "Truck",
+          "costPerUnit": 0.41,
+          "leadDays": 1,
+          "co2Kg": 6
+        },
+        {
+          "id": "l5",
+          "from": "n3",
+          "to": "n6",
+          "mode": "Intermodal",
+          "costPerUnit": 0.97,
+          "leadDays": 4,
+          "co2Kg": 11
+        },
+        {
+          "id": "l6",
+          "from": "n1",
+          "to": "n5",
+          "mode": "Truck",
+          "costPerUnit": 0.35,
+          "leadDays": 1,
+          "co2Kg": 5
+        },
+        {
+          "id": "l7",
+          "from": "n8",
+          "to": "n2",
+          "mode": "Rail",
+          "costPerUnit": 0.72,
+          "leadDays": 6,
+          "co2Kg": 8
+        },
+        {
+          "id": "l8",
+          "from": "n3",
+          "to": "n5",
+          "mode": "Truck",
+          "costPerUnit": 0.79,
+          "leadDays": 2,
+          "co2Kg": 12
+        }
+      ],
+      "demandVolume": {
+        "n4": 9200,
+        "n5": 7100,
+        "n6": 11400
+      },
+      "source": "sample",
+      "fileNames": {},
+      "validation": {
+        "ok": true,
+        "issues": [
+          {
+            "level": "info",
+            "message": "Using built-in sample network."
+          }
+        ],
+        "geocodeScore": 100,
+        "reconcileScore": 100,
+        "rowCounts": {
+          "sites": 5,
+          "demand": 3,
+          "lanes": 8
+        }
+      }
+    },
+    "constraints": {
+      "serviceTargetPct": 95,
+      "serviceRadiusMiles": 250,
+      "capexBudgetM": 30,
+      "maxFacilities": 4,
+      "facilities": [
+        {
+          "nodeId": "n1",
+          "status": "open",
+          "capacityMin": 25200,
+          "capacityMax": 52500,
+          "fixedCapexM": 8
+        },
+        {
+          "nodeId": "n2",
+          "status": "open",
+          "capacityMin": 10800,
+          "capacityMax": 22500,
+          "fixedCapexM": 4
+        },
+        {
+          "nodeId": "n3",
+          "status": "open",
+          "capacityMin": 8400,
+          "capacityMax": 17500,
+          "fixedCapexM": 4
+        },
+        {
+          "nodeId": "n8",
+          "status": "open",
+          "capacityMin": 7200,
+          "capacityMax": 15000,
+          "fixedCapexM": 4
+        }
+      ]
+    },
+    "brief": {
+      "recommendedScenarioId": "east-dc",
+      "comparedIds": [
+        "baseline",
+        "east-dc",
+        "nearshore"
+      ],
+      "assumptions": [
+        {
+          "id": "a1",
+          "label": "Demand is FY27 steady-state (no promotional spikes)",
+          "checked": true
+        },
+        {
+          "id": "a2",
+          "label": "Service radius uses Euclidean miles on canvas map",
+          "checked": true
+        },
+        {
+          "id": "a3",
+          "label": "CapEx is overnight build — no phased construction",
+          "checked": true
+        },
+        {
+          "id": "a4",
+          "label": "Optimize prefers API MIP (PuLP) when available; else heuristic v1",
+          "checked": true
+        },
+        {
+          "id": "a5",
+          "label": "Lane rates held constant vs Reference",
+          "checked": false
+        },
+        {
+          "id": "a6",
+          "label": "CO₂ factors are planning estimates only",
+          "checked": true
+        }
+      ],
+      "notes": "Sample pack: NA Footprint 2027 — built-in network, Baseline + East Coast DC / Nearshore MX / Lean Lanes what-ifs. Import via Projects → Import JSON.",
+      "sentToHandoffAt": null
+    },
+    "handoffPayload": null,
+    "emissionFactors": [
+      {
+        "mode": "Truck",
+        "kgPerTonMile": 0.161,
+        "notes": "Heavy-duty diesel TL average (planning)"
+      },
+      {
+        "mode": "Rail",
+        "kgPerTonMile": 0.022,
+        "notes": "Class I freight rail average"
+      },
+      {
+        "mode": "Intermodal",
+        "kgPerTonMile": 0.065,
+        "notes": "Rail + dray blended"
+      },
+      {
+        "mode": "Ocean",
+        "kgPerTonMile": 0.01,
+        "notes": "Deep-sea container (stub)"
+      },
+      {
+        "mode": "Air",
+        "kgPerTonMile": 0.98,
+        "notes": "Belly / freighter blend (stub)"
+      }
+    ],
+    "lastCandidates": [],
+    "theme": "dark",
+    "inventoryPolicies": {
+      "formula": "ascm-combined",
+      "nodes": [
+        {
+          "nodeId": "n1",
+          "serviceTargetPct": 95,
+          "leadTimeDays": 3,
+          "demandSigma": 347.9,
+          "meanDemandPerDay": 1932.6,
+          "leadTimeSigma": 0.6,
+          "holdingCostPerUnit": 12
+        },
+        {
+          "nodeId": "n2",
+          "serviceTargetPct": 95,
+          "leadTimeDays": 5.5,
+          "demandSigma": 173.9,
+          "meanDemandPerDay": 828.2,
+          "leadTimeSigma": 1.1,
+          "holdingCostPerUnit": 18
+        },
+        {
+          "nodeId": "n3",
+          "serviceTargetPct": 95,
+          "leadTimeDays": 2,
+          "demandSigma": 154.6,
+          "meanDemandPerDay": 644.2,
+          "leadTimeSigma": 0.4,
+          "holdingCostPerUnit": 18
+        },
+        {
+          "nodeId": "n8",
+          "serviceTargetPct": 95,
+          "leadTimeDays": 3,
+          "demandSigma": 149.1,
+          "meanDemandPerDay": 552.2,
+          "leadTimeSigma": 0.6,
+          "holdingCostPerUnit": 18
+        }
+      ]
+    },
+    "comments": [],
+    "productMix": {
+      "catalog": "temp-handling",
+      "groups": [
+        {
+          "id": "ambient",
+          "name": "Ambient",
+          "code": "AMB",
+          "color": "#34d399",
+          "description": "Dry / ambient finished goods — no cold chain.",
+          "handling": "ambient"
+        },
+        {
+          "id": "chilled",
+          "name": "Chilled",
+          "code": "CHL",
+          "color": "#38bdf8",
+          "description": "Refrigerated SKUs requiring 2–8°C lanes & DCs.",
+          "handling": "chilled"
+        },
+        {
+          "id": "hazmat",
+          "name": "Hazmat",
+          "code": "HAZ",
+          "color": "#f87171",
+          "description": "Regulated / hazardous commodities — limited lanes.",
+          "handling": "hazmat"
+        }
+      ],
+      "demandMix": [
+        {
+          "nodeId": "n4",
+          "shares": {
+            "ambient": 62,
+            "chilled": 28,
+            "hazmat": 10
+          }
+        },
+        {
+          "nodeId": "n5",
+          "shares": {
+            "ambient": 48,
+            "chilled": 40,
+            "hazmat": 12
+          }
+        },
+        {
+          "nodeId": "n6",
+          "shares": {
+            "ambient": 55,
+            "chilled": 25,
+            "hazmat": 20
+          }
+        }
+      ],
+      "laneTags": [
+        {
+          "laneId": "l1",
+          "groupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ]
+        },
+        {
+          "laneId": "l2",
+          "groupIds": [
+            "ambient",
+            "chilled"
+          ]
+        },
+        {
+          "laneId": "l3",
+          "groupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ]
+        },
+        {
+          "laneId": "l4",
+          "groupIds": [
+            "ambient",
+            "hazmat"
+          ]
+        },
+        {
+          "laneId": "l5",
+          "groupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ]
+        },
+        {
+          "laneId": "l6",
+          "groupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ]
+        },
+        {
+          "laneId": "l7",
+          "groupIds": [
+            "ambient",
+            "chilled"
+          ]
+        },
+        {
+          "laneId": "l8",
+          "groupIds": [
+            "ambient",
+            "hazmat"
+          ]
+        }
+      ],
+      "facilityCaps": [
+        {
+          "nodeId": "n1",
+          "capableGroupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ],
+          "capacityByGroup": {
+            "ambient": 14000,
+            "chilled": 14000,
+            "hazmat": 14000
+          }
+        },
+        {
+          "nodeId": "n2",
+          "capableGroupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ],
+          "capacityByGroup": {
+            "ambient": 6000,
+            "chilled": 6000,
+            "hazmat": 6000
+          }
+        },
+        {
+          "nodeId": "n3",
+          "capableGroupIds": [
+            "ambient",
+            "chilled"
+          ],
+          "capacityByGroup": {
+            "ambient": 7000,
+            "chilled": 7000,
+            "hazmat": 0
+          }
+        },
+        {
+          "nodeId": "n8",
+          "capableGroupIds": [
+            "ambient",
+            "chilled",
+            "hazmat"
+          ],
+          "capacityByGroup": {
+            "ambient": 4000,
+            "chilled": 4000,
+            "hazmat": 4000
+          }
+        }
+      ],
+      "filterGroupId": null
+    },
+    "laneRates": {
+      "tables": [
+        {
+          "laneId": "l1",
+          "corridorLabel": "Monterrey Sup → Austin Plant",
+          "bids": [
+            {
+              "id": "bid-vw8a5a",
+              "carrier": "NorthStar Freight",
+              "mode": "Road",
+              "rate": 1.12,
+              "rateUnit": "per_unit",
+              "transitDays": 3,
+              "capacityUnits": 10000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-8gqvw1",
+              "carrier": "RailLink NA",
+              "mode": "Road",
+              "rate": 0.99,
+              "rateUnit": "per_unit",
+              "transitDays": 4,
+              "capacityUnits": 6500,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-tdxcwo",
+              "carrier": "SwiftLane",
+              "mode": "Road",
+              "rate": 0.003,
+              "rateUnit": "per_mile",
+              "transitDays": 3,
+              "capacityUnits": 5000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l2",
+          "corridorLabel": "Austin Plant → Columbus DC",
+          "bids": [
+            {
+              "id": "bid-tj66ik",
+              "carrier": "RailLink NA",
+              "mode": "Rail",
+              "rate": 0.64,
+              "rateUnit": "per_unit",
+              "transitDays": 5,
+              "capacityUnits": 11000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-opf6s5",
+              "carrier": "BlueOcean Lines",
+              "mode": "Rail",
+              "rate": 0.56,
+              "rateUnit": "per_unit",
+              "transitDays": 7,
+              "capacityUnits": 8000,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-fo4xq6",
+              "carrier": "NorthStar Freight",
+              "mode": "Rail",
+              "rate": 0.001,
+              "rateUnit": "per_mile",
+              "transitDays": 4,
+              "capacityUnits": 7000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l3",
+          "corridorLabel": "Austin Plant → Atlanta DC",
+          "bids": [
+            {
+              "id": "bid-fth9rg",
+              "carrier": "BlueOcean Lines",
+              "mode": "Road",
+              "rate": 0.88,
+              "rateUnit": "per_unit",
+              "transitDays": 2,
+              "capacityUnits": 12000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-o8qtgg",
+              "carrier": "AeroCargo Express",
+              "mode": "Road",
+              "rate": 0.77,
+              "rateUnit": "per_unit",
+              "transitDays": 3,
+              "capacityUnits": 9500,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-v8675w",
+              "carrier": "RailLink NA",
+              "mode": "Rail",
+              "rate": 0.001,
+              "rateUnit": "per_mile",
+              "transitDays": 2,
+              "capacityUnits": 3000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l4",
+          "corridorLabel": "Columbus DC → Chicago Hub",
+          "bids": [
+            {
+              "id": "bid-viyjio",
+              "carrier": "AeroCargo Express",
+              "mode": "Road",
+              "rate": 0.41,
+              "rateUnit": "per_unit",
+              "transitDays": 1,
+              "capacityUnits": 8000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-84nm1f",
+              "carrier": "Intermodal Hub Co",
+              "mode": "Road",
+              "rate": 0.36,
+              "rateUnit": "per_unit",
+              "transitDays": 3,
+              "capacityUnits": 5000,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-8d0p53",
+              "carrier": "BlueOcean Lines",
+              "mode": "Road",
+              "rate": 0.001,
+              "rateUnit": "per_mile",
+              "transitDays": 1,
+              "capacityUnits": 5000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l5",
+          "corridorLabel": "Atlanta DC → NYC Corridor",
+          "bids": [
+            {
+              "id": "bid-a9mij9",
+              "carrier": "Intermodal Hub Co",
+              "mode": "Intermodal",
+              "rate": 0.97,
+              "rateUnit": "per_unit",
+              "transitDays": 4,
+              "capacityUnits": 9000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-xt9opf",
+              "carrier": "SwiftLane",
+              "mode": "Intermodal",
+              "rate": 0.85,
+              "rateUnit": "per_unit",
+              "transitDays": 5,
+              "capacityUnits": 6500,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-9avv6k",
+              "carrier": "AeroCargo Express",
+              "mode": "Intermodal",
+              "rate": 0.001,
+              "rateUnit": "per_mile",
+              "transitDays": 4,
+              "capacityUnits": 7000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l6",
+          "corridorLabel": "Austin Plant → Dallas Metro",
+          "bids": [
+            {
+              "id": "bid-p6kz99",
+              "carrier": "SwiftLane",
+              "mode": "Road",
+              "rate": 0.35,
+              "rateUnit": "per_unit",
+              "transitDays": 1,
+              "capacityUnits": 10000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-sgu11v",
+              "carrier": "NorthStar Freight",
+              "mode": "Road",
+              "rate": 0.31,
+              "rateUnit": "per_unit",
+              "transitDays": 3,
+              "capacityUnits": 8000,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-gw0sse",
+              "carrier": "Intermodal Hub Co",
+              "mode": "Rail",
+              "rate": 0.002,
+              "rateUnit": "per_mile",
+              "transitDays": 1,
+              "capacityUnits": 3000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l7",
+          "corridorLabel": "Reno DC → Columbus DC",
+          "bids": [
+            {
+              "id": "bid-3sesvv",
+              "carrier": "NorthStar Freight",
+              "mode": "Rail",
+              "rate": 0.72,
+              "rateUnit": "per_unit",
+              "transitDays": 6,
+              "capacityUnits": 11000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-unfr4e",
+              "carrier": "RailLink NA",
+              "mode": "Rail",
+              "rate": 0.63,
+              "rateUnit": "per_unit",
+              "transitDays": 7,
+              "capacityUnits": 9500,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-7n6joo",
+              "carrier": "SwiftLane",
+              "mode": "Rail",
+              "rate": 0,
+              "rateUnit": "per_mile",
+              "transitDays": 6,
+              "capacityUnits": 5000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l8",
+          "corridorLabel": "Atlanta DC → Dallas Metro",
+          "bids": [
+            {
+              "id": "bid-pou6mm",
+              "carrier": "RailLink NA",
+              "mode": "Road",
+              "rate": 0.79,
+              "rateUnit": "per_unit",
+              "transitDays": 2,
+              "capacityUnits": 12000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-h4ep45",
+              "carrier": "BlueOcean Lines",
+              "mode": "Road",
+              "rate": 0.7,
+              "rateUnit": "per_unit",
+              "transitDays": 4,
+              "capacityUnits": 5000,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-62q1e8",
+              "carrier": "NorthStar Freight",
+              "mode": "Road",
+              "rate": 0.001,
+              "rateUnit": "per_mile",
+              "transitDays": 1,
+              "capacityUnits": 7000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        }
+      ],
+      "compareStrategy": "balanced"
+    },
+    "bom": {
+      "rows": [
+        {
+          "id": "bom-1",
+          "finishedGoodId": "fg-core",
+          "finishedGoodName": "Core FG (Ambient)",
+          "componentId": "rm-polymer",
+          "componentName": "Polymer resin",
+          "componentKind": "rm",
+          "qtyPerUnit": 2,
+          "preferredSupplierId": "n7",
+          "plantId": "n1",
+          "notes": "Primary resin — inbound from supplier"
+        },
+        {
+          "id": "bom-2",
+          "finishedGoodId": "fg-core",
+          "finishedGoodName": "Core FG (Ambient)",
+          "componentId": "comp-carton",
+          "componentName": "Carton pack",
+          "componentKind": "component",
+          "qtyPerUnit": 1,
+          "preferredSupplierId": "n7",
+          "plantId": "n1",
+          "notes": "Corrugate / secondary pack"
+        },
+        {
+          "id": "bom-3",
+          "finishedGoodId": "fg-cold",
+          "finishedGoodName": "Cold FG (Chilled)",
+          "componentId": "rm-chill-base",
+          "componentName": "Chill base",
+          "componentKind": "rm",
+          "qtyPerUnit": 1.5,
+          "preferredSupplierId": "n7",
+          "plantId": "n1",
+          "notes": "Cold-chain feedstock"
+        },
+        {
+          "id": "bom-4",
+          "finishedGoodId": "fg-cold",
+          "finishedGoodName": "Cold FG (Chilled)",
+          "componentId": "comp-insul",
+          "componentName": "Insulated liner",
+          "componentKind": "component",
+          "qtyPerUnit": 1,
+          "preferredSupplierId": "n7",
+          "plantId": "n1"
+        },
+        {
+          "id": "bom-5",
+          "finishedGoodId": "fg-specialty",
+          "finishedGoodName": "Specialty FG",
+          "componentId": "rm-additive",
+          "componentName": "Specialty additive",
+          "componentKind": "rm",
+          "qtyPerUnit": 0.4,
+          "preferredSupplierId": "n7",
+          "plantId": "n1",
+          "notes": "Low-volume / high-cost RM"
+        },
+        {
+          "id": "bom-6",
+          "finishedGoodId": "fg-specialty",
+          "finishedGoodName": "Specialty FG",
+          "componentId": "comp-drum",
+          "componentName": "Drum / tote",
+          "componentKind": "component",
+          "qtyPerUnit": 1,
+          "preferredSupplierId": "n7",
+          "plantId": "n1"
+        }
+      ],
+      "fgShares": [
+        {
+          "finishedGoodId": "fg-core",
+          "finishedGoodName": "Core FG (Ambient)",
+          "sharePct": 55
+        },
+        {
+          "finishedGoodId": "fg-cold",
+          "finishedGoodName": "Cold FG (Chilled)",
+          "sharePct": 30
+        },
+        {
+          "finishedGoodId": "fg-specialty",
+          "finishedGoodName": "Specialty FG",
+          "sharePct": 15
+        }
+      ],
+      "highlightBomLanes": true
+    },
+    "capexRoadmap": {
+      "baseYearLabel": "FY26",
+      "yearCount": 6,
+      "events": [
+        {
+          "id": "ev-expand-columbus",
+          "name": "Expand Columbus DC",
+          "kind": "expand",
+          "year": 1,
+          "nodeId": "n2",
+          "nodeName": "Columbus DC",
+          "capexM": 4.5,
+          "capacityDelta": 6,
+          "region": "Midwest",
+          "notes": "Midwest overflow capacity"
+        },
+        {
+          "id": "ev-open-kc",
+          "name": "Open Kansas City DC",
+          "kind": "open",
+          "year": 2,
+          "nodeId": "roadmap-kc-dc",
+          "nodeName": "Kansas City DC",
+          "capexM": 12,
+          "capacityDelta": 10,
+          "region": "Midwest",
+          "facilityKind": "dc",
+          "notes": "Central hub for NA Core growth"
+        },
+        {
+          "id": "ev-expand-reno",
+          "name": "Expand Reno DC",
+          "kind": "expand",
+          "year": 3,
+          "nodeId": "n8",
+          "nodeName": "Reno DC",
+          "capexM": 3.2,
+          "capacityDelta": 4,
+          "region": "West",
+          "notes": "West coast buffer"
+        },
+        {
+          "id": "ev-close-atlanta",
+          "name": "Close Atlanta DC",
+          "kind": "close",
+          "year": 4,
+          "nodeId": "n3",
+          "nodeName": "Atlanta DC",
+          "capexM": 1.5,
+          "capacityDelta": -14,
+          "region": "Southeast",
+          "notes": "Consolidate Southeast into KC + Columbus"
+        },
+        {
+          "id": "ev-expand-plant",
+          "name": "Expand Austin Plant",
+          "kind": "expand",
+          "year": 5,
+          "nodeId": "n1",
+          "nodeName": "Austin Plant",
+          "capexM": 8,
+          "capacityDelta": 8,
+          "region": "South",
+          "notes": "Finish-goods line +2"
+        }
+      ]
+    },
+    "decisionLog": []
+  }
+}

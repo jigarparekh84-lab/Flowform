@@ -1,0 +1,146 @@
+# Flowform — manual smoke checklist
+
+Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional API on **5182**). Use a fresh browser profile or clear Flowform `localStorage` keys if state looks stale.
+
+**Default basemap:** OpenFreeMap (no API key). Do not require Carto for smoke.
+
+**Sample pack:** [`apps/web/public/samples/na-footprint-2027.flowform.json`](../apps/web/public/samples/na-footprint-2027.flowform.json) — importable `flowform-project` v1 with the built-in NA network, Baseline + three what-ifs, product mix, lane rates, BOM, CapEx roadmap, and inventory policies.
+
+---
+
+## 0. Load the sample project
+
+1. Start web: `cd apps/web && npm run dev` → http://localhost:5180  
+2. Open **Projects**.
+3. Click **Import JSON** and choose `apps/web/public/samples/na-footprint-2027.flowform.json`  
+   - Or, while the app is running, download http://localhost:5180/samples/na-footprint-2027.flowform.json then Import that file.
+4. Confirm status shows imported **“NA Footprint 2027 (sample)”** and it becomes Active.
+5. Optional: regenerate the pack after sample-builder changes:  
+   `cd apps/web && npx vite-node ../../scripts/export-sample-project.mts`
+
+---
+
+## 1. Projects
+
+- [ ] Index lists at least the imported sample; **Open** / **Rename** / **Duplicate** work.
+- [ ] **Export** downloads a `*.flowform.json` with `format: "flowform-project"`.
+- [ ] **Import JSON** of that export creates a new project and switches Active.
+- [ ] Decision log panel renders (may be empty on fresh sample).
+- [ ] Delete is disabled when only one project remains; with 2+, delete works and Active updates.
+
+---
+
+## 2. Data
+
+- [ ] Room tip / empty guidance visible when appropriate; **Restore sample network** reloads built-in nodes/lanes.
+- [ ] Download sites / demand / lanes CSV templates; re-upload at least one without hard errors.
+- [ ] Validation summary shows counts; CO₂ factors editable.
+- [ ] Product / commodity groups present; lane rate tables & bids list corridors; BOM table has sample FG←RM rows.
+- [ ] Reset sample for rates / BOM restores defaults without crashing.
+
+---
+
+## 3. Network
+
+- [ ] Map canvas shows OpenFreeMap tiles (chrome / legend mentions OpenFreeMap unless `VITE_BASEMAP=carto`).
+- [ ] Plants, DCs, demand, lanes visible; layer toggles (incl. Capacity heat, Territory) work.
+- [ ] Click node / lane → Inspector updates; **Esc** clears selection; Shift+click multi-selects.
+- [ ] Room tip present; empty-network empty state appears only when network is cleared.
+
+---
+
+## 4. Greenfield
+
+- [ ] Adjust site count / service miles; **Generate** produces candidate DCs on map.
+- [ ] Promote selected candidates → delta appears; compose into a named scenario from Scenarios (or as documented in room).
+
+---
+
+## 5. Hubs
+
+- [ ] Designate hubs, auto-assign spokes (distance / volume / balanced).
+- [ ] Generate hub↔spoke lanes; draft scenario with before/after KPIs without error.
+
+---
+
+## 6. Territory
+
+- [ ] Assign demand to DCs/plants (distance / capacity / current lanes).
+- [ ] Coverage % / gaps / overlaps render; apply preferred lanes + scenario succeeds.
+
+---
+
+## 7. Roadmap
+
+- [ ] CapEx events (Y0–Y5) show on Gantt-lite; cumulative CapEx / capacity KPIs update.
+- [ ] Apply a year slice as scenario; **Export to Brief** / reset sample works.
+
+---
+
+## 8. Scenarios
+
+- [ ] Baseline + East Coast DC / Nearshore MX / Lean Lanes listed; activate each updates Active chrome.
+- [ ] Sensitivity presets (fuel, demand, outage, tariff) apply without crash.
+- [ ] Cost tornado + Monte Carlo quick-run (if exposed here) stores on Active.
+
+---
+
+## 9. Compare — tabs
+
+Walk each view tab with Reference = Baseline and at least one other selected:
+
+| Tab | Check |
+|-----|--------|
+| **Matrix** | KPI matrix vs Reference |
+| **Map diff** | Open/close/flow marks for focus scenario |
+| **Waterfall** | Cost bridge steps |
+| **Cost-to-serve** | CTS rows / total |
+| **DES-lite** | Run Monte Carlo → fill rate / late % on Active |
+| **Sensitivity** | Tornado + MC; P10/P50/P90 |
+| **Inventory** | Edit policy; Apply to Active KPIs (Inv $ / units) |
+| **Resilience** | SPOF score / critical nodes → Risk KPI |
+| **Mode mix** | Mode summary for lanes |
+| **Products** | Filter / mix by product group |
+| **Bids** | Carrier bid compare / apply |
+| **BOM** | Implied RM + echelon view |
+| **Territory** | Coverage summary from territory studio |
+
+- [ ] Decision log panel visible and appends on meaningful actions (optimize, apply_*, etc.).
+
+---
+
+## 10. Brief
+
+- [ ] Recommended scenario + assumptions + notes editable.
+- [ ] Markdown / HTML export downloads.
+- [ ] Decision log / comments panels render.
+
+---
+
+## 11. Handoff
+
+- [ ] Build S&OP package (`flowform.handoff.v1` shape): sites, lanes, preferred territory, CapEx years, product mix, BOM RM, inventory targets, scenarios.
+- [ ] Download JSON + Markdown ops brief; no crash when payload empty then after Brief → send.
+
+---
+
+## 12. Merge (light)
+
+- [ ] **Load sample acquired**; conflict list for duplicate ids; apply merged network + draft baseline.
+
+---
+
+## 13. Map / chrome / keyboard (cross-cutting)
+
+- [ ] **OpenFreeMap** is default basemap (no Carto key required).
+- [ ] **Theme toggle** (Dark / Light) in top chrome flips `data-theme` and persists.
+- [ ] **?** opens Keyboard shortcuts help; **Esc** closes help and clears map/table selection.
+- [ ] Help button in chrome also opens the same dialog.
+- [ ] **Run** optimize: with API up → MIP path; with API down → heuristic fallback message (no hard hang).
+- [ ] **Share** copies deep-link stub and downloads `.share.json`.
+
+---
+
+## Pass criteria
+
+All rooms above load without console errors that block interaction; sample import works; OpenFreeMap + theme + Esc/? behave; Compare tabs each render for the sample project; `npm run build` in `apps/web` stays green after related changes.

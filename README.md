@@ -43,7 +43,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
 | **Handoff** | S&OP package: sites/lanes, preferred territory lanes, CapEx years, product mix, BOM RM, inventory targets, scenario meta — JSON + Markdown ops brief (Ritara intake stub) |
 
-Nav serves the map. See `docs/UX_BRIEF.md` and `docs/PRODUCT_BLUEPRINT.md`.
+Nav serves the map. See `docs/UX_BRIEF.md` and `docs/PRODUCT_BLUEPRINT.md`. Manual smoke: [`docs/SMOKE_CHECKLIST.md`](docs/SMOKE_CHECKLIST.md) (import sample pack from `apps/web/public/samples/`).
 
 ---
 
@@ -57,10 +57,12 @@ Flowform/
 ├── .github/workflows/ci.yml
 ├── docs/
 │   ├── UX_BRIEF.md
-│   └── PRODUCT_BLUEPRINT.md
+│   ├── PRODUCT_BLUEPRINT.md
+│   └── SMOKE_CHECKLIST.md      # Manual room-by-room smoke + sample pack load
 └── apps/
     ├── web/                    # Vite + React + TypeScript (port 5180)
     │   ├── Dockerfile
+    │   ├── public/samples/     # Importable *.flowform.json sample pack
     │   └── src/                # UI, state, DES-lite, optimize client
     └── api/                    # FastAPI optimize (PuLP + HiGHS/CBC, port 5182)
         ├── Dockerfile
@@ -189,3 +191,4 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 - **Ritara** — APS / planning (downstream handoff target). Flowform does not embed or fork Ritara.
 - Prior aborted attempt **Sutra** (if present under Projects) is unrelated; leave it alone.
+- **Smoke / sample** — [`docs/SMOKE_CHECKLIST.md`](docs/SMOKE_CHECKLIST.md); sample project JSON at [`apps/web/public/samples/na-footprint-2027.flowform.json`](apps/web/public/samples/na-footprint-2027.flowform.json) (Projects → Import JSON).
