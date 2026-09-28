@@ -68,6 +68,11 @@ import {
   sensitivityScenarioName,
   type SensitivityPresetId,
 } from '../data/sensitivity'
+import {
+  runDesLiteSim as runDesLiteEngine,
+  type DesLiteParams,
+  type DesLiteResult,
+} from '../data/desLite'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -224,6 +229,9 @@ type FlowformContextValue = {
   computedCo2Kt: number
 
   applySensitivityPreset: (presetId: SensitivityPresetId) => Scenario | null
+
+  /** DES-lite Monte Carlo service sim — stores result on active scenario. */
+  runDesLite: (params?: DesLiteParams) => DesLiteResult | null
 
   /** Projects room */
   projectMeta: ProjectMeta | null
@@ -736,6 +744,27 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [scenarios, activeScenarioId, computedCo2Kt],
   )
 
+  const runDesLite = useCallback(
+    (params?: DesLiteParams): DesLiteResult | null => {
+      const scenario =
+        scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0]
+      if (!scenario) return null
+      const result = runDesLiteEngine({
+        network,
+        constraints,
+        scenario,
+        params,
+      })
+      setScenarios((prev) =>
+        prev.map((s) =>
+          s.id === scenario.id ? { ...s, desLite: result } : s,
+        ),
+      )
+      return result
+    },
+    [scenarios, activeScenarioId, network, constraints],
+  )
+
   const applyOptimizeResult = useCallback(
     (args: {
       openedIds: string[]
@@ -991,6 +1020,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateEmissionFactor,
       computedCo2Kt,
       applySensitivityPreset,
+      runDesLite,
       projectMeta,
       projects,
       activeProjectId: projectMeta?.id ?? null,
@@ -1036,6 +1066,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateEmissionFactor,
       computedCo2Kt,
       applySensitivityPreset,
+      runDesLite,
       projectMeta,
       projects,
       createProject,

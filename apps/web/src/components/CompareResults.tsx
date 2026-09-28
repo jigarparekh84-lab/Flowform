@@ -17,7 +17,7 @@ import {
 } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
-type ViewMode = 'matrix' | 'map' | 'waterfall' | 'cts'
+type ViewMode = 'matrix' | 'map' | 'waterfall' | 'cts' | 'des'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -113,10 +113,12 @@ export function CompareResults() {
   const {
     scenarios,
     activeScenarioId,
+    activeScenario,
     deltas,
     nodes,
     lanes,
     network,
+    runDesLite,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -204,8 +206,9 @@ export function CompareResults() {
           <p className="map-kicker">Compare</p>
           <h1>Results</h1>
           <p className="studio-sub">
-            Multi-scenario KPI matrix, map opens/closes vs Reference, and a
-            cost waterfall bridge. Defaults: Active + Baseline as Reference.
+            Multi-scenario KPI matrix, map opens/closes vs Reference, cost
+            waterfall, and DES-lite Monte Carlo service sim. Defaults: Active +
+            Baseline as Reference.
           </p>
         </div>
       </header>
@@ -266,6 +269,7 @@ export function CompareResults() {
               ['map', 'Map diff'],
               ['waterfall', 'Waterfall'],
               ['cts', 'Cost-to-serve'],
+              ['des', 'DES-lite'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -318,6 +322,13 @@ export function CompareResults() {
             rows={cts.rows}
             steps={cts.waterfall}
             totalM={cts.totalM}
+          />
+        )}
+        {view === 'des' && (
+          <DesLiteView
+            active={activeScenario}
+            selected={selected}
+            onRun={() => runDesLite()}
           />
         )}
       </div>
@@ -1009,4 +1020,112 @@ function layoutWaterfall(steps: WaterfallStep[]): {
   })
 
   return { width, height, zeroY: yAt(0), bars }
+}
+
+function DesLiteView({
+  active,
+  selected,
+  onRun,
+}: {
+  active: Scenario
+  selected: Scenario[]
+  onRun: () => void
+}) {
+  const result = active.desLite
+  const maxBin = result
+    ? Math.max(1, ...result.fillRateBins.map((b) => b.count))
+    : 1
+
+  return (
+    <div className="compare-des-layout">
+      <aside className="compare-side">
+        <h2>Active scenario</h2>
+        <p className="des-active-name">{active.name}</p>
+        <p className="muted tiny">
+          Monte Carlo service-level sim: demand noise + lead-time noise → fill
+          rate and late demand %. Results store on the scenario.
+        </p>
+        <button type="button" className="btn primary des-run-btn" onClick={onRun}>
+          Run DES-lite
+        </button>
+        <h3 className="cts-side-h">Compared</h3>
+        <ul className="des-scenario-list">
+          {selected.map((s) => (
+            <li key={s.id}>
+              <strong>{s.name}</strong>
+              {s.desLite ? (
+                <span className="muted tiny">
+                  fill {s.desLite.fillRatePct.toFixed(1)}% · late{' '}
+                  {s.desLite.lateDemandPct.toFixed(1)}%
+                </span>
+              ) : (
+                <span className="muted tiny">no sim yet</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      <div className="des-main">
+        {!result ? (
+          <div className="des-empty">
+            <p>
+              No DES-lite result on <strong>{active.name}</strong> yet. Run the
+              sim to estimate fill rate under lead-time and demand noise.
+            </p>
+            <button type="button" className="btn primary" onClick={onRun}>
+              Run DES-lite (200 trials)
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="des-kpi-row" aria-label="DES-lite KPIs">
+              <div className="des-kpi">
+                <span className="des-kpi-label">Fill rate</span>
+                <strong>{result.fillRatePct.toFixed(1)}%</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">Late demand</span>
+                <strong>{result.lateDemandPct.toFixed(1)}%</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">Mean lead</span>
+                <strong>{result.meanLeadDays.toFixed(2)} d</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">P95 lead</span>
+                <strong>{result.p95LeadDays.toFixed(2)} d</strong>
+              </div>
+            </div>
+
+            <p className="muted tiny des-meta">
+              {result.trials} trials · demand noise ±{result.demandNoisePct}% ·
+              lead noise ±{result.leadNoisePct}% · late if lead &gt;{' '}
+              {result.serviceTargetDays}d · seed {result.seed} ·{' '}
+              {new Date(result.runAt).toLocaleString()}
+            </p>
+
+            <h3 className="cts-side-h">Fill-rate distribution (trials)</h3>
+            <div className="des-hist" role="img" aria-label="Fill rate histogram">
+              {result.fillRateBins.map((b) => (
+                <div key={b.label} className="des-hist-col">
+                  <div
+                    className="des-hist-bar"
+                    style={{ height: `${(b.count / maxBin) * 100}%` }}
+                    title={`${b.count} trials`}
+                  />
+                  <span className="des-hist-label">{b.label}</span>
+                  <span className="muted tiny">{b.count}</span>
+                </div>
+              ))}
+            </div>
+
+            <button type="button" className="btn ghost des-rerun" onClick={onRun}>
+              Re-run DES-lite
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
 }

@@ -1,0 +1,29 @@
+# Flowform — one-command local stack
+# Web UI :5180  |  Optimize API :5182
+# Usage:  docker compose up --build
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "5182:5182"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5182/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: http://127.0.0.1:5182
+    ports:
+      - "5180:5180"
+    depends_on:
+      api:
+        condition: service_healthy

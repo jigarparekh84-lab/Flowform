@@ -2295,3 +2295,140 @@
   font-size: 0.8rem;
   color: var(--ff-text-secondary);
 }
+
+/* —— Compare DES-lite —— */
+.compare-des-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1rem;
+  min-height: 0;
+  height: 100%;
+}
+
+.des-active-name {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.des-run-btn {
+  margin: 0.75rem 0 1rem;
+  width: 100%;
+}
+
+.des-scenario-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.des-scenario-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--ff-bg-panel) 80%, transparent);
+  border: 1px solid var(--ff-border);
+}
+
+.des-main {
+  min-height: 0;
+  overflow: auto;
+  padding: 0.25rem 0.5rem 1rem;
+}
+
+.des-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1.5rem;
+  border: 1px dashed var(--ff-border-strong);
+  border-radius: 0.65rem;
+  background: var(--ff-bg-panel);
+}
+
+.des-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.des-kpi {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.55rem;
+  border: 1px solid var(--ff-border);
+  background: var(--ff-bg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.des-kpi-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ff-text-muted);
+}
+
+.des-kpi strong {
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.des-meta {
+  margin: 0 0 1rem;
+}
+
+.des-hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  height: 160px;
+  padding: 0.75rem 0.5rem 0.25rem;
+  border: 1px solid var(--ff-border);
+  border-radius: 0.55rem;
+  background: var(--ff-bg-panel);
+  margin-bottom: 1rem;
+}
+
+.des-hist-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  gap: 0.25rem;
+}
+
+.des-hist-bar {
+  width: 70%;
+  min-height: 2px;
+  border-radius: 0.25rem 0.25rem 0 0;
+  background: color-mix(in srgb, var(--ff-accent) 75%, #5eead4);
+}
+
+.des-hist-label {
+  font-size: 0.65rem;
+  color: var(--ff-text-muted);
+  text-align: center;
+}
+
+.des-rerun {
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 900px) {
+  .compare-des-layout {
+    grid-template-columns: 1fr;
+  }
+  .des-kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -2,109 +2,100 @@
 
 **Codename:** Flowform — network / footprint design studio.
 
-Map-first studio for supply chain **network design**: greenfield footprint, scenario exploration, compare, and handoff to Ritara for APS / planning. **Not APS.** Flowform designs the network; Ritara runs the plan.
+Map-first studio for supply chain **network design**: greenfield footprint, scenario exploration, compare, DES-lite service simulation, and handoff to Ritara for APS / planning. **Not APS.** Flowform designs the network; Ritara runs the plan.
 
 > No Ritara source was copied. Map-first network design studio — designs the footprint; Ritara runs the plan.
 
 ---
 
-## Vision
+## Product vision
 
 Supply chain leaders need a place to **draw and stress-test the footprint** before committing capacity, lanes, and inventory policy. Flowform is that place:
 
 - **Map-primary** — the network is the canvas, not a sidebar afterthought.
 - **Scenario-native** — diverge, name, and compare futures without leaving the map.
+- **Service stress-test** — DES-lite Monte Carlo (lead-time + demand noise → fill rate / late demand %).
 - **Handoff-ready** — export a clean brief of nodes, lanes, and assumptions into Ritara when design is done.
 
 ---
 
-## Information architecture
+## Rooms map
 
-| Area | Role |
+| Room | Role |
 |------|------|
-| **Projects** | Workspace home; open / create network design projects |
-| **Network** | Map canvas — nodes, sites, lanes, capacities (primary surface) |
+| **Projects** | Workspace home; create / rename / duplicate / delete design studies (localStorage) |
+| **Network** | Map canvas — nodes, sites, lanes, capacities, constraints inspector (primary surface) |
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
-| **Scenarios** | Named what-ifs branched from a baseline network |
-| **Compare** | Side-by-side / overlay of scenario cost, service, risk |
-| **Brief** | Narrative + assumptions package for stakeholders |
-| **Data** | Imports, reference tables, validation |
-| **Handoff** | Export / sync design payload toward Ritara (APS) |
+| **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage) |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / **DES-lite** service sim |
+| **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
+| **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors |
+| **Handoff** | Export / sync design payload toward Ritara (contract stub only) |
 
-Nav should serve the map, not compete with it. See `docs/UX_BRIEF.md`.
-
----
-
-## MVP scope
-
-**In**
-
-- App chrome (logo → **Projects**, Active scenario, Horizon, **Run** + Compare, theme toggle, ⌘K)
-- Left IA nav: Projects · Network · Greenfield · Scenarios · Compare · Brief · Data · Handoff
-- **Projects room**: create / rename / duplicate / delete design studies; full state in localStorage; export / import JSON
-- Network Canvas: interactive map selection synced to inspector + tables; uses uploaded or sample data
-- **MapLibre GL** basemap (free Carto/OSM raster tiles, dark+light) with SVG schematic fallback
-- **Data room**: CSV upload (sites / demand / lanes), templates, validation (required columns, geocode %, baseline reconcile), load into map; **CO₂ emission factors** table
-- **Candidates & constraints** in Network inspector: open/close/candidate, capacity bands, service target %, CapEx budget, max facilities
-- **Run optimize**: prefers **apps/api** PuLP MIP (HiGHS/CBC) when reachable; else client **heuristic v1** with clear status
-- Greenfield Studio + Scenarios library (compose + **sensitivity presets**: fuel +20%, demand shift, node outage) + Compare (matrix / map-diff / waterfall / **cost-to-serve**)
-- **Decision Brief**: recommendation banner, scenario cards vs Reference, assumptions checklist, **Markdown / printable HTML export**, Send to Handoff
-- Handoff room: receives brief JSON stub for Ritara intake (contract only)
-- Shared React context for projects / network / constraints / scenarios / optimize / brief / emissions
-- Docs: UX brief + product blueprint
-- Local Vite + React + TypeScript app on port **5180**; Optimize API on **5182**
-
-**Out (for now)**
-
-- Paid map API keys
-- Auth, multi-tenant, cloud deploy
-- Direct Ritara API integration (handoff is design-only stub)
-- APS / scheduling / MRP — that stays in Ritara
+Nav serves the map. See `docs/UX_BRIEF.md` and `docs/PRODUCT_BLUEPRINT.md`.
 
 ---
 
-## Repo layout
+## Architecture
 
 ```
 Flowform/
 ├── README.md
-├── .gitignore
+├── docker-compose.yml          # web :5180 + api :5182
+├── .dockerignore
+├── .github/workflows/ci.yml
 ├── docs/
 │   ├── UX_BRIEF.md
 │   └── PRODUCT_BLUEPRINT.md
 └── apps/
-    ├── web/          # Vite + React + TypeScript (port 5180)
-    └── api/          # FastAPI optimize (PuLP + HiGHS/CBC, port 5182)
+    ├── web/                    # Vite + React + TypeScript (port 5180)
+    │   ├── Dockerfile
+    │   └── src/                # UI, state, DES-lite, optimize client
+    └── api/                    # FastAPI optimize (PuLP + HiGHS/CBC, port 5182)
+        ├── Dockerfile
+        ├── app/
+        └── tests/              # pytest health + optimize smoke
 ```
+
+| Piece | Stack | Port | Role |
+|-------|-------|------|------|
+| **web** | Vite, React 19, TypeScript, MapLibre GL | **5180** | Studio UI; Projects persist in localStorage; Run prefers API then heuristic |
+| **api** | FastAPI, PuLP, HiGHS (highspy) / CBC | **5182** | `POST /optimize` MIP facility open/close + assignment |
+
+> Ports are **5180 / 5182**, not 5173 (Ritara). Preview build uses 5181 locally.
+
+When the API is down, web **Run** falls back to the client heuristic with an explicit status message.
 
 ---
 
-## How to run
+## One-command Docker
 
-### Web (port 5180)
-
-Requires Node.js 20+ (or current LTS) and npm.
+Requires Docker Desktop (or Engine + Compose v2).
 
 ```bash
-cd /Users/jigar/Projects/Flowform/apps/web
-npm install
-npm run dev
+cd /Users/jigar/Projects/Flowform
+docker compose up --build
 ```
 
-Open `http://localhost:5180`.
+| Service | URL |
+|---------|-----|
+| Web | http://localhost:5180 |
+| API health | http://127.0.0.1:5182/health |
 
-| Command | Purpose |
-|---------|---------|
-| `npm run dev` | Local dev server + HMR |
-| `npm run build` | Typecheck + production build |
-| `npm run preview` | Serve the production build |
-| `npm run lint` | Lint |
+Stop with `Ctrl+C` or `docker compose down`.
 
-Optional: set `VITE_API_URL` (default `http://127.0.0.1:5182`) so **Run** can reach the API.
+Build args: web image bakes `VITE_API_URL=http://127.0.0.1:5182` so the browser talks to the published API port on the host.
 
-### Optimize API (port 5182)
+---
 
-Requires Python 3.10+ with venv.
+## Local runbook (without Docker)
+
+### Prerequisites
+
+- Node.js 20+ (22 recommended) and npm
+- Python 3.10+ (3.12 recommended) with venv
+
+### 1. Optimize API (port 5182)
 
 ```bash
 cd /Users/jigar/Projects/Flowform/apps/api
@@ -114,8 +105,49 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 5182
 ```
 
-See `apps/api/README.md` for `POST /optimize` contract and smoke curls.
-When the API is down, web **Run** falls back to the client heuristic with an explicit status message.
+Health: http://127.0.0.1:5182/health  
+Smoke: `pytest -q` from `apps/api` (with venv active).  
+Contract details: `apps/api/README.md`.
+
+### 2. Web (port 5180)
+
+```bash
+cd /Users/jigar/Projects/Flowform/apps/web
+npm install
+npm run dev
+```
+
+Open http://localhost:5180.
+
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Dev server + HMR on **5180** |
+| `npm run build` | Typecheck + production build |
+| `npm run preview` | Serve production build on **5181** |
+| `npm run lint` | Lint (oxlint) |
+
+Optional: `VITE_API_URL` (default `http://127.0.0.1:5182`) so **Run** can reach the API.
+
+### DES-lite
+
+In **Compare → DES-lite**: run Monte Carlo on the **Active** scenario (lead-time noise + demand noise → fill rate / late demand %). Results are stored on the scenario (`desLite`) and persist with the project in localStorage.
+
+---
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`):
+
+- **web** — `npm ci` + `npm run build`
+- **api** — `pip install -r requirements.txt` + `pytest` (health + optimize smoke)
+
+---
+
+## MVP scope (in / out)
+
+**In:** Projects (localStorage), Network + MapLibre, Greenfield, Scenarios + sensitivity, Compare (incl. DES-lite), Brief export, Data CSV + CO₂, Handoff stub, PuLP optimize API, Docker Compose, CI.
+
+**Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 
 ---
 

@@ -1,0 +1,17 @@
+.git
+.github
+**/node_modules
+**/dist
+**/build
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/.DS_Store
+**/.vite
+**/coverage
+**/*.log
+apps/web/dist
+docs
+*.md
+!README.md

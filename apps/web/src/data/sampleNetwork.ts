@@ -44,6 +44,21 @@ export type OptimizeMeta = {
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }
 
+/** Stored Monte Carlo DES-lite result on a scenario. */
+export type DesLiteResult = {
+  runAt: string
+  trials: number
+  fillRatePct: number
+  lateDemandPct: number
+  meanLeadDays: number
+  p95LeadDays: number
+  demandNoisePct: number
+  leadNoisePct: number
+  serviceTargetDays: number
+  seed: number
+  fillRateBins: { label: string; count: number }[]
+}
+
 export type Scenario = {
   id: string
   name: string
@@ -55,6 +70,8 @@ export type Scenario = {
   deltaIds?: string[]
   /** Present when produced by Run optimize (heuristic v1). */
   optimizeMeta?: OptimizeMeta
+  /** Latest DES-lite Monte Carlo service sim for this scenario. */
+  desLite?: DesLiteResult
 }
 
 export type CandidateSite = {
