@@ -289,3 +289,277 @@ export function kpisForComposedScenario(
     },
   }
 }
+
+
+/** Parse "$48.2M" / "$18M" style KPI money into millions USD. */
+export function parseMoneyM(value: string): number {
+  const cleaned = value.replace(/[$,\s]/g, '')
+  const m = cleaned.match(/([\d.]+)/)
+  if (!m) return 0
+  const n = parseFloat(m[1])
+  if (/k$/i.test(cleaned)) return n / 1000
+  return n
+}
+
+/** Parse "94.1%" style KPI into a number. */
+export function parsePercent(value: string): number {
+  const m = value.replace(/,/g, '').match(/([\d.]+)/)
+  return m ? parseFloat(m[1]) : 0
+}
+
+export type MapDiffMark = {
+  id: string
+  kind: 'open' | 'close' | 'flow-up' | 'flow-down'
+  label: string
+  x: number
+  y: number
+  x2?: number
+  y2?: number
+}
+
+/**
+ * Mock map-diff vs Reference: promoted greenfield candidates are opens;
+ * seeded what-if scenarios get heuristic opens/closes/flow accents.
+ */
+export function mapDiffForScenario(
+  scenario: Scenario,
+  deltas: DeltaItem[],
+  referenceId: string,
+): MapDiffMark[] {
+  if (scenario.id === referenceId) return []
+
+  const marks: MapDiffMark[] = []
+  const usedDeltas = (scenario.deltaIds ?? [])
+    .map((id) => deltas.find((d) => d.id === id))
+    .filter((d): d is DeltaItem => !!d)
+
+  for (const d of usedDeltas) {
+    for (const c of d.candidates) {
+      marks.push({
+        id: `open-${c.id}`,
+        kind: 'open',
+        label: `${c.name} (open)`,
+        x: c.x,
+        y: c.y,
+      })
+    }
+  }
+
+  // Seeded scenario heuristics when no composed candidates.
+  if (usedDeltas.length === 0) {
+    if (scenario.id === 'east-dc') {
+      marks.push({
+        id: 'open-east-dc',
+        kind: 'open',
+        label: 'East Coast DC (open)',
+        x: 74,
+        y: 34,
+      })
+      marks.push({
+        id: 'flow-east-1',
+        kind: 'flow-up',
+        label: 'Lane + volume',
+        x: 62,
+        y: 58,
+        x2: 74,
+        y2: 34,
+      })
+      marks.push({
+        id: 'flow-east-2',
+        kind: 'flow-up',
+        label: 'Lane + volume',
+        x: 74,
+        y: 34,
+        x2: 78,
+        y2: 32,
+      })
+    } else if (scenario.id === 'nearshore') {
+      marks.push({
+        id: 'open-nearshore',
+        kind: 'open',
+        label: 'Nearshore MX plant (open)',
+        x: 20,
+        y: 70,
+      })
+      marks.push({
+        id: 'flow-ns-1',
+        kind: 'flow-up',
+        label: 'Inbound +',
+        x: 20,
+        y: 70,
+        x2: 28,
+        y2: 62,
+      })
+      marks.push({
+        id: 'close-reno-partial',
+        kind: 'close',
+        label: 'West overflow (close capacity)',
+        x: 14,
+        y: 36,
+      })
+    } else if (scenario.id === 'lean-lanes') {
+      marks.push({
+        id: 'close-reno',
+        kind: 'close',
+        label: 'Reno DC (close)',
+        x: 14,
+        y: 36,
+      })
+      marks.push({
+        id: 'flow-lean-1',
+        kind: 'flow-down',
+        label: 'Lane − volume',
+        x: 14,
+        y: 36,
+        x2: 52,
+        y2: 38,
+      })
+      marks.push({
+        id: 'flow-lean-2',
+        kind: 'flow-down',
+        label: 'Lane − volume',
+        x: 62,
+        y: 58,
+        x2: 78,
+        y2: 32,
+      })
+    } else {
+      // Generic what-if: open near densest demand, soft-close furthest DC.
+      const demand = NODES.filter((n) => n.kind === 'demand')
+      const dcs = NODES.filter((n) => n.kind === 'dc')
+      if (demand[0]) {
+        marks.push({
+          id: `open-generic-${scenario.id}`,
+          kind: 'open',
+          label: `${scenario.name} site (open)`,
+          x: Math.min(90, demand[0].x + 4),
+          y: Math.min(85, demand[0].y + 3),
+        })
+      }
+      if (dcs[0]) {
+        marks.push({
+          id: `close-generic-${scenario.id}`,
+          kind: 'close',
+          label: `${dcs[0].name} (at risk)`,
+          x: dcs[0].x,
+          y: dcs[0].y,
+        })
+      }
+    }
+  } else if (marks.filter((m) => m.kind === 'open').length >= 2) {
+    // Heuristic close: furthest existing DC from first open.
+    const opens = marks.filter((m) => m.kind === 'open')
+    const anchor = opens[0]
+    const dcs = NODES.filter((n) => n.kind === 'dc')
+    let furthest = dcs[0]
+    let best = -1
+    for (const dc of dcs) {
+      const dist = Math.hypot(dc.x - anchor.x, dc.y - anchor.y)
+      if (dist > best) {
+        best = dist
+        furthest = dc
+      }
+    }
+    if (furthest) {
+      marks.push({
+        id: `close-${furthest.id}-${scenario.id}`,
+        kind: 'close',
+        label: `${furthest.name} (close)`,
+        x: furthest.x,
+        y: furthest.y,
+      })
+      marks.push({
+        id: `flow-open-${scenario.id}`,
+        kind: 'flow-up',
+        label: 'Reroute +',
+        x: furthest.x,
+        y: furthest.y,
+        x2: anchor.x,
+        y2: anchor.y,
+      })
+    }
+  }
+
+  return marks
+}
+
+export type WaterfallStep = {
+  id: string
+  label: string
+  /** Signed millions USD contribution (end total is absolute). */
+  amount: number
+  kind: 'start' | 'driver' | 'total'
+}
+
+/** Mock cost bridge from Reference → selected scenario using KPI money values. */
+export function waterfallForScenario(
+  scenario: Scenario,
+  reference: Scenario,
+): WaterfallStep[] {
+  const start = parseMoneyM(reference.kpis.cost.value)
+  const end = parseMoneyM(scenario.kpis.cost.value)
+  const gap = end - start
+  if (Math.abs(gap) < 0.05) {
+    return [
+      { id: 'start', label: `${reference.name} cost`, amount: start, kind: 'start' },
+      { id: 'total', label: `${scenario.name} total`, amount: end, kind: 'total' },
+    ]
+  }
+
+  const capex = parseMoneyM(scenario.kpis.capex.value) - parseMoneyM(reference.kpis.capex.value)
+  // Annualize CapEx lightly into OpEx bridge (mock 12% charge).
+  const capexCharge = Math.round(capex * 0.12 * 10) / 10
+  const serviceDelta =
+    parsePercent(scenario.kpis.service.value) -
+    parsePercent(reference.kpis.service.value)
+  // Rough: each +pp service costs ~0.15M; negative service frees cost.
+  const serviceCost = Math.round(-serviceDelta * 0.15 * 10) / 10
+  const transport = Math.round((gap - capexCharge - serviceCost) * 10) / 10
+
+  const steps: WaterfallStep[] = [
+    { id: 'start', label: `${reference.name} cost`, amount: start, kind: 'start' },
+  ]
+  if (Math.abs(transport) >= 0.05) {
+    steps.push({
+      id: 'transport',
+      label: transport < 0 ? 'Transport savings' : 'Transport increase',
+      amount: transport,
+      kind: 'driver',
+    })
+  }
+  if (Math.abs(serviceCost) >= 0.05) {
+    steps.push({
+      id: 'service',
+      label: serviceCost < 0 ? 'Service redesign' : 'Service uplift cost',
+      amount: serviceCost,
+      kind: 'driver',
+    })
+  }
+  if (Math.abs(capexCharge) >= 0.05) {
+    steps.push({
+      id: 'capex',
+      label: 'CapEx annualized',
+      amount: capexCharge,
+      kind: 'driver',
+    })
+  }
+  const driven = steps
+    .filter((s) => s.kind === 'driver')
+    .reduce((sum, s) => sum + s.amount, 0)
+  const residual = Math.round((gap - driven) * 10) / 10
+  if (Math.abs(residual) >= 0.05) {
+    steps.push({
+      id: 'other',
+      label: residual < 0 ? 'Other savings' : 'Other costs',
+      amount: residual,
+      kind: 'driver',
+    })
+  }
+  steps.push({
+    id: 'total',
+    label: `${scenario.name} total`,
+    amount: end,
+    kind: 'total',
+  })
+  return steps
+}

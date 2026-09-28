@@ -79,14 +79,14 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
       >
         <defs>
           <radialGradient id="mapGlow" cx="50%" cy="45%" r="55%">
-            <stop offset="0%" stopColor="#12203a" />
-            <stop offset="100%" stopColor="#060b14" />
+            <stop offset="0%" stopColor="var(--ff-map-glow-0)" />
+            <stop offset="100%" stopColor="var(--ff-map-glow-1)" />
           </radialGradient>
           <pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse">
             <path
               d="M 5 0 L 0 0 0 5"
               fill="none"
-              stroke="rgba(56,189,248,0.07)"
+              stroke="var(--ff-map-grid)"
               strokeWidth="0.15"
             />
           </pattern>
@@ -104,8 +104,8 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
 
         <path
           d="M12 40 C18 28, 30 24, 42 26 C52 22, 62 24, 72 30 C82 28, 90 34, 92 44 C94 55, 88 66, 78 70 C68 78, 52 80, 40 74 C28 78, 18 70, 14 58 Z"
-          fill="rgba(30,58,95,0.35)"
-          stroke="rgba(56,189,248,0.12)"
+          fill="var(--ff-map-land)"
+          stroke="var(--ff-map-land-stroke)"
           strokeWidth="0.3"
         />
 
@@ -118,7 +118,7 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
               key={lane.id}
               d={bezierPath(a, b)}
               fill="none"
-              stroke={selected ? '#7dd3fc' : 'rgba(125,211,252,0.45)'}
+              stroke={selected ? 'var(--ff-accent-text)' : 'var(--ff-lane)'}
               strokeWidth={selected ? 0.55 : 0.35}
               strokeLinecap="round"
               className="lane-arc"
@@ -148,14 +148,14 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
                 <circle
                   r="3.2"
                   fill="none"
-                  stroke="#7dd3fc"
+                  stroke="var(--ff-accent-text)"
                   strokeWidth="0.35"
                   opacity="0.85"
                 />
               )}
               <circle
                 r={selected ? 2.4 : 1.9}
-                fill="#0b1220"
+                fill="var(--ff-node-fill)"
                 stroke={fill}
                 strokeWidth={selected ? 0.55 : 0.4}
               />
@@ -164,7 +164,7 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
                 y="3.8"
                 textAnchor="middle"
                 className="node-label"
-                fill="#cbd5e1"
+                fill="var(--ff-text-soft)"
                 fontSize="2.1"
               >
                 {node.name.split(' ')[0]}

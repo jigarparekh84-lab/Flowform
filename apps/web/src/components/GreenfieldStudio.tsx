@@ -285,14 +285,14 @@ function MiniMap({
       >
         <defs>
           <radialGradient id="gfGlow" cx="50%" cy="45%" r="55%">
-            <stop offset="0%" stopColor="#12203a" />
-            <stop offset="100%" stopColor="#060b14" />
+            <stop offset="0%" stopColor="var(--ff-map-glow-0)" />
+            <stop offset="100%" stopColor="var(--ff-map-glow-1)" />
           </radialGradient>
           <pattern id="gfGrid" width="5" height="5" patternUnits="userSpaceOnUse">
             <path
               d="M 5 0 L 0 0 0 5"
               fill="none"
-              stroke="rgba(56,189,248,0.07)"
+              stroke="var(--ff-map-grid)"
               strokeWidth="0.15"
             />
           </pattern>
@@ -301,8 +301,8 @@ function MiniMap({
         <rect width="100" height="100" fill="url(#gfGrid)" />
         <path
           d="M12 40 C18 28, 30 24, 42 26 C52 22, 62 24, 72 30 C82 28, 90 34, 92 44 C94 55, 88 66, 78 70 C68 78, 52 80, 40 74 C28 78, 18 70, 14 58 Z"
-          fill="rgba(30,58,95,0.35)"
-          stroke="rgba(56,189,248,0.12)"
+          fill="var(--ff-map-land)"
+          stroke="var(--ff-map-land-stroke)"
           strokeWidth="0.3"
         />
 
@@ -322,15 +322,15 @@ function MiniMap({
 
         {existing.map((n) => (
           <g key={n.id} transform={`translate(${n.x} ${n.y})`} opacity="0.55">
-            <circle r="1.5" fill="#0b1220" stroke="#64748b" strokeWidth="0.35" />
+            <circle r="1.5" fill="var(--ff-node-fill)" stroke="var(--ff-text-muted)" strokeWidth="0.35" />
             <title>{n.name} (locked)</title>
           </g>
         ))}
 
         {demand.map((n) => (
           <g key={n.id} transform={`translate(${n.x} ${n.y})`}>
-            <circle r="1.7" fill="#0b1220" stroke="#fbbf24" strokeWidth="0.4" />
-            <circle r="0.55" fill="#fbbf24" />
+            <circle r="1.7" fill="var(--ff-node-fill)" stroke="var(--ff-warn)" strokeWidth="0.4" />
+            <circle r="0.55" fill="var(--ff-warn)" />
             <title>{n.name}</title>
           </g>
         ))}
@@ -362,12 +362,12 @@ function MiniMap({
                 width="3.2"
                 height="3.2"
                 rx="0.4"
-                fill="#0b1220"
-                stroke="#fb7185"
+                fill="var(--ff-node-fill)"
+                stroke="var(--ff-bad)"
                 strokeWidth={selected ? 0.55 : 0.4}
                 transform="rotate(45)"
               />
-              <circle r="0.55" fill="#fb7185" />
+              <circle r="0.55" fill="var(--ff-bad)" />
               <text
                 y="4.2"
                 textAnchor="middle"

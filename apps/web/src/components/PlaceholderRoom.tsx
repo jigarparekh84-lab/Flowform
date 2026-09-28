@@ -9,10 +9,6 @@ const COPY: Partial<Record<NavItem, { title: string; body: string }>> = {
     title: 'Projects',
     body: 'Workspace home for network design projects. Open or create a footprint study — stub for MVP.',
   },
-  Compare: {
-    title: 'Compare',
-    body: 'Side-by-side and overlay deltas for cost, service, CapEx, CO₂, and risk across scenarios. Report surface stub.',
-  },
   Brief: {
     title: 'Brief',
     body: 'Narrative + assumptions package for stakeholders. Capture the design story before handoff.',
