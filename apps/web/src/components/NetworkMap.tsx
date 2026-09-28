@@ -7,6 +7,7 @@ import type {
 } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { computeCapacityUtilization } from '../data/capacityHeat'
 import { basemapProvider, mapBasemapStyle, nodeLatLng } from '../data/geo'
 import {
   kindLabel,
@@ -90,18 +91,37 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
         />
       )}
       <div className="map-legend" aria-hidden>
-        <span>
-          <i className="dot plant" /> Plant
-        </span>
-        <span>
-          <i className="dot dc" /> DC
-        </span>
-        <span>
-          <i className="dot demand" /> Demand
-        </span>
-        <span>
-          <i className="dot supplier" /> Supplier
-        </span>
+        {layers.utilization ? (
+          <>
+            <span>
+              <i className="dot util-low" /> Low util
+            </span>
+            <span>
+              <i className="dot util-mid" /> Mid
+            </span>
+            <span>
+              <i className="dot util-high" /> High / over
+            </span>
+            <span>
+              <i className="dot demand" /> Demand
+            </span>
+          </>
+        ) : (
+          <>
+            <span>
+              <i className="dot plant" /> Plant
+            </span>
+            <span>
+              <i className="dot dc" /> DC
+            </span>
+            <span>
+              <i className="dot demand" /> Demand
+            </span>
+            <span>
+              <i className="dot supplier" /> Supplier
+            </span>
+          </>
+        )}
       </div>
       <div className="map-chrome-bar">
         <p className="map-hint">
@@ -250,6 +270,9 @@ function MapLibreCanvas({
 
     const apply = () => {
       if (!map.isStyleLoaded()) return
+      const utilById = layers.utilization
+        ? computeCapacityUtilization(network, constraints)
+        : null
       syncNetworkLayers(map, {
         nodes,
         lanes,
@@ -259,6 +282,7 @@ function MapLibreCanvas({
           constraints.facilities.map((f) => [f.nodeId, f.status]),
         ),
         source: network.source,
+        utilById,
       })
     }
 
@@ -268,7 +292,7 @@ function MapLibreCanvas({
       map.once('styledata', apply)
       map.once('load', apply)
     }
-  }, [nodes, lanes, layers, selectedIds, constraints.facilities, network.source, theme])
+  }, [nodes, lanes, layers, selectedIds, constraints, network, theme])
 
   return <div ref={containerRef} className="maplibre-root" role="img" aria-label="Network map" />
 }
@@ -282,9 +306,10 @@ function syncNetworkLayers(
     selectedIds: string[]
     statusById: Map<string, string>
     source: string
+    utilById?: Map<string, { color: string; label: string }> | null
   },
 ) {
-  const { nodes, lanes, layers, selectedIds, statusById } = args
+  const { nodes, lanes, layers, selectedIds, statusById, utilById } = args
   const selectedSet = new Set(selectedIds)
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
 
@@ -328,14 +353,19 @@ function syncNetworkLayers(
     features: visibleNodes.map((node) => {
       const ll = nodeLatLng(node)
       const status = statusById.get(node.id) ?? 'open'
+      const util = utilById?.get(node.id)
+      const heatOn = !!layers.utilization && !!util
+      const isFacility =
+        node.kind === 'dc' || node.kind === 'plant' || node.kind === 'candidate'
       return {
         type: 'Feature',
         properties: {
           id: node.id,
           entityKind: 'node',
-          name: node.name,
+          name: heatOn && isFacility ? `${node.name} · ${util.label}` : node.name,
           kind: node.kind,
-          color: colorFor(node.kind),
+          color:
+            heatOn && isFacility ? util.color : colorFor(node.kind),
           selected: selectedSet.has(node.id) ? 1 : 0,
           closed: status === 'closed' ? 1 : 0,
           candidate: status === 'candidate' || node.kind === 'candidate' ? 1 : 0,
@@ -471,6 +501,9 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
   const statusById = new Map(
     constraints.facilities.map((f) => [f.nodeId, f.status]),
   )
+  const utilById = layers.utilization
+    ? computeCapacityUtilization(network, constraints)
+    : null
 
   const visibleLanes = layers.lanes
     ? lanes.filter((l) => {
@@ -544,7 +577,13 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
 
       {nodes.filter((n) => visibleNode(n, layers)).map((node) => {
         const selected = selectedSet.has(node.id)
-        const fill = colorFor(node.kind)
+        const util = utilById?.get(node.id)
+        const isFacility =
+          node.kind === 'dc' || node.kind === 'plant' || node.kind === 'candidate'
+        const fill =
+          layers.utilization && util && isFacility
+            ? util.color
+            : colorFor(node.kind)
         const status = statusById.get(node.id)
         const closed = status === 'closed'
         return (
@@ -596,6 +635,9 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
             <title>
               {node.name} · {kindLabel(node.kind)}
               {status ? ` · ${status}` : ''}
+              {layers.utilization && util && isFacility
+                ? ` · ${util.label}`
+                : ''}
             </title>
           </g>
         )

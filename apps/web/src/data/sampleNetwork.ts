@@ -189,6 +189,7 @@ export const LAYERS = [
   { id: 'lanes', label: 'Lanes', defaultOn: true },
   { id: 'service', label: 'Service radii', defaultOn: false },
   { id: 'candidates', label: 'Candidates', defaultOn: true },
+  { id: 'utilization', label: 'Capacity heat', defaultOn: false },
 ] as const
 
 export const NODES: NetworkNode[] = [

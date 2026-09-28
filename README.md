@@ -28,10 +28,12 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Projects** | Workspace home; create / rename / duplicate / delete design studies (localStorage) |
 | **Network** | Map canvas — nodes, sites, lanes, capacities, constraints inspector (primary surface) |
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
+| **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
 | **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
 | **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors |
+| **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
 | **Handoff** | Export / sync design payload toward Ritara (contract stub only) |
 
 Nav serves the map. See `docs/UX_BRIEF.md` and `docs/PRODUCT_BLUEPRINT.md`.
@@ -147,6 +149,8 @@ In **Compare → DES-lite**: run Monte Carlo on the **Active** scenario (lead-ti
 - **Share** (top chrome) — copies a read-only `flowform://share?…` deep-link stub and downloads a `.share.json` pack (project JSON embed).
 - **Comments** — per-scenario threads (author, timestamp, body) in project localStorage; panel on **Compare** and **Brief**.
 - **Merge** room — import/sample acquired network, conflict list for duplicate ids, apply merged network + draft baseline scenario.
+- **Hubs** room — hub-and-spoke design: designate hubs, assign spokes by distance/volume/balanced, generate hub↔spoke lanes, draft scenario with before/after KPIs.
+- **Capacity heat** — Network Layers → Capacity heat colors facilities by demand load vs capacity (green→amber→red).
 - **Transport mode** — lane mode (Road/Rail/Air/Ocean/Intermodal) editable in Network Inspector; cost rescales via mode relatives; **Compare → Mode mix** summary.
 
 ---
@@ -162,7 +166,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre, Greenfield, Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience, Mode mix), Brief export + comments, Data CSV + CO₂, M&A Merge studio, Share stub, Handoff stub, PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience, Mode mix), Brief export + comments, Data CSV + CO₂, M&A Merge studio, Share stub, Handoff stub, PuLP optimize API, Docker Compose, CI.
 
 **Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 

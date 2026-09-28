@@ -2691,3 +2691,87 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* —— Hub & spoke studio —— */
+.hubspoke-studio .studio-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.hub-check-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.hubspoke-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  overflow: auto;
+}
+
+.hubspoke-kpis {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.hubspoke-map {
+  min-height: 14rem;
+  max-height: 22rem;
+}
+
+.hubspoke-tables {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  min-height: 0;
+}
+
+.util-ok {
+  color: var(--ff-good, #34d399);
+  font-variant-numeric: tabular-nums;
+}
+
+.util-warn {
+  color: var(--ff-warn, #fbbf24);
+  font-variant-numeric: tabular-nums;
+}
+
+.util-bad {
+  color: var(--ff-bad, #f87171);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-legend .dot.util-low {
+  background: #34d399;
+}
+
+.map-legend .dot.util-mid {
+  background: #fbbf24;
+}
+
+.map-legend .dot.util-high {
+  background: #f87171;
+}
+
+@media (max-width: 1100px) {
+  .hubspoke-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .hubspoke-tables {
+    grid-template-columns: 1fr;
+  }
+}

@@ -309,6 +309,12 @@ type FlowformContextValue = {
     net: import('../data/csvParsers').UploadedNetwork,
     draftScenario?: Scenario,
   ) => void
+
+  /** Apply hub-and-spoke redesign + draft scenario. */
+  applyHubSpokeNetwork: (
+    net: import('../data/csvParsers').UploadedNetwork,
+    draftScenario?: Scenario,
+  ) => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -1249,6 +1255,26 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const applyHubSpokeNetwork = useCallback(
+    (
+      net: import('../data/csvParsers').UploadedNetwork,
+      draftScenario?: Scenario,
+    ) => {
+      setNetwork(net)
+      setConstraints((prev) => mergeConstraints(prev, net))
+      setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+      setSelection({ ids: [], kind: null })
+      if (draftScenario) {
+        setScenarios((prev) => {
+          if (prev.some((s) => s.id === draftScenario.id)) return prev
+          return [...prev, draftScenario]
+        })
+        setActiveScenarioId(draftScenario.id)
+      }
+    },
+    [],
+  )
+
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
     setBrief((prev) => ({ ...prev, ...patch }))
   }, [])
@@ -1325,6 +1351,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateLaneMode,
       shareProject,
       applyMergedNetwork,
+      applyHubSpokeNetwork,
     }),
     [
       horizon,
@@ -1381,6 +1408,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateLaneMode,
       shareProject,
       applyMergedNetwork,
+      applyHubSpokeNetwork,
     ],
   )
 
