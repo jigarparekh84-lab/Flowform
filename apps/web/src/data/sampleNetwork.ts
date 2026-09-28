@@ -78,6 +78,8 @@ export type Scenario = {
   optimizeMeta?: OptimizeMeta
   /** Latest DES-lite Monte Carlo service sim for this scenario. */
   desLite?: DesLiteResult
+  /** Cost-driver tornado + Monte Carlo sensitivity result. */
+  costSensitivity?: import('./costSensitivity').CostSensitivityResult
   /** Latest resilience / SPOF score for this scenario. */
   resilience?: ScenarioResilience
   /** Latest inventory rollup attached to KPIs. */

@@ -51,6 +51,13 @@ import {
   suggestServingIds,
   type TerritoryAssignMode,
 } from '../data/serviceTerritory'
+import {
+  COST_DRIVERS,
+  defaultDriverRanges,
+  rangesFromPresetHint,
+  type CostDriverId,
+  type CostSensitivityResult,
+} from '../data/costSensitivity'
 import { useFlowform } from '../state/FlowformContext'
 
 type ViewMode =
@@ -59,6 +66,7 @@ type ViewMode =
   | 'waterfall'
   | 'cts'
   | 'des'
+  | 'sensitivity'
   | 'inventory'
   | 'resilience'
   | 'modes'
@@ -170,6 +178,7 @@ export function CompareResults() {
     network,
     constraints,
     runDesLite,
+    runCostSensitivity,
     inventoryPolicies,
     setInventoryFormula,
     updateInventoryNode,
@@ -284,8 +293,9 @@ export function CompareResults() {
           <h1>Results</h1>
           <p className="studio-sub">
             Multi-scenario KPI matrix, map opens/closes vs Reference, cost
-            waterfall, DES-lite, inventory, resilience (SPOF), transport
-            mode mix, and lane bid comparison. Defaults: Active + Baseline as Reference.
+            waterfall, DES-lite, cost sensitivity (tornado + Monte Carlo),
+            inventory, resilience (SPOF), transport mode mix, and lane bid
+            comparison. Defaults: Active + Baseline as Reference.
           </p>
         </div>
       </header>
@@ -347,6 +357,7 @@ export function CompareResults() {
               ['waterfall', 'Waterfall'],
               ['cts', 'Cost-to-serve'],
               ['des', 'DES-lite'],
+              ['sensitivity', 'Sensitivity'],
               ['inventory', 'Inventory'],
               ['resilience', 'Resilience'],
               ['modes', 'Mode mix'],
@@ -413,6 +424,13 @@ export function CompareResults() {
             active={activeScenario}
             selected={selected}
             onRun={() => runDesLite()}
+          />
+        )}
+        {view === 'sensitivity' && (
+          <CostSensitivityView
+            active={activeScenario}
+            selected={selected}
+            onRun={(params) => runCostSensitivity(params)}
           />
         )}
         {view === 'inventory' && (
@@ -2421,3 +2439,278 @@ function TerritoryView({
   )
 }
 
+
+function CostSensitivityView({
+  active,
+  selected,
+  onRun,
+}: {
+  active: Scenario
+  selected: Scenario[]
+  onRun: (
+    params?: import('../data/costSensitivity').CostSensitivityParams,
+  ) => CostSensitivityResult | null
+}) {
+  const [ranges, setRanges] = useState<Record<CostDriverId, number>>(() =>
+    defaultDriverRanges(),
+  )
+  const [trials, setTrials] = useState(300)
+  const [local, setLocal] = useState<CostSensitivityResult | null>(null)
+
+  const result = local ?? active.costSensitivity ?? null
+  const maxSwing = result
+    ? Math.max(0.01, ...result.tornado.map((b) => b.swingM))
+    : 1
+  const maxBin = result
+    ? Math.max(1, ...result.histogram.map((b) => b.count))
+    : 1
+
+  function setRange(id: CostDriverId, value: number) {
+    setRanges((prev) => ({
+      ...prev,
+      [id]: Math.max(1, Math.min(80, value)),
+    }))
+  }
+
+  function handleRun() {
+    const r = onRun({ trials, ranges, seed: 42 })
+    if (r) setLocal(r)
+  }
+
+  function applyHint(
+    hint: 'fuel-20' | 'tariff-duty' | 'demand-shift' | 'balanced',
+  ) {
+    setRanges((prev) => {
+      const next = { ...prev }
+      const patch = rangesFromPresetHint(hint)
+      for (const [k, v] of Object.entries(patch)) {
+        if (v != null) next[k as CostDriverId] = v
+      }
+      return next
+    })
+  }
+
+  // Sync local when active scenario changes externally
+  useEffect(() => {
+    setLocal(null)
+  }, [active.id])
+
+  return (
+    <div className="compare-des-layout compare-sens-layout">
+      <aside className="compare-side">
+        <h2>Cost sensitivity</h2>
+        <p className="des-active-name">{active.name}</p>
+        <p className="muted tiny">
+          Tornado (one-at-a-time low/high) and Monte Carlo on cost drivers vs
+          Active cost KPI. Ranges reuse Scenarios sensitivity presets where
+          helpful (fuel, tariff, demand).
+        </p>
+
+        <label className="field">
+          <span>MC trials</span>
+          <input
+            type="number"
+            min={50}
+            max={2000}
+            step={50}
+            value={trials}
+            onChange={(e) => setTrials(Number(e.target.value) || 300)}
+          />
+        </label>
+
+        <div className="sens-preset-hints" role="group" aria-label="Range presets">
+          <button
+            type="button"
+            className="btn ghost btn-tiny"
+            onClick={() => applyHint('balanced')}
+          >
+            Defaults
+          </button>
+          <button
+            type="button"
+            className="btn ghost btn-tiny"
+            onClick={() => applyHint('fuel-20')}
+          >
+            Fuel +20%
+          </button>
+          <button
+            type="button"
+            className="btn ghost btn-tiny"
+            onClick={() => applyHint('tariff-duty')}
+          >
+            Tariff
+          </button>
+          <button
+            type="button"
+            className="btn ghost btn-tiny"
+            onClick={() => applyHint('demand-shift')}
+          >
+            Demand
+          </button>
+        </div>
+
+        <div className="sens-driver-list">
+          {COST_DRIVERS.map((d) => (
+            <label key={d.id} className="field sens-driver-field">
+              <span>
+                {d.label} <em className="muted">±%</em>
+              </span>
+              <input
+                type="number"
+                min={1}
+                max={80}
+                step={1}
+                value={ranges[d.id]}
+                onChange={(e) => setRange(d.id, Number(e.target.value) || 1)}
+                title={d.description}
+              />
+            </label>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          className="btn primary des-run-btn"
+          onClick={handleRun}
+        >
+          Run tornado + MC
+        </button>
+
+        <h3 className="cts-side-h">Compared</h3>
+        <ul className="des-scenario-list">
+          {selected.map((s) => (
+            <li key={s.id}>
+              <strong>{s.name}</strong>
+              {s.costSensitivity ? (
+                <span className="muted tiny">
+                  P50 ${s.costSensitivity.p50.toFixed(1)}M · swing max $
+                  {Math.max(
+                    ...s.costSensitivity.tornado.map((b) => b.swingM),
+                  ).toFixed(1)}
+                  M
+                </span>
+              ) : (
+                <span className="muted tiny">no run yet</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      <div className="des-main sens-main">
+        {!result ? (
+          <div className="des-empty">
+            <p>
+              No cost sensitivity on <strong>{active.name}</strong> yet. Set
+              driver ±% ranges and run tornado + Monte Carlo (default{' '}
+              {trials} trials).
+            </p>
+            <button type="button" className="btn primary" onClick={handleRun}>
+              Run tornado + MC
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="des-kpi-row" aria-label="Cost sensitivity KPIs">
+              <div className="des-kpi">
+                <span className="des-kpi-label">Baseline</span>
+                <strong>${result.baselineCostM.toFixed(1)}M</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">P10</span>
+                <strong>${result.p10.toFixed(1)}M</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">P50</span>
+                <strong>${result.p50.toFixed(1)}M</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">P90</span>
+                <strong>${result.p90.toFixed(1)}M</strong>
+              </div>
+              <div className="des-kpi">
+                <span className="des-kpi-label">Mean</span>
+                <strong>${result.mean.toFixed(1)}M</strong>
+              </div>
+            </div>
+            <p className="muted tiny des-meta">
+              {result.trials} trials · seed {result.seed} ·{' '}
+              {new Date(result.runAt).toLocaleString()} · range $
+              {result.min.toFixed(1)}–{result.max.toFixed(1)}M
+            </p>
+
+            <h3 className="cts-side-h">Tornado (OAT low / high vs baseline)</h3>
+            <div
+              className="tornado-chart"
+              role="img"
+              aria-label="Cost driver tornado chart"
+            >
+              {result.tornado.map((b) => {
+                const lowW = (Math.abs(b.lowDeltaM) / maxSwing) * 50
+                const highW = (Math.abs(b.highDeltaM) / maxSwing) * 50
+                return (
+                  <div key={b.driverId} className="tornado-row">
+                    <span className="tornado-label" title={`±${b.rangePct}%`}>
+                      {b.label}
+                    </span>
+                    <div className="tornado-bars">
+                      <div className="tornado-half left">
+                        <div
+                          className="tornado-bar low"
+                          style={{ width: `${Math.max(2, lowW)}%` }}
+                          title={`Low $${b.lowCostM.toFixed(1)}M (${b.lowDeltaM >= 0 ? '+' : ''}${b.lowDeltaM.toFixed(1)}M)`}
+                        />
+                      </div>
+                      <div className="tornado-center" title="Baseline" />
+                      <div className="tornado-half right">
+                        <div
+                          className="tornado-bar high"
+                          style={{ width: `${Math.max(2, highW)}%` }}
+                          title={`High $${b.highCostM.toFixed(1)}M (${b.highDeltaM >= 0 ? '+' : ''}${b.highDeltaM.toFixed(1)}M)`}
+                        />
+                      </div>
+                    </div>
+                    <span className="tornado-swing mono">
+                      ±${(b.swingM / 2).toFixed(1)}M
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="muted tiny matrix-footnote">
+              Blue = low (−range); coral = high (+range). Sorted by absolute
+              swing. Center line = baseline ${result.baselineCostM.toFixed(1)}M.
+            </p>
+
+            <h3 className="cts-side-h">Monte Carlo cost distribution</h3>
+            <div
+              className="des-hist sens-hist"
+              role="img"
+              aria-label="Cost Monte Carlo histogram"
+            >
+              {result.histogram.map((b) => (
+                <div key={b.label} className="des-hist-col">
+                  <div
+                    className="des-hist-bar"
+                    style={{ height: `${(b.count / maxBin) * 100}%` }}
+                    title={`${b.count} trials`}
+                  />
+                  <span className="des-hist-label">{b.label}</span>
+                  <span className="muted tiny">{b.count}</span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="btn ghost des-rerun"
+              onClick={handleRun}
+            >
+              Re-run tornado + MC
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

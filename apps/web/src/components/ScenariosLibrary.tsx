@@ -1,4 +1,8 @@
 import { useMemo, useState, type FormEvent } from 'react'
+import {
+  COST_DRIVERS,
+  defaultDriverRanges,
+} from '../data/costSensitivity'
 import { SENSITIVITY_PRESETS } from '../data/sensitivity'
 import { useFlowform } from '../state/FlowformContext'
 
@@ -10,6 +14,7 @@ export function ScenariosLibrary() {
     deltas,
     composeScenario,
     applySensitivityPreset,
+    runCostSensitivity,
     activeScenario,
   } = useFlowform()
 
@@ -84,6 +89,56 @@ export function ScenariosLibrary() {
               <span className="muted tiny">{p.description}</span>
             </button>
           ))}
+        </div>
+
+        <div className="sens-cost-panel">
+          <div className="library-card-head" style={{ paddingTop: '0.35rem' }}>
+            <h3 className="cts-side-h" style={{ margin: 0 }}>
+              Cost tornado + Monte Carlo
+            </h3>
+            <span className="muted tiny">
+              drivers · Compare → Sensitivity
+            </span>
+          </div>
+          <p className="hint pad" style={{ paddingTop: 0, paddingBottom: '0.35rem' }}>
+            One-at-a-time tornado and 300-trial MC on transport $/mi, fuel,
+            tariff, demand, facility fixed, inventory holding (default ±%
+            ranges). Full chart UI is under Compare → Sensitivity.
+          </p>
+          <ul className="sens-driver-chips" aria-label="Cost drivers">
+            {COST_DRIVERS.map((d) => (
+              <li key={d.id}>
+                <strong>{d.label}</strong>
+                <span className="muted tiny">±{defaultDriverRanges()[d.id]}%</span>
+              </li>
+            ))}
+          </ul>
+          <div className="sens-cost-actions">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => {
+                const r = runCostSensitivity({
+                  trials: 300,
+                  ranges: defaultDriverRanges(),
+                  seed: 42,
+                })
+                if (r) {
+                  setStatus(
+                    `Cost sensitivity on “${activeScenario.name}”: P10 $${r.p10.toFixed(1)}M · P50 $${r.p50.toFixed(1)}M · P90 $${r.p90.toFixed(1)}M. See Compare → Sensitivity.`,
+                  )
+                }
+              }}
+            >
+              Run on Active
+            </button>
+            {activeScenario.costSensitivity && (
+              <span className="muted tiny">
+                Last P50 ${activeScenario.costSensitivity.p50.toFixed(1)}M ·{' '}
+                {activeScenario.costSensitivity.trials} trials
+              </span>
+            )}
+          </div>
         </div>
       </section>
 

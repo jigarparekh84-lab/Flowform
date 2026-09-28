@@ -2551,6 +2551,143 @@
 }
 
 
+/* —— Cost sensitivity tornado + MC —— */
+.sens-cost-panel {
+  padding: 0 0.85rem 0.85rem;
+  border-top: 1px solid var(--ff-border-soft);
+  margin-top: 0.35rem;
+}
+
+.sens-driver-chips {
+  list-style: none;
+  margin: 0 0 0.65rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sens-driver-chips li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.4rem;
+  background: var(--ff-bg-input);
+  border: 1px solid var(--ff-border);
+  font-size: 0.78rem;
+}
+
+.sens-cost-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sens-preset-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.55rem;
+}
+
+.sens-driver-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 0.55rem;
+  margin-bottom: 0.65rem;
+}
+
+.sens-driver-field input {
+  width: 100%;
+}
+
+.tornado-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.5rem 0.25rem;
+}
+
+.tornado-row {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 8.5rem) 1fr minmax(3.5rem, 4.5rem);
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.tornado-label {
+  font-size: 0.78rem;
+  color: var(--ff-text-secondary);
+  text-align: right;
+}
+
+.tornado-bars {
+  display: grid;
+  grid-template-columns: 1fr 2px 1fr;
+  align-items: center;
+  height: 1.15rem;
+  background: color-mix(in srgb, var(--ff-bg-input) 70%, transparent);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.tornado-half {
+  display: flex;
+  height: 100%;
+  align-items: center;
+}
+
+.tornado-half.left {
+  justify-content: flex-end;
+}
+
+.tornado-half.right {
+  justify-content: flex-start;
+}
+
+.tornado-center {
+  width: 2px;
+  height: 100%;
+  background: var(--ff-text-muted);
+  opacity: 0.7;
+}
+
+.tornado-bar {
+  height: 70%;
+  border-radius: 0.15rem;
+  min-width: 2px;
+}
+
+.tornado-bar.low {
+  background: color-mix(in srgb, var(--ff-accent) 80%, #38bdf8);
+}
+
+.tornado-bar.high {
+  background: color-mix(in srgb, var(--ff-bad) 70%, #fb923c);
+}
+
+.tornado-swing {
+  font-size: 0.72rem;
+  color: var(--ff-text-muted);
+  text-align: right;
+}
+
+.sens-hist .des-hist-bar {
+  background: color-mix(in srgb, var(--ff-purple, #a78bfa) 70%, #5eead4);
+}
+
+@media (max-width: 900px) {
+  .sens-driver-list {
+    grid-template-columns: 1fr;
+  }
+  .tornado-row {
+    grid-template-columns: minmax(5rem, 7rem) 1fr minmax(3rem, 4rem);
+  }
+}
+
 /* —— Compare Inventory / Resilience —— */
 .compare-inv-layout,
 .compare-res-layout {

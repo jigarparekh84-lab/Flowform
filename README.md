@@ -37,7 +37,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Territory** | Service territory / coverage — assign demand to servers, gaps/overlaps, preferred lanes + scenario |
 | **Roadmap** | CapEx phasing — multi-year open/close/expand events, Gantt-lite, cumulative CapEx/capacity, year-slice scenarios |
 | **Scenarios** | Named what-ifs + sensitivity presets (fuel, demand shift, outage, tariff/duty) |
-| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** |
+| **Compare** | Matrix / map-diff / waterfall / cost-to-serve / DES-lite / **Sensitivity** (tornado + MC) / **Inventory** / **Resilience** / **Products** / **Bids** / **BOM** / **Territory** |
 | **Brief** | Decision Brief — recommendation, assumptions, Markdown / HTML export |
 | **Data** | CSV upload (sites / demand / lanes), validation, CO₂ factors, **product / commodity groups**, **lane rate tables & bids**, **bill of materials** |
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
@@ -145,11 +145,16 @@ Basemap defaults to **OpenFreeMap** (free for commercial use, no API key). Optio
 
 In **Compare → DES-lite**: run Monte Carlo on the **Active** scenario (lead-time noise + demand noise → fill rate / late demand %). Results are stored on the scenario (`desLite`) and persist with the project in localStorage.
 
+### Cost sensitivity (tornado + Monte Carlo)
+
+In **Compare → Sensitivity** (and a quick-run panel under **Scenarios → Sensitivity presets**): shock cost drivers ±% (transport $/mi, fuel, tariff, demand volume, facility fixed, inventory holding). One-at-a-time tornado vs baseline cost KPI, plus lightweight Monte Carlo (default 300 trials) with histogram and P10/P50/P90. Results store on the scenario (`costSensitivity`). Range hints reuse fuel / tariff / demand sensitivity presets.
+
 ### Inventory & Resilience
 
 - **Compare → Inventory** — edit per DC/plant service target, lead time, demand σ, holding cost; choose simple or ASCM combined safety stock; **Apply to Active KPIs** attaches Inv $ / units.
 - **Compare → Resilience** — score SPOFs (critical nodes); score and critical list store on the Active scenario and update Risk KPI.
 - **Scenarios → Tariff / duty** — sensitivity preset for inbound lanes from MX / nearshore region.
+- **Compare → Sensitivity** / **Scenarios → Cost tornado + Monte Carlo** — OAT tornado on cost drivers (transport $/mi, fuel, tariff, demand, facility fixed, inventory holding) plus lightweight MC (P10/P50/P90 + histogram); results store on the Active scenario.
 
 ### Collaboration, M&A, mode mix
 
@@ -173,7 +178,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory), Brief export + comments, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Sensitivity tornado/MC, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory), Brief export + comments, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, Docker Compose, CI.
 
 **Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 

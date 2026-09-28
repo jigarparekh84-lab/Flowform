@@ -98,6 +98,11 @@ import {
   type DesLiteResult,
 } from '../data/desLite'
 import {
+  runCostSensitivity as runCostSensitivityEngine,
+  type CostSensitivityParams,
+  type CostSensitivityResult,
+} from '../data/costSensitivity'
+import {
   addComment,
   deleteComment,
   buildSharePack,
@@ -310,6 +315,11 @@ type FlowformContextValue = {
 
   /** DES-lite Monte Carlo service sim — stores result on active scenario. */
   runDesLite: (params?: DesLiteParams) => DesLiteResult | null
+
+  /** Cost-driver tornado + Monte Carlo — stores result on active scenario. */
+  runCostSensitivity: (
+    params?: CostSensitivityParams,
+  ) => CostSensitivityResult | null
 
   /** Multi-echelon lite inventory policies (per DC/plant). */
   inventoryPolicies: InventoryPolicyState
@@ -1011,6 +1021,22 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       return result
     },
     [scenarios, activeScenarioId, network, constraints],
+  )
+
+  const runCostSensitivity = useCallback(
+    (params?: CostSensitivityParams): CostSensitivityResult | null => {
+      const scenario =
+        scenarios.find((s) => s.id === activeScenarioId) ?? scenarios[0]
+      if (!scenario) return null
+      const result = runCostSensitivityEngine({ scenario, params })
+      setScenarios((prev) =>
+        prev.map((s) =>
+          s.id === scenario.id ? { ...s, costSensitivity: result } : s,
+        ),
+      )
+      return result
+    },
+    [scenarios, activeScenarioId],
   )
 
   const applyOptimizeResult = useCallback(
@@ -1787,6 +1813,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       computedCo2Kt,
       applySensitivityPreset,
       runDesLite,
+      runCostSensitivity,
       inventoryPolicies,
       setInventoryFormula,
       updateInventoryNode,
@@ -1878,6 +1905,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       computedCo2Kt,
       applySensitivityPreset,
       runDesLite,
+      runCostSensitivity,
       inventoryPolicies,
       setInventoryFormula,
       updateInventoryNode,
