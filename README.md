@@ -39,10 +39,12 @@ Nav should serve the map, not compete with it. See `docs/UX_BRIEF.md`.
 
 **In**
 
-- Project shell + Network Canvas placeholder (this repo)
-- Map-first layout with IA stubs for Projects / Network / Greenfield / Scenarios / Compare / Brief / Data / Handoff
+- App chrome (logo, project stub, Active scenario, Horizon, Run+Compare, ⌘K)
+- Left IA nav: Projects · Network · Greenfield · Scenarios · Compare · Brief · Data · Handoff
+- Network Canvas: KPI strip, layer rail, dark SVG map (nodes + Bezier lanes), inspector, Facilities|Lanes tables, scenario chips
+- Placeholder rooms for non-Network areas
 - Docs: UX brief + product blueprint
-- Local Vite + React + TypeScript app
+- Local Vite + React + TypeScript app on port **5180**
 
 **Out (for now)**
 
