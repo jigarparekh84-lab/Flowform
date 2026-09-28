@@ -41,8 +41,11 @@ Nav should serve the map, not compete with it. See `docs/UX_BRIEF.md`.
 
 - App chrome (logo, project stub, Active scenario, Horizon, Run+Compare, ⌘K)
 - Left IA nav: Projects · Network · Greenfield · Scenarios · Compare · Brief · Data · Handoff
-- Network Canvas: KPI strip, layer rail, dark SVG map (nodes + Bezier lanes), inspector, Facilities|Lanes tables, scenario chips
-- Placeholder rooms for non-Network areas
+- Network Canvas: interactive map selection (click / Shift multi-select) synced to inspector + tables
+- Greenfield Studio: wizard + mock candidate pins + promote to Candidates delta
+- Scenarios library: deltas + compose Baseline + greenfield into named Active scenario
+- Shared React context for network / scenario / delta state
+- Placeholder rooms for Projects, Compare, Brief, Data, Handoff
 - Docs: UX brief + product blueprint
 - Local Vite + React + TypeScript app on port **5180**
 

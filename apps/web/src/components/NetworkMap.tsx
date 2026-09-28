@@ -9,8 +9,9 @@ import {
 
 type Props = {
   layers: Record<string, boolean>
-  selectedId: string | null
-  onSelect: (id: string, kind: 'node' | 'lane') => void
+  selectedIds: string[]
+  onSelect: (id: string, kind: 'node' | 'lane', additive: boolean) => void
+  onClear?: () => void
 }
 
 const KIND_LAYER: Record<NodeKind, string> = {
@@ -18,6 +19,7 @@ const KIND_LAYER: Record<NodeKind, string> = {
   dc: 'dcs',
   demand: 'demand',
   supplier: 'suppliers',
+  candidate: 'candidates',
 }
 
 function colorFor(kind: NodeKind): string {
@@ -30,6 +32,8 @@ function colorFor(kind: NodeKind): string {
       return '#fbbf24'
     case 'supplier':
       return '#a78bfa'
+    case 'candidate':
+      return '#fb7185'
   }
 }
 
@@ -51,8 +55,9 @@ function visibleNode(n: NetworkNode, layers: Record<string, boolean>): boolean {
   return !!layers[KIND_LAYER[n.kind]]
 }
 
-export function NetworkMap({ layers, selectedId, onSelect }: Props) {
+export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
   const nodeMap = new Map(NODES.map((n) => [n.id, n]))
+  const selectedSet = new Set(selectedIds)
 
   const visibleLanes = layers.lanes
     ? LANES.filter((l) => {
@@ -70,6 +75,7 @@ export function NetworkMap({ layers, selectedId, onSelect }: Props) {
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Network map with sample nodes and lanes"
+        onClick={() => onClear?.()}
       >
         <defs>
           <radialGradient id="mapGlow" cx="50%" cy="45%" r="55%">
@@ -96,7 +102,6 @@ export function NetworkMap({ layers, selectedId, onSelect }: Props) {
         <rect width="100" height="100" fill="url(#mapGlow)" />
         <rect width="100" height="100" fill="url(#grid)" />
 
-        {/* stylized continent silhouette */}
         <path
           d="M12 40 C18 28, 30 24, 42 26 C52 22, 62 24, 72 30 C82 28, 90 34, 92 44 C94 55, 88 66, 78 70 C68 78, 52 80, 40 74 C28 78, 18 70, 14 58 Z"
           fill="rgba(30,58,95,0.35)"
@@ -107,7 +112,7 @@ export function NetworkMap({ layers, selectedId, onSelect }: Props) {
         {visibleLanes.map((lane: NetworkLane) => {
           const a = nodeMap.get(lane.from)!
           const b = nodeMap.get(lane.to)!
-          const selected = selectedId === lane.id
+          const selected = selectedSet.has(lane.id)
           return (
             <path
               key={lane.id}
@@ -119,26 +124,35 @@ export function NetworkMap({ layers, selectedId, onSelect }: Props) {
               className="lane-arc"
               onClick={(e) => {
                 e.stopPropagation()
-                onSelect(lane.id, 'lane')
+                onSelect(lane.id, 'lane', e.shiftKey)
               }}
             />
           )
         })}
 
         {NODES.filter((n) => visibleNode(n, layers)).map((node) => {
-          const selected = selectedId === node.id
+          const selected = selectedSet.has(node.id)
           const fill = colorFor(node.kind)
           return (
             <g
               key={node.id}
-              className="map-node"
+              className={`map-node${selected ? ' is-selected' : ''}`}
               transform={`translate(${node.x} ${node.y})`}
               onClick={(e) => {
                 e.stopPropagation()
-                onSelect(node.id, 'node')
+                onSelect(node.id, 'node', e.shiftKey)
               }}
               filter={selected ? 'url(#softGlow)' : undefined}
             >
+              {selected && (
+                <circle
+                  r="3.2"
+                  fill="none"
+                  stroke="#7dd3fc"
+                  strokeWidth="0.35"
+                  opacity="0.85"
+                />
+              )}
               <circle
                 r={selected ? 2.4 : 1.9}
                 fill="#0b1220"
@@ -176,6 +190,7 @@ export function NetworkMap({ layers, selectedId, onSelect }: Props) {
           <i className="dot supplier" /> Supplier
         </span>
       </div>
+      <p className="map-hint">Click to select · Shift-click to multi-select</p>
     </div>
   )
 }

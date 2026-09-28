@@ -9,13 +9,20 @@ import {
 type Tab = 'facilities' | 'lanes'
 
 type Props = {
-  selectedId: string | null
-  onSelectNode: (id: string) => void
-  onSelectLane: (id: string) => void
+  selectedIds: string[]
+  selectedKind: 'node' | 'lane' | null
+  onSelectNode: (id: string, additive?: boolean) => void
+  onSelectLane: (id: string, additive?: boolean) => void
 }
 
-export function BottomTables({ selectedId, onSelectNode, onSelectLane }: Props) {
+export function BottomTables({
+  selectedIds,
+  selectedKind,
+  onSelectNode,
+  onSelectLane,
+}: Props) {
   const [tab, setTab] = useState<Tab>('facilities')
+  const selectedSet = new Set(selectedIds)
 
   return (
     <div className="bottom-tables">
@@ -52,18 +59,22 @@ export function BottomTables({ selectedId, onSelectNode, onSelectLane }: Props) 
               </tr>
             </thead>
             <tbody>
-              {NODES.map((n) => (
-                <tr
-                  key={n.id}
-                  className={selectedId === n.id ? 'selected' : ''}
-                  onClick={() => onSelectNode(n.id)}
-                >
-                  <td>{n.name}</td>
-                  <td>{kindLabel(n.kind)}</td>
-                  <td>{n.region}</td>
-                  <td>{n.capacity}</td>
-                </tr>
-              ))}
+              {NODES.map((n) => {
+                const selected =
+                  selectedKind === 'node' && selectedSet.has(n.id)
+                return (
+                  <tr
+                    key={n.id}
+                    className={selected ? 'selected' : ''}
+                    onClick={(e) => onSelectNode(n.id, e.shiftKey)}
+                  >
+                    <td>{n.name}</td>
+                    <td>{kindLabel(n.kind)}</td>
+                    <td>{n.region}</td>
+                    <td>{n.capacity}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         ) : (
@@ -79,20 +90,24 @@ export function BottomTables({ selectedId, onSelectNode, onSelectLane }: Props) 
               </tr>
             </thead>
             <tbody>
-              {LANES.map((l) => (
-                <tr
-                  key={l.id}
-                  className={selectedId === l.id ? 'selected' : ''}
-                  onClick={() => onSelectLane(l.id)}
-                >
-                  <td>{nodeById(l.from)?.name ?? l.from}</td>
-                  <td>{nodeById(l.to)?.name ?? l.to}</td>
-                  <td>{l.mode}</td>
-                  <td>${l.costPerUnit.toFixed(2)}</td>
-                  <td>{l.leadDays}d</td>
-                  <td>{l.co2Kg} kg</td>
-                </tr>
-              ))}
+              {LANES.map((l) => {
+                const selected =
+                  selectedKind === 'lane' && selectedSet.has(l.id)
+                return (
+                  <tr
+                    key={l.id}
+                    className={selected ? 'selected' : ''}
+                    onClick={(e) => onSelectLane(l.id, e.shiftKey)}
+                  >
+                    <td>{nodeById(l.from)?.name ?? l.from}</td>
+                    <td>{nodeById(l.to)?.name ?? l.to}</td>
+                    <td>{l.mode}</td>
+                    <td>${l.costPerUnit.toFixed(2)}</td>
+                    <td>{l.leadDays}d</td>
+                    <td>{l.co2Kg} kg</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

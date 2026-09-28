@@ -710,3 +710,378 @@
     white-space: nowrap;
   }
 }
+
+
+/* —— Map selection hint —— */
+.map-hint {
+  position: absolute;
+  right: 0.65rem;
+  bottom: 0.55rem;
+  margin: 0;
+  font-size: 0.65rem;
+  color: #64748b;
+  background: rgba(7, 13, 24, 0.75);
+  border: 1px solid #1a2740;
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.45rem;
+  pointer-events: none;
+}
+
+.selection-badge {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #7dd3fc;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  display: inline-block;
+}
+
+.map-legend .dot.candidate {
+  background: #fb7185;
+}
+
+.map-legend .dot.locked {
+  background: #64748b;
+}
+
+/* —— Studio rooms (Greenfield / Scenarios) —— */
+.studio-room {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.studio-header {
+  padding: 1rem 1.25rem 0.5rem;
+  flex-shrink: 0;
+}
+
+.studio-header .map-kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #38bdf8;
+}
+
+.studio-header h1 {
+  margin: 0;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+}
+
+.studio-sub {
+  margin: 0.4rem 0 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
+.studio-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 16.5rem 1fr;
+  gap: 0.65rem;
+  min-height: 0;
+  padding: 0.5rem 0.85rem 0.85rem;
+}
+
+.wizard-panel {
+  background: #0c1424;
+  border: 1px solid #1a2740;
+  border-radius: 0.65rem;
+  padding: 0.85rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.wizard-panel h2,
+.library-card h2 {
+  margin: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.wizard-panel h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+
+.field {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.field span {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.field input[type='text'],
+.field input[type='number'],
+.field select,
+.compose-form input[type='text'],
+.compose-form select {
+  appearance: none;
+  background: #111b2e;
+  color: #e8eef7;
+  border: 1px solid #243247;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+.field input[type='range'] {
+  width: 100%;
+  accent-color: #38bdf8;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.toggle-row input {
+  accent-color: #38bdf8;
+}
+
+.wizard-run {
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.promote-block {
+  border-top: 1px solid #1a2740;
+  padding-top: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.promote-block .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.status-line {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #7dd3fc;
+  line-height: 1.4;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.studio-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mini-map {
+  flex: 1;
+  min-height: 14rem;
+}
+
+.candidate-table {
+  flex-shrink: 0;
+  height: 10rem;
+  border: 1px solid #1a2740;
+  border-radius: 0.65rem;
+  background: #0c1424;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.table-tabs-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7dd3fc;
+  padding: 0.4rem 0.65rem;
+}
+
+.muted {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.muted.tiny {
+  font-size: 0.68rem;
+}
+
+.empty-cell {
+  color: #64748b;
+  text-align: center;
+  padding: 1rem !important;
+}
+
+.candidate-table .table-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 0.65rem;
+}
+
+/* —— Scenarios library —— */
+.library-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr;
+  gap: 0.65rem;
+  min-height: 0;
+  padding: 0.5rem 0.85rem 0.85rem;
+  overflow: hidden;
+}
+
+.library-card {
+  background: #0c1424;
+  border: 1px solid #1a2740;
+  border-radius: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.library-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.85rem 0.5rem;
+  border-bottom: 1px solid #1a2740;
+  flex-shrink: 0;
+}
+
+.scenario-list,
+.delta-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.scenario-list li,
+.delta-list li {
+  border: 1px solid #1a2740;
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.7rem;
+  background: #0a1220;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.scenario-list li.active {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.scenario-list-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.scenario-list-main strong {
+  font-size: 0.88rem;
+}
+
+.scenario-list-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.kpi-mini {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.delta-sites {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.hint.pad {
+  padding: 0.85rem;
+}
+
+.compose-form {
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+  overflow-y: auto;
+}
+
+.delta-pick {
+  margin: 0;
+  border: 1px solid #1a2740;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.delta-pick legend {
+  padding: 0 0.25rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.compose-form .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1100px) {
+  .studio-body,
+  .library-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .wizard-panel {
+    max-height: none;
+  }
+
+  .map-hint {
+    display: none;
+  }
+}

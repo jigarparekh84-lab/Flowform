@@ -1,28 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import './App.css'
+import { GreenfieldStudio } from './components/GreenfieldStudio'
 import { LeftNav, type NavItem } from './components/LeftNav'
 import { NetworkCanvas } from './components/NetworkCanvas'
 import { PlaceholderRoom } from './components/PlaceholderRoom'
+import { ScenariosLibrary } from './components/ScenariosLibrary'
 import { TopChrome } from './components/TopChrome'
-import {
-  HORIZON_OPTIONS,
-  SCENARIOS,
-} from './data/sampleNetwork'
+import { useFlowform } from './state/FlowformContext'
 
 function App() {
   const [room, setRoom] = useState<NavItem>('Network')
-  const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id)
-  const [horizon, setHorizon] =
-    useState<(typeof HORIZON_OPTIONS)[number]>('FY27')
-
-  const activeScenario = useMemo(
-    () => SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0],
-    [scenarioId],
-  )
-
-  function handleScenarioChange(id: string) {
-    setScenarioId(id)
-  }
+  const { activeScenario, horizon, setHorizon } = useFlowform()
 
   return (
     <div className="shell">
@@ -34,14 +22,12 @@ function App() {
       <div className="app-body">
         <LeftNav active={room} onSelect={setRoom} />
         <main className="main-stage" aria-label={room}>
-          {room === 'Network' ? (
-            <NetworkCanvas
-              activeScenarioId={scenarioId}
-              onScenarioChange={handleScenarioChange}
-            />
-          ) : (
-            <PlaceholderRoom room={room} />
-          )}
+          {room === 'Network' && <NetworkCanvas />}
+          {room === 'Greenfield' && <GreenfieldStudio />}
+          {room === 'Scenarios' && <ScenariosLibrary />}
+          {room !== 'Network' &&
+            room !== 'Greenfield' &&
+            room !== 'Scenarios' && <PlaceholderRoom room={room} />}
         </main>
       </div>
     </div>

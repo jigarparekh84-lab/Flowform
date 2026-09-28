@@ -9,14 +9,6 @@ const COPY: Partial<Record<NavItem, { title: string; body: string }>> = {
     title: 'Projects',
     body: 'Workspace home for network design projects. Open or create a footprint study — stub for MVP.',
   },
-  Greenfield: {
-    title: 'Greenfield',
-    body: 'Blank-slate footprint design: candidate sites, demand anchors, and service radii on an empty canvas. Same vocabulary as Network — mode stub.',
-  },
-  Scenarios: {
-    title: 'Scenarios',
-    body: 'Named what-ifs branched from the baseline. Manage branches here; switch them from the Network canvas footer.',
-  },
   Compare: {
     title: 'Compare',
     body: 'Side-by-side and overlay deltas for cost, service, CapEx, CO₂, and risk across scenarios. Report surface stub.',

@@ -8,26 +8,37 @@ import {
 } from '../data/sampleNetwork'
 
 type Props = {
-  selectedId: string | null
+  selectedIds: string[]
   selectedKind: 'node' | 'lane' | null
 }
 
-export function Inspector({ selectedId, selectedKind }: Props) {
+export function Inspector({ selectedIds, selectedKind }: Props) {
+  const primaryId = selectedIds[selectedIds.length - 1] ?? null
   let node: NetworkNode | undefined
   let lane: NetworkLane | undefined
 
-  if (selectedKind === 'node' && selectedId) {
-    node = NODES.find((n) => n.id === selectedId)
+  if (selectedKind === 'node' && primaryId) {
+    node = NODES.find((n) => n.id === primaryId)
   }
-  if (selectedKind === 'lane' && selectedId) {
-    lane = LANES.find((l) => l.id === selectedId)
+  if (selectedKind === 'lane' && primaryId) {
+    lane = LANES.find((l) => l.id === primaryId)
   }
+
+  const multi = selectedIds.length > 1
 
   return (
     <aside className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
       {!node && !lane && (
-        <p className="hint">Select a node or lane on the canvas.</p>
+        <p className="hint">
+          Select a node or lane on the canvas. Shift-click to multi-select.
+        </p>
+      )}
+      {multi && (
+        <p className="selection-badge">
+          {selectedIds.length} {selectedKind}
+          {selectedIds.length === 1 ? '' : 's'} selected
+        </p>
       )}
       {node && (
         <dl className="stub-fields">

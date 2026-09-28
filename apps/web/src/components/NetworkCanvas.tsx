@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
-import { LAYERS, SCENARIOS } from '../data/sampleNetwork'
+import { useState } from 'react'
+import { LAYERS } from '../data/sampleNetwork'
+import { useFlowform } from '../state/FlowformContext'
 import { BottomTables } from './BottomTables'
 import { Inspector } from './Inspector'
 import { KpiStrip } from './KpiStrip'
@@ -15,63 +16,51 @@ function initialLayers(): Record<string, boolean> {
   return out
 }
 
-type Props = {
-  activeScenarioId: string
-  onScenarioChange: (id: string) => void
-}
+export function NetworkCanvas() {
+  const {
+    activeScenario,
+    scenarios,
+    activeScenarioId,
+    setActiveScenarioId,
+    selection,
+    selectEntity,
+    clearSelection,
+  } = useFlowform()
 
-export function NetworkCanvas({ activeScenarioId, onScenarioChange }: Props) {
   const [layers, setLayers] = useState(initialLayers)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [selectedKind, setSelectedKind] = useState<'node' | 'lane' | null>(null)
-
-  const scenario = useMemo(
-    () => SCENARIOS.find((s) => s.id === activeScenarioId) ?? SCENARIOS[0],
-    [activeScenarioId],
-  )
 
   function toggleLayer(id: string) {
     setLayers((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
-  function selectNode(id: string) {
-    setSelectedId(id)
-    setSelectedKind('node')
-  }
-
-  function selectLane(id: string) {
-    setSelectedId(id)
-    setSelectedKind('lane')
-  }
-
-  function onMapSelect(id: string, kind: 'node' | 'lane') {
-    setSelectedId(id)
-    setSelectedKind(kind)
-  }
-
   return (
     <div className="network-canvas">
-      <KpiStrip kpis={scenario.kpis} />
+      <KpiStrip kpis={activeScenario.kpis} />
       <div className="canvas-body">
         <LayerRail layers={layers} onToggle={toggleLayer} />
         <div className="canvas-center">
           <NetworkMap
             layers={layers}
-            selectedId={selectedId}
-            onSelect={onMapSelect}
+            selectedIds={selection.ids}
+            onSelect={selectEntity}
+            onClear={clearSelection}
           />
           <BottomTables
-            selectedId={selectedId}
-            onSelectNode={selectNode}
-            onSelectLane={selectLane}
+            selectedIds={selection.ids}
+            selectedKind={selection.kind}
+            onSelectNode={(id, additive) => selectEntity(id, 'node', additive)}
+            onSelectLane={(id, additive) => selectEntity(id, 'lane', additive)}
           />
         </div>
-        <Inspector selectedId={selectedId} selectedKind={selectedKind} />
+        <Inspector
+          selectedIds={selection.ids}
+          selectedKind={selection.kind}
+        />
       </div>
       <ScenarioFooter
-        scenarios={SCENARIOS}
-        activeId={scenario.id}
-        onSelect={onScenarioChange}
+        scenarios={scenarios}
+        activeId={activeScenarioId}
+        onSelect={setActiveScenarioId}
       />
     </div>
   )
