@@ -79,6 +79,15 @@ import {
   type SafetyStockFormula,
 } from '../data/inventoryPolicy'
 import {
+  defaultProductMix,
+  mergeProductMix,
+  switchProductCatalog,
+  type FacilityProductCap,
+  type ProductCatalogId,
+  type ProductGroupId,
+  type ProductMixState,
+} from '../data/productGroups'
+import {
   resilienceRiskLabel,
   scoreResilience,
   type ResilienceResult,
@@ -147,6 +156,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     theme,
     inventoryPolicies: defaultInventoryPolicies(net),
     comments: [],
+    productMix: defaultProductMix(net),
   }
 }
 
@@ -315,6 +325,21 @@ type FlowformContextValue = {
     net: import('../data/csvParsers').UploadedNetwork,
     draftScenario?: Scenario,
   ) => void
+
+  /** Multi-commodity / product groups. */
+  productMix: ProductMixState
+  setProductCatalog: (catalog: ProductCatalogId) => void
+  setProductFilter: (groupId: ProductGroupId | null) => void
+  updateDemandProductShares: (
+    nodeId: string,
+    shares: Record<ProductGroupId, number>,
+  ) => void
+  updateLaneProductGroups: (laneId: string, groupIds: ProductGroupId[]) => void
+  updateFacilityProductCap: (
+    nodeId: string,
+    patch: Partial<FacilityProductCap>,
+  ) => void
+  resetProductMix: () => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -374,6 +399,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
   const [comments, setComments] = useState<ScenarioComment[]>(
     () => boot.snap.comments ?? [],
   )
+  const [productMix, setProductMix] = useState<ProductMixState>(
+    () => mergeProductMix(boot.snap.productMix, boot.snap.network),
+  )
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -414,6 +442,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       theme,
       inventoryPolicies,
       comments,
+      productMix,
     }
   }, [
     horizon,
@@ -428,6 +457,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     lastCandidates,
     inventoryPolicies,
     comments,
+    productMix,
   ])
 
   const persistNow = useCallback(() => {
@@ -469,6 +499,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     lastCandidates,
     inventoryPolicies,
     comments,
+    productMix,
   ])
 
   const applySnapshot = useCallback((snap: ProjectSnapshot) => {
@@ -487,6 +518,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       mergeInventoryPolicies(snap.inventoryPolicies, snap.network),
     )
     setComments(snap.comments ?? [])
+    setProductMix(mergeProductMix(snap.productMix, snap.network))
     setSelection({ ids: [], kind: null })
     setOptimizeStatus({ phase: 'idle' })
     if (snap.theme === 'light' || snap.theme === 'dark') {
@@ -735,6 +767,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setNetwork(net)
     setConstraints((prev) => mergeConstraints(prev, net))
     setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+    setProductMix((prev) => mergeProductMix(prev, net))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -743,6 +776,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setNetwork(sample)
     setConstraints(defaultConstraintsFromNetwork(sample))
     setInventoryPolicies(defaultInventoryPolicies(sample))
+    setProductMix(defaultProductMix(sample))
     setSelection({ ids: [], kind: null })
   }, [])
 
@@ -1243,6 +1277,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setNetwork(net)
       setConstraints((prev) => mergeConstraints(prev, net))
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+      setProductMix((prev) => mergeProductMix(prev, net))
       setSelection({ ids: [], kind: null })
       if (draftScenario) {
         setScenarios((prev) => {
@@ -1263,6 +1298,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       setNetwork(net)
       setConstraints((prev) => mergeConstraints(prev, net))
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+      setProductMix((prev) => mergeProductMix(prev, net))
       setSelection({ ids: [], kind: null })
       if (draftScenario) {
         setScenarios((prev) => {
@@ -1274,6 +1310,61 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+
+  const setProductCatalog = useCallback(
+    (catalog: ProductCatalogId) => {
+      setProductMix(switchProductCatalog(network, catalog))
+    },
+    [network],
+  )
+
+  const setProductFilter = useCallback((groupId: ProductGroupId | null) => {
+    setProductMix((prev) => ({ ...prev, filterGroupId: groupId }))
+  }, [])
+
+  const updateDemandProductShares = useCallback(
+    (nodeId: string, shares: Record<ProductGroupId, number>) => {
+      setProductMix((prev) => ({
+        ...prev,
+        demandMix: prev.demandMix.map((d) =>
+          d.nodeId === nodeId ? { ...d, shares: { ...shares } } : d,
+        ),
+      }))
+    },
+    [],
+  )
+
+  const updateLaneProductGroups = useCallback(
+    (laneId: string, groupIds: ProductGroupId[]) => {
+      setProductMix((prev) => {
+        const exists = prev.laneTags.some((l) => l.laneId === laneId)
+        const laneTags = exists
+          ? prev.laneTags.map((l) =>
+              l.laneId === laneId ? { ...l, groupIds: [...groupIds] } : l,
+            )
+          : [...prev.laneTags, { laneId, groupIds: [...groupIds] }]
+        return { ...prev, laneTags }
+      })
+    },
+    [],
+  )
+
+  const updateFacilityProductCap = useCallback(
+    (nodeId: string, patch: Partial<FacilityProductCap>) => {
+      setProductMix((prev) => ({
+        ...prev,
+        facilityCaps: prev.facilityCaps.map((f) =>
+          f.nodeId === nodeId ? { ...f, ...patch } : f,
+        ),
+      }))
+    },
+    [],
+  )
+
+  const resetProductMix = useCallback(() => {
+    setProductMix(defaultProductMix(network, productMix.catalog))
+  }, [network, productMix.catalog])
 
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
     setBrief((prev) => ({ ...prev, ...patch }))
@@ -1352,6 +1443,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       shareProject,
       applyMergedNetwork,
       applyHubSpokeNetwork,
+      productMix,
+      setProductCatalog,
+      setProductFilter,
+      updateDemandProductShares,
+      updateLaneProductGroups,
+      updateFacilityProductCap,
+      resetProductMix,
     }),
     [
       horizon,
@@ -1409,6 +1507,13 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       shareProject,
       applyMergedNetwork,
       applyHubSpokeNetwork,
+      productMix,
+      setProductCatalog,
+      setProductFilter,
+      updateDemandProductShares,
+      updateLaneProductGroups,
+      updateFacilityProductCap,
+      resetProductMix,
     ],
   )
 

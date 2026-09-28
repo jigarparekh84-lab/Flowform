@@ -7,6 +7,7 @@ import type { ScenarioComment } from './collaboration'
 import type { UploadedNetwork } from './csvParsers'
 import type { EmissionFactor } from './emissions'
 import type { InventoryPolicyState } from './inventoryPolicy'
+import type { ProductMixState } from './productGroups'
 import type {
   BriefState,
   CandidateSite,
@@ -48,6 +49,8 @@ export type ProjectSnapshot = {
   inventoryPolicies?: InventoryPolicyState
   /** Per-scenario collaboration comments (stub). */
   comments?: ScenarioComment[]
+  /** Multi-commodity / product groups on the network. */
+  productMix?: ProductMixState
 }
 
 export type ProjectExportFile = {

@@ -28,6 +28,10 @@ import {
   type Scenario,
   type WaterfallStep,
 } from '../data/sampleNetwork'
+import {
+  catalogLabel,
+  rollupByProductGroup,
+} from '../data/productGroups'
 import { useFlowform } from '../state/FlowformContext'
 
 type ViewMode =
@@ -39,6 +43,7 @@ type ViewMode =
   | 'inventory'
   | 'resilience'
   | 'modes'
+  | 'products'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -150,6 +155,8 @@ export function CompareResults() {
     applyInventoryToActive,
     runResilience,
     emissionFactors,
+    productMix,
+    setProductFilter,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -314,6 +321,7 @@ export function CompareResults() {
               ['inventory', 'Inventory'],
               ['resilience', 'Resilience'],
               ['modes', 'Mode mix'],
+              ['products', 'Products'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -405,6 +413,14 @@ export function CompareResults() {
         )}
         {view === 'modes' && (
           <ModeMixView rows={modeMix} />
+        )}
+        {view === 'products' && (
+          <ProductsView
+            productMix={productMix}
+            network={network}
+            kpis={focus?.kpis ?? activeScenario.kpis}
+            onFilter={setProductFilter}
+          />
         )}
       </div>
 
@@ -1603,6 +1619,138 @@ function ResilienceView({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+
+function ProductsView({
+  productMix,
+  network,
+  kpis,
+  onFilter,
+}: {
+  productMix: import('../data/productGroups').ProductMixState
+  network: import('../data/csvParsers').UploadedNetwork
+  kpis: KpiSnapshot
+  onFilter: (id: string | null) => void
+}) {
+  const rows = rollupByProductGroup(productMix, network, kpis)
+  return (
+    <div className="compare-modes-layout">
+      <section className="library-card" aria-label="Product groups">
+        <h2>Product / commodity mix</h2>
+        <p className="muted tiny">
+          Catalog <strong>{catalogLabel(productMix.catalog)}</strong>. Demand
+          volume and KPI cost / CO₂ allocated by demand share. Filter the
+          Network map from here or the Inspector.
+        </p>
+        <div className="product-chip-row wrap" style={{ marginBottom: '0.75rem' }}>
+          <button
+            type="button"
+            className={
+              productMix.filterGroupId == null ? 'product-chip on' : 'product-chip'
+            }
+            onClick={() => onFilter(null)}
+          >
+            All
+          </button>
+          {productMix.groups.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className={
+                productMix.filterGroupId === g.id
+                  ? 'product-chip on'
+                  : 'product-chip'
+              }
+              style={{ ['--pg-color' as string]: g.color }}
+              onClick={() =>
+                onFilter(
+                  productMix.filterGroupId === g.id ? null : g.id,
+                )
+              }
+            >
+              <span className="product-chip-dot" aria-hidden />
+              {g.code}
+            </button>
+          ))}
+        </div>
+        <div className="modes-bars" aria-hidden>
+          {rows.map((r) => (
+            <div key={r.groupId} className="mode-bar-row">
+              <span className="mode-bar-label">{r.code}</span>
+              <div className="mode-bar-track">
+                <div
+                  className="mode-bar-fill"
+                  style={{
+                    width: `${Math.max(2, r.demandSharePct)}%`,
+                    background: r.color,
+                  }}
+                />
+              </div>
+              <span className="mode-bar-pct">{r.demandSharePct}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="table-scroll">
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Demand u</th>
+                <th>Share</th>
+                <th>Cost $M</th>
+                <th>CO₂ kt</th>
+                <th>Service</th>
+                <th>Capable sites</th>
+                <th>Lanes</th>
+                <th>Cap units</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr
+                  key={r.groupId}
+                  className={
+                    productMix.filterGroupId === r.groupId ? 'selected' : ''
+                  }
+                  onClick={() =>
+                    onFilter(
+                      productMix.filterGroupId === r.groupId
+                        ? null
+                        : r.groupId,
+                    )
+                  }
+                  style={{ cursor: 'pointer' }}
+                >
+                  <td>
+                    <span
+                      className="product-chip-dot inline"
+                      style={{ background: r.color }}
+                      aria-hidden
+                    />{' '}
+                    {r.name}{' '}
+                    <span className="mono muted">({r.code})</span>
+                  </td>
+                  <td>{r.demandVolume.toLocaleString()}</td>
+                  <td>{r.demandSharePct}%</td>
+                  <td>${r.costM.toFixed(1)}M</td>
+                  <td>{r.co2Kt.toFixed(1)}</td>
+                  <td>{r.servicePct.toFixed(1)}%</td>
+                  <td>{r.capableFacilities}</td>
+                  <td>{r.taggedLanes}</td>
+                  <td>{r.capacityUnits.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="hint">
+          Click a row to filter Network by that product group. Edit mix in Data
+          room or Network Inspector.
+        </p>
+      </section>
     </div>
   )
 }

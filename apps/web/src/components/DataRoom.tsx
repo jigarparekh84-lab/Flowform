@@ -10,6 +10,13 @@ import {
   type ParseLanesResult,
   type ParseSitesResult,
 } from '../data/csvParsers'
+import {
+  catalogLabel,
+  demandSharesForNode,
+  formatGroupCodes,
+  laneGroups,
+  type ProductCatalogId,
+} from '../data/productGroups'
 import { useFlowform } from '../state/FlowformContext'
 
 type Draft = {
@@ -28,6 +35,11 @@ export function DataRoom() {
     emissionFactors,
     updateEmissionFactor,
     computedCo2Kt,
+    productMix,
+    setProductCatalog,
+    updateDemandProductShares,
+    updateFacilityProductCap,
+    resetProductMix,
   } = useFlowform()
   const [draft, setDraft] = useState<Draft>({ fileNames: {} })
   const [status, setStatus] = useState<string | null>(null)
@@ -218,6 +230,191 @@ export function DataRoom() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="library-card" aria-label="Product mix">
+            <div className="library-card-head">
+              <h2>Product / commodity groups</h2>
+              <div className="product-chip-row">
+                <button
+                  type="button"
+                  className="btn ghost btn-tiny"
+                  onClick={() => resetProductMix()}
+                >
+                  Reset mix
+                </button>
+              </div>
+            </div>
+            <p className="studio-sub" style={{ marginTop: 0 }}>
+              Multi-commodity tags for demand, lanes, and facility capability.
+              Catalog:{' '}
+              <strong>{catalogLabel(productMix.catalog)}</strong>. Edit shares
+              and capabilities here or in the Network Inspector.
+            </p>
+            <label className="field" style={{ maxWidth: '20rem' }}>
+              <span>Catalog</span>
+              <select
+                value={productMix.catalog}
+                onChange={(e) =>
+                  setProductCatalog(e.target.value as ProductCatalogId)
+                }
+              >
+                <option value="temp-handling">Ambient / Chilled / Hazmat</option>
+                <option value="mfg-stage">Finished / WIP / RM</option>
+              </select>
+            </label>
+
+            <div className="product-group-cards">
+              {productMix.groups.map((g) => (
+                <div key={g.id} className="product-group-card">
+                  <span
+                    className="product-chip-dot"
+                    style={{ background: g.color }}
+                    aria-hidden
+                  />
+                  <div>
+                    <strong>
+                      {g.name}{' '}
+                      <span className="mono muted">({g.code})</span>
+                    </strong>
+                    <p className="muted tiny">{g.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <h3 className="data-subhead">Demand mix by node</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Demand node</th>
+                    {productMix.groups.map((g) => (
+                      <th key={g.id}>{g.code} %</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {network.nodes
+                    .filter((n) => n.kind === 'demand')
+                    .map((n) => {
+                      const shares = demandSharesForNode(productMix, n.id)
+                      return (
+                        <tr key={n.id}>
+                          <td>{n.name}</td>
+                          {productMix.groups.map((g) => (
+                            <td key={g.id}>
+                              <input
+                                className="factor-input mono"
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={shares[g.id] ?? 0}
+                                onChange={(e) =>
+                                  updateDemandProductShares(n.id, {
+                                    ...shares,
+                                    [g.id]: Number(e.target.value),
+                                  })
+                                }
+                                aria-label={`${n.name} ${g.code} share`}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="data-subhead">Facility capabilities</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Facility</th>
+                    <th>Capable</th>
+                    {productMix.groups.map((g) => (
+                      <th key={g.id}>{g.code} cap</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {productMix.facilityCaps.map((f) => {
+                    const node = network.nodes.find((n) => n.id === f.nodeId)
+                    return (
+                      <tr key={f.nodeId}>
+                        <td>{node?.name ?? f.nodeId}</td>
+                        <td className="tiny">
+                          {formatGroupCodes(productMix, f.capableGroupIds)}
+                        </td>
+                        {productMix.groups.map((g) => (
+                          <td key={g.id}>
+                            <input
+                              className="factor-input mono"
+                              type="number"
+                              min={0}
+                              step={100}
+                              value={f.capacityByGroup[g.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Number(e.target.value)
+                                const capable = new Set(f.capableGroupIds)
+                                if (val > 0) capable.add(g.id)
+                                else capable.delete(g.id)
+                                updateFacilityProductCap(f.nodeId, {
+                                  capableGroupIds: [...capable],
+                                  capacityByGroup: {
+                                    ...f.capacityByGroup,
+                                    [g.id]: val,
+                                  },
+                                })
+                              }}
+                              aria-label={`${node?.name ?? f.nodeId} ${g.code} capacity`}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 className="data-subhead">Lane product tags (sample)</h3>
+            <div className="table-scroll data-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lane</th>
+                    <th>From → To</th>
+                    <th>Products</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {network.lanes.slice(0, 12).map((l) => {
+                    const from = network.nodes.find((n) => n.id === l.from)
+                    const to = network.nodes.find((n) => n.id === l.to)
+                    return (
+                      <tr key={l.id}>
+                        <td className="mono">{l.id}</td>
+                        <td>
+                          {from?.name ?? l.from} → {to?.name ?? l.to}
+                        </td>
+                        <td className="tiny">
+                          {formatGroupCodes(
+                            productMix,
+                            laneGroups(productMix, l.id),
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="hint">
+              Toggle lane groups on a selected lane in the Network Inspector.
+            </p>
           </section>
 
           <section className="library-card" aria-label="CO2 emission factors">

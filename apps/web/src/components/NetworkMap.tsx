@@ -15,6 +15,11 @@ import {
   type NetworkNode,
   type NodeKind,
 } from '../data/sampleNetwork'
+import {
+  laneMatchesProductFilter,
+  nodeMatchesProductFilter,
+  type ProductMixState,
+} from '../data/productGroups'
 import { useFlowform } from '../state/FlowformContext'
 import { useTheme } from '../state/theme'
 
@@ -164,7 +169,7 @@ function MapLibreCanvas({
   onClear,
   onFail,
 }: Props & { onFail: (reason: string) => void }) {
-  const { nodes, lanes, network, constraints } = useFlowform()
+  const { nodes, lanes, network, constraints, productMix } = useFlowform()
   const { theme } = useTheme()
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -283,6 +288,7 @@ function MapLibreCanvas({
         ),
         source: network.source,
         utilById,
+        productMix,
       })
     }
 
@@ -292,7 +298,7 @@ function MapLibreCanvas({
       map.once('styledata', apply)
       map.once('load', apply)
     }
-  }, [nodes, lanes, layers, selectedIds, constraints, network, theme])
+  }, [nodes, lanes, layers, selectedIds, constraints, network, theme, productMix])
 
   return <div ref={containerRef} className="maplibre-root" role="img" aria-label="Network map" />
 }
@@ -307,18 +313,29 @@ function syncNetworkLayers(
     statusById: Map<string, string>
     source: string
     utilById?: Map<string, { color: string; label: string }> | null
+    productMix: ProductMixState
   },
 ) {
-  const { nodes, lanes, layers, selectedIds, statusById, utilById } = args
+  const { nodes, lanes, layers, selectedIds, statusById, utilById, productMix } = args
   const selectedSet = new Set(selectedIds)
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
 
-  const visibleNodes = nodes.filter((n) => visibleNode(n, layers))
+  const visibleNodes = nodes.filter(
+    (n) => visibleNode(n, layers) && nodeMatchesProductFilter(n, productMix),
+  )
   const visibleLanes = layers.lanes
     ? lanes.filter((l) => {
         const a = nodeMap.get(l.from)
         const b = nodeMap.get(l.to)
-        return a && b && visibleNode(a, layers) && visibleNode(b, layers)
+        return (
+          a &&
+          b &&
+          visibleNode(a, layers) &&
+          visibleNode(b, layers) &&
+          laneMatchesProductFilter(l, productMix) &&
+          nodeMatchesProductFilter(a, productMix) &&
+          nodeMatchesProductFilter(b, productMix)
+        )
       })
     : []
 
@@ -495,7 +512,7 @@ function syncNetworkLayers(
 }
 
 function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
-  const { nodes, lanes, network, constraints } = useFlowform()
+  const { nodes, lanes, network, constraints, productMix } = useFlowform()
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
   const selectedSet = new Set(selectedIds)
   const statusById = new Map(
@@ -509,7 +526,15 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
     ? lanes.filter((l) => {
         const a = nodeMap.get(l.from)
         const b = nodeMap.get(l.to)
-        return a && b && visibleNode(a, layers) && visibleNode(b, layers)
+        return (
+          a &&
+          b &&
+          visibleNode(a, layers) &&
+          visibleNode(b, layers) &&
+          laneMatchesProductFilter(l, productMix) &&
+          nodeMatchesProductFilter(a, productMix) &&
+          nodeMatchesProductFilter(b, productMix)
+        )
       })
     : []
 
@@ -575,7 +600,7 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
         )
       })}
 
-      {nodes.filter((n) => visibleNode(n, layers)).map((node) => {
+      {nodes.filter((n) => visibleNode(n, layers) && nodeMatchesProductFilter(n, productMix)).map((node) => {
         const selected = selectedSet.has(node.id)
         const util = utilById?.get(node.id)
         const isFacility =

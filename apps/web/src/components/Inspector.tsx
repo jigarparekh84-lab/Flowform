@@ -1,4 +1,11 @@
 import { TRANSPORT_MODES, normalizeMode } from '../data/modeMix'
+import {
+  demandSharesForNode,
+  facilityCapFor,
+  formatGroupCodes,
+  laneGroups,
+  type ProductGroupId,
+} from '../data/productGroups'
 import { kindLabel, type FacilityStatus } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
@@ -16,6 +23,11 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
     updateFacilityConstraint,
     updateConstraintGlobals,
     updateLaneMode,
+    productMix,
+    setProductFilter,
+    updateDemandProductShares,
+    updateLaneProductGroups,
+    updateFacilityProductCap,
   } = useFlowform()
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null
@@ -35,10 +47,78 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
   const isFacility =
     node &&
     (node.kind === 'dc' || node.kind === 'plant' || node.kind === 'candidate')
+  const facCap = node ? facilityCapFor(productMix, node.id) : undefined
+  const demandShares = node ? demandSharesForNode(productMix, node.id) : null
+  const laneGroupIds = lane ? laneGroups(productMix, lane.id) : []
+
+  function toggleLaneGroup(gid: ProductGroupId) {
+    if (!lane) return
+    const has = laneGroupIds.includes(gid)
+    const next = has
+      ? laneGroupIds.filter((x) => x !== gid)
+      : [...laneGroupIds, gid]
+    updateLaneProductGroups(lane.id, next.length === 0 ? productMix.groups.map((g) => g.id) : next)
+  }
+
+  function toggleFacilityCapable(gid: ProductGroupId) {
+    if (!node || !facCap) return
+    const has = facCap.capableGroupIds.includes(gid)
+    const capableGroupIds = has
+      ? facCap.capableGroupIds.filter((x) => x !== gid)
+      : [...facCap.capableGroupIds, gid]
+    const capacityByGroup = { ...facCap.capacityByGroup }
+    if (!has && !(capacityByGroup[gid] > 0)) {
+      capacityByGroup[gid] = 5000
+    }
+    if (has) capacityByGroup[gid] = 0
+    updateFacilityProductCap(node.id, { capableGroupIds, capacityByGroup })
+  }
 
   return (
     <aside className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
+
+      <div className="product-filter-block">
+        <h3>Product group filter</h3>
+        <div className="product-chip-row" role="group" aria-label="Filter by product group">
+          <button
+            type="button"
+            className={
+              productMix.filterGroupId == null
+                ? 'product-chip on'
+                : 'product-chip'
+            }
+            onClick={() => setProductFilter(null)}
+          >
+            All
+          </button>
+          {productMix.groups.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className={
+                productMix.filterGroupId === g.id
+                  ? 'product-chip on'
+                  : 'product-chip'
+              }
+              style={{ ['--pg-color' as string]: g.color }}
+              onClick={() =>
+                setProductFilter(
+                  productMix.filterGroupId === g.id ? null : g.id,
+                )
+              }
+              title={g.description}
+            >
+              <span className="product-chip-dot" aria-hidden />
+              {g.code}
+            </button>
+          ))}
+        </div>
+        <p className="hint">
+          Map and tables dim entities outside the selected commodity group.
+        </p>
+      </div>
+
       {!node && !lane && (
         <>
           <p className="hint">
@@ -82,6 +162,82 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
               <dd className="mono">{node.id}</dd>
             </div>
           </dl>
+          {node.kind === 'demand' && demandShares && (
+            <div className="constraint-edit product-edit">
+              <h3>Demand product mix</h3>
+              <p className="hint">Volume share % by product group (≈100).</p>
+              {productMix.groups.map((g) => (
+                <label key={g.id} className="field">
+                  <span>
+                    <span
+                      className="product-chip-dot inline"
+                      style={{ background: g.color }}
+                      aria-hidden
+                    />{' '}
+                    {g.name} ({g.code})
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={demandShares[g.id] ?? 0}
+                    onChange={(e) => {
+                      const next = {
+                        ...demandShares,
+                        [g.id]: Number(e.target.value),
+                      }
+                      updateDemandProductShares(node.id, next)
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          {isFacility && facCap && (
+            <div className="constraint-edit product-edit">
+              <h3>Product capabilities</h3>
+              <ul className="product-capable-list">
+                {productMix.groups.map((g) => {
+                  const on = facCap.capableGroupIds.includes(g.id)
+                  return (
+                    <li key={g.id}>
+                      <label className="layer-row">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() => toggleFacilityCapable(g.id)}
+                        />
+                        <span
+                          className="product-chip-dot inline"
+                          style={{ background: g.color }}
+                          aria-hidden
+                        />
+                        <span>{g.name}</span>
+                      </label>
+                      <input
+                        className="factor-input mono"
+                        type="number"
+                        min={0}
+                        step={100}
+                        disabled={!on}
+                        value={facCap.capacityByGroup[g.id] ?? 0}
+                        onChange={(e) =>
+                          updateFacilityProductCap(node.id, {
+                            capacityByGroup: {
+                              ...facCap.capacityByGroup,
+                              [g.id]: Number(e.target.value),
+                            },
+                          })
+                        }
+                        aria-label={`${g.name} capacity`}
+                      />
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
           {isFacility && facility && (
             <div className="constraint-edit">
               <h3>Candidates &amp; constraints</h3>
@@ -167,7 +323,32 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
               <dt>CO₂</dt>
               <dd>{lane.co2Kg} kg/u</dd>
             </div>
+            <div>
+              <dt>Products</dt>
+              <dd>{formatGroupCodes(productMix, laneGroupIds)}</dd>
+            </div>
           </dl>
+          <div className="constraint-edit product-edit">
+            <h3>Lane product groups</h3>
+            <div className="product-chip-row wrap">
+              {productMix.groups.map((g) => {
+                const on = laneGroupIds.includes(g.id)
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    className={on ? 'product-chip on' : 'product-chip'}
+                    style={{ ['--pg-color' as string]: g.color }}
+                    onClick={() => toggleLaneGroup(g.id)}
+                  >
+                    <span className="product-chip-dot" aria-hidden />
+                    {g.code}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="hint">Toggle which commodities this lane may carry.</p>
+          </div>
           <div className="constraint-edit">
             <h3>Transport mode</h3>
             <label className="field">

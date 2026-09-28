@@ -1,4 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import {
+  demandSharesForNode,
+  facilityCapFor,
+  formatGroupCodes,
+  laneGroups,
+  laneMatchesProductFilter,
+  nodeMatchesProductFilter,
+} from '../data/productGroups'
 import { kindLabel } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
@@ -17,11 +25,36 @@ export function BottomTables({
   onSelectNode,
   onSelectLane,
 }: Props) {
-  const { nodes, lanes, nodeById, constraints } = useFlowform()
+  const { nodes, lanes, nodeById, constraints, productMix } = useFlowform()
   const [tab, setTab] = useState<Tab>('facilities')
   const selectedSet = new Set(selectedIds)
   const statusById = new Map(
     constraints.facilities.map((f) => [f.nodeId, f.status]),
+  )
+
+  const visibleNodes = useMemo(
+    () => nodes.filter((n) => nodeMatchesProductFilter(n, productMix)),
+    [nodes, productMix],
+  )
+  const visibleLanes = useMemo(
+    () =>
+      lanes.filter(
+        (l) =>
+          laneMatchesProductFilter(l, productMix) &&
+          nodeMatchesProductFilter(
+            nodes.find((n) => n.id === l.from) ?? {
+              id: l.from,
+              name: l.from,
+              kind: 'dc',
+              region: '',
+              capacity: '',
+              x: 0,
+              y: 0,
+            },
+            productMix,
+          ),
+      ),
+    [lanes, nodes, productMix],
   )
 
   return (
@@ -45,6 +78,13 @@ export function BottomTables({
         >
           Lanes
         </button>
+        {productMix.filterGroupId && (
+          <span className="table-filter-hint">
+            Filtered ·{' '}
+            {productMix.groups.find((g) => g.id === productMix.filterGroupId)
+              ?.code ?? 'group'}
+          </span>
+        )}
       </div>
 
       <div className="table-scroll">
@@ -57,13 +97,27 @@ export function BottomTables({
                 <th>Status</th>
                 <th>Region</th>
                 <th>Capacity</th>
+                <th>Products</th>
               </tr>
             </thead>
             <tbody>
-              {nodes.map((n) => {
+              {visibleNodes.map((n) => {
                 const selected =
                   selectedKind === 'node' && selectedSet.has(n.id)
                 const status = statusById.get(n.id)
+                let products = '—'
+                if (n.kind === 'demand') {
+                  const shares = demandSharesForNode(productMix, n.id)
+                  products = productMix.groups
+                    .filter((g) => (shares[g.id] ?? 0) > 0)
+                    .map((g) => `${g.code} ${shares[g.id]}%`)
+                    .join(' · ')
+                } else {
+                  const cap = facilityCapFor(productMix, n.id)
+                  if (cap) {
+                    products = formatGroupCodes(productMix, cap.capableGroupIds)
+                  }
+                }
                 return (
                   <tr
                     key={n.id}
@@ -75,6 +129,7 @@ export function BottomTables({
                     <td>{status ?? '—'}</td>
                     <td>{n.region}</td>
                     <td>{n.capacity}</td>
+                    <td className="tiny">{products}</td>
                   </tr>
                 )
               })}
@@ -90,10 +145,11 @@ export function BottomTables({
                 <th>Cost/u</th>
                 <th>Lead</th>
                 <th>CO₂</th>
+                <th>Products</th>
               </tr>
             </thead>
             <tbody>
-              {lanes.map((l) => {
+              {visibleLanes.map((l) => {
                 const selected =
                   selectedKind === 'lane' && selectedSet.has(l.id)
                 return (
@@ -108,6 +164,9 @@ export function BottomTables({
                     <td>${l.costPerUnit.toFixed(2)}</td>
                     <td>{l.leadDays}d</td>
                     <td>{l.co2Kg} kg</td>
+                    <td className="tiny">
+                      {formatGroupCodes(productMix, laneGroups(productMix, l.id))}
+                    </td>
                   </tr>
                 )
               })}
