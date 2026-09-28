@@ -21,8 +21,14 @@ export function TopChrome({
   theme,
   onToggleTheme,
 }: Props) {
-  const { optimizeStatus, runOptimize, projectName } = useFlowform()
+  const { optimizeStatus, runOptimize, projectName, shareProject } = useFlowform()
   const running = optimizeStatus.phase === 'running'
+
+  async function onShare() {
+    const result = await shareProject('both')
+    // Lightweight feedback via title on next hover; also alert for stub clarity
+    window.alert(result.message + (result.deepLink ? `\n${result.deepLink}` : ''))
+  }
 
   return (
     <header className="top-chrome">
@@ -120,6 +126,14 @@ export function TopChrome({
           title="Calls optimize API (PuLP MIP) when available; else client heuristic v1"
         >
           {running ? 'Running…' : 'Run'}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => void onShare()}
+          title="Copy read-only deep-link stub and download share pack"
+        >
+          Share
         </button>
         <button type="button" className="btn primary" onClick={onCompare}>
           Compare

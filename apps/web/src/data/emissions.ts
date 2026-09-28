@@ -46,8 +46,20 @@ export function factorForMode(
   const hit = factors.find((f) => f.mode.toLowerCase() === key)
   if (hit) return hit.kgPerTonMile
   // aliases
-  if (key.includes('truck') || key.includes('tl') || key.includes('ltl')) {
+  if (
+    key === 'road' ||
+    key.includes('truck') ||
+    key.includes('tl') ||
+    key.includes('ltl') ||
+    key.includes('highway')
+  ) {
     return factors.find((f) => f.mode === 'Truck')?.kgPerTonMile ?? 0.161
+  }
+  if (key.includes('ocean') || key.includes('sea')) {
+    return factors.find((f) => f.mode === 'Ocean')?.kgPerTonMile ?? 0.01
+  }
+  if (key.includes('air')) {
+    return factors.find((f) => f.mode === 'Air')?.kgPerTonMile ?? 0.98
   }
   if (key.includes('rail')) {
     return factors.find((f) => f.mode === 'Rail')?.kgPerTonMile ?? 0.022

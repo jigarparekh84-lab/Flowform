@@ -1,3 +1,4 @@
+import { TRANSPORT_MODES, normalizeMode } from '../data/modeMix'
 import { kindLabel, type FacilityStatus } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 
@@ -14,6 +15,7 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
     constraints,
     updateFacilityConstraint,
     updateConstraintGlobals,
+    updateLaneMode,
   } = useFlowform()
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null
@@ -139,36 +141,54 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
         </>
       )}
       {lane && (
-        <dl className="stub-fields">
-          <div>
-            <dt>Lane</dt>
-            <dd className="mono">{lane.id}</dd>
+        <>
+          <dl className="stub-fields">
+            <div>
+              <dt>Lane</dt>
+              <dd className="mono">{lane.id}</dd>
+            </div>
+            <div>
+              <dt>From</dt>
+              <dd>{nodeById(lane.from)?.name ?? lane.from}</dd>
+            </div>
+            <div>
+              <dt>To</dt>
+              <dd>{nodeById(lane.to)?.name ?? lane.to}</dd>
+            </div>
+            <div>
+              <dt>Cost / unit</dt>
+              <dd>${lane.costPerUnit.toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt>Lead time</dt>
+              <dd>{lane.leadDays}d</dd>
+            </div>
+            <div>
+              <dt>CO₂</dt>
+              <dd>{lane.co2Kg} kg/u</dd>
+            </div>
+          </dl>
+          <div className="constraint-edit">
+            <h3>Transport mode</h3>
+            <label className="field">
+              <span>Mode (road / rail / air / ocean)</span>
+              <select
+                value={normalizeMode(lane.mode)}
+                onChange={(e) => updateLaneMode(lane.id, e.target.value)}
+              >
+                {TRANSPORT_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="hint">
+              Changing mode rescales cost via mode relatives and refreshes CO₂
+              from planning emission factors.
+            </p>
           </div>
-          <div>
-            <dt>From</dt>
-            <dd>{nodeById(lane.from)?.name ?? lane.from}</dd>
-          </div>
-          <div>
-            <dt>To</dt>
-            <dd>{nodeById(lane.to)?.name ?? lane.to}</dd>
-          </div>
-          <div>
-            <dt>Mode</dt>
-            <dd>{lane.mode}</dd>
-          </div>
-          <div>
-            <dt>Cost / unit</dt>
-            <dd>${lane.costPerUnit.toFixed(2)}</dd>
-          </div>
-          <div>
-            <dt>Lead time</dt>
-            <dd>{lane.leadDays}d</dd>
-          </div>
-          <div>
-            <dt>CO₂</dt>
-            <dd>{lane.co2Kg} kg/u</dd>
-          </div>
-        </dl>
+        </>
       )}
     </aside>
   )

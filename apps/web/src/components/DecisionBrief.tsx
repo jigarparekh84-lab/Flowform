@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { CommentsPanel } from './CommentsPanel'
 import {
   buildBriefHtml,
   buildBriefMarkdown,
@@ -226,6 +227,10 @@ export function DecisionBrief({ onHandoff }: Props) {
               />
             </label>
           </section>
+
+          <CommentsPanel
+            scenarioId={brief.recommendedScenarioId ?? recommended?.id}
+          />
         </div>
       </div>
     </div>

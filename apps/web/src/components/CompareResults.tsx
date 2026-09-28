@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { CommentsPanel } from './CommentsPanel'
 import {
   computeCostToServe,
   ctsByRegion,
   type CtsRow,
 } from '../data/costToServe'
+import { summarizeModeMix } from '../data/modeMix'
 import {
   computeInventoryRollup,
   formatInvDollars,
@@ -36,6 +38,7 @@ type ViewMode =
   | 'des'
   | 'inventory'
   | 'resilience'
+  | 'modes'
 
 const KPI_ROWS: { key: keyof KpiSnapshot; label: string }[] = [
   { key: 'cost', label: 'Cost' },
@@ -146,6 +149,7 @@ export function CompareResults() {
     resetInventoryPolicies,
     applyInventoryToActive,
     runResilience,
+    emissionFactors,
   } = useFlowform()
 
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -226,6 +230,16 @@ export function CompareResults() {
     })
   }, [focus, nodes, lanes, network.demandVolume])
 
+  const modeMix = useMemo(
+    () =>
+      summarizeModeMix(
+        lanes.length ? lanes : LANES,
+        nodes.length ? nodes : NODES,
+        emissionFactors,
+      ),
+    [lanes, nodes, emissionFactors],
+  )
+
   return (
     <div className="studio-room compare-results">
       <header className="studio-header compare-header">
@@ -234,8 +248,8 @@ export function CompareResults() {
           <h1>Results</h1>
           <p className="studio-sub">
             Multi-scenario KPI matrix, map opens/closes vs Reference, cost
-            waterfall, DES-lite, inventory policy, and resilience (SPOF).
-            Defaults: Active + Baseline as Reference.
+            waterfall, DES-lite, inventory, resilience (SPOF), and transport
+            mode mix. Defaults: Active + Baseline as Reference.
           </p>
         </div>
       </header>
@@ -299,6 +313,7 @@ export function CompareResults() {
               ['des', 'DES-lite'],
               ['inventory', 'Inventory'],
               ['resilience', 'Resilience'],
+              ['modes', 'Mode mix'],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -388,6 +403,13 @@ export function CompareResults() {
             }
           />
         )}
+        {view === 'modes' && (
+          <ModeMixView rows={modeMix} />
+        )}
+      </div>
+
+      <div className="compare-comments-wrap">
+        <CommentsPanel scenarioId={focus?.id ?? activeScenarioId} compact />
       </div>
     </div>
   )
@@ -1581,6 +1603,71 @@ function ResilienceView({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function ModeMixView({
+  rows,
+}: {
+  rows: ReturnType<typeof summarizeModeMix>
+}) {
+  if (rows.length === 0) {
+    return <p className="hint pad">No lanes in the active network.</p>
+  }
+  return (
+    <div className="compare-modes-layout">
+      <section className="library-card modes-summary" aria-label="Mode mix">
+        <h2>Transport mode mix</h2>
+        <p className="muted tiny">
+          Lane share, ton-miles, and CO₂ by mode. Cost relatives and kg/ton-mile
+          come from the same planning factors used by optimize / CO₂.
+        </p>
+        <div className="modes-bars" aria-hidden>
+          {rows.map((r) => (
+            <div key={r.mode} className="mode-bar-row">
+              <span className="mode-bar-label">{r.mode}</span>
+              <div className="mode-bar-track">
+                <div
+                  className="mode-bar-fill"
+                  style={{ width: `${Math.max(2, r.lanePct)}%` }}
+                />
+              </div>
+              <span className="mode-bar-pct">{r.lanePct}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="table-scroll">
+          <table className="compare-matrix modes-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Lanes</th>
+                <th>Lane %</th>
+                <th>Ton-mi %</th>
+                <th>CO₂ %</th>
+                <th>Avg $/u</th>
+                <th>Cost rel.</th>
+                <th>kg/ton-mi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.mode}>
+                  <td>{r.mode}</td>
+                  <td>{r.laneCount}</td>
+                  <td>{r.lanePct}%</td>
+                  <td>{r.tonMilePct}%</td>
+                  <td>{r.co2Pct}%</td>
+                  <td>${r.avgCostPerUnit.toFixed(2)}</td>
+                  <td>{r.costRelative.toFixed(2)}×</td>
+                  <td>{r.kgPerTonMile}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }

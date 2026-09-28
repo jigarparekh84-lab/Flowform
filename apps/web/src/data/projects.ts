@@ -3,6 +3,7 @@
  * Full Flowform state keyed by project id; index lists meta.
  */
 
+import type { ScenarioComment } from './collaboration'
 import type { UploadedNetwork } from './csvParsers'
 import type { EmissionFactor } from './emissions'
 import type { InventoryPolicyState } from './inventoryPolicy'
@@ -45,6 +46,8 @@ export type ProjectSnapshot = {
   theme?: ThemeMode
   /** Optional inventory policy state (multi-echelon lite). */
   inventoryPolicies?: InventoryPolicyState
+  /** Per-scenario collaboration comments (stub). */
+  comments?: ScenarioComment[]
 }
 
 export type ProjectExportFile = {

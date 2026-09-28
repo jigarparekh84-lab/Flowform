@@ -6,6 +6,7 @@ import { DecisionBrief } from './components/DecisionBrief'
 import { GreenfieldStudio } from './components/GreenfieldStudio'
 import { HandoffRoom } from './components/HandoffRoom'
 import { LeftNav, type NavItem } from './components/LeftNav'
+import { MergeStudio } from './components/MergeStudio'
 import { NetworkCanvas } from './components/NetworkCanvas'
 import { ProjectsRoom } from './components/ProjectsRoom'
 import { ScenariosLibrary } from './components/ScenariosLibrary'
@@ -41,6 +42,7 @@ function App() {
             <DecisionBrief onHandoff={() => setRoom('Handoff')} />
           )}
           {room === 'Data' && <DataRoom />}
+          {room === 'Merge' && <MergeStudio />}
           {room === 'Handoff' && <HandoffRoom />}
         </main>
       </div>

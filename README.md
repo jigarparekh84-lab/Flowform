@@ -142,6 +142,13 @@ In **Compare → DES-lite**: run Monte Carlo on the **Active** scenario (lead-ti
 - **Compare → Resilience** — score SPOFs (critical nodes); score and critical list store on the Active scenario and update Risk KPI.
 - **Scenarios → Tariff / duty** — sensitivity preset for inbound lanes from MX / nearshore region.
 
+### Collaboration, M&A, mode mix
+
+- **Share** (top chrome) — copies a read-only `flowform://share?…` deep-link stub and downloads a `.share.json` pack (project JSON embed).
+- **Comments** — per-scenario threads (author, timestamp, body) in project localStorage; panel on **Compare** and **Brief**.
+- **Merge** room — import/sample acquired network, conflict list for duplicate ids, apply merged network + draft baseline scenario.
+- **Transport mode** — lane mode (Road/Rail/Air/Ocean/Intermodal) editable in Network Inspector; cost rescales via mode relatives; **Compare → Mode mix** summary.
+
 ---
 
 ## CI
@@ -155,7 +162,7 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre, Greenfield, Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience), Brief export, Data CSV + CO₂, Handoff stub, PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage), Network + MapLibre, Greenfield, Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Inventory, Resilience, Mode mix), Brief export + comments, Data CSV + CO₂, M&A Merge studio, Share stub, Handoff stub, PuLP optimize API, Docker Compose, CI.
 
 **Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
 

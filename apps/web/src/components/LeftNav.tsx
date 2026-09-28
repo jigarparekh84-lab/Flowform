@@ -6,6 +6,7 @@ export const NAV_ITEMS = [
   'Compare',
   'Brief',
   'Data',
+  'Merge',
   'Handoff',
 ] as const
 
@@ -24,6 +25,7 @@ const ICONS: Record<NavItem, string> = {
   Compare: '⇄',
   Brief: '☰',
   Data: '▤',
+  Merge: '⧉',
   Handoff: '⇢',
 }
 

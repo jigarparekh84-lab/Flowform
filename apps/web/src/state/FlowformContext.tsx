@@ -88,6 +88,16 @@ import {
   type DesLiteParams,
   type DesLiteResult,
 } from '../data/desLite'
+import {
+  addComment,
+  deleteComment,
+  buildSharePack,
+  copyShareDeepLink,
+  downloadSharePack,
+  type ScenarioComment,
+  type SharePack,
+} from '../data/collaboration'
+import { applyLaneModeChange, emissionModeKey } from '../data/modeMix'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -136,6 +146,7 @@ function buildFreshSnapshot(theme?: ThemeMode): ProjectSnapshot {
     lastCandidates: [],
     theme,
     inventoryPolicies: defaultInventoryPolicies(net),
+    comments: [],
   }
 }
 
@@ -276,6 +287,28 @@ type FlowformContextValue = {
   exportActiveProject: () => boolean
   importProjectFile: (raw: unknown) => ProjectMeta | null
   refreshProjects: () => void
+
+  /** Per-scenario comment threads (project localStorage). */
+  comments: ScenarioComment[]
+  addScenarioComment: (scenarioId: string, body: string, author?: string) => void
+  deleteScenarioComment: (id: string) => void
+
+  /** Edit lane transport mode (Road/Rail/Air/Ocean/Intermodal); rescales cost + CO₂. */
+  updateLaneMode: (laneId: string, mode: string) => void
+
+  /** Share stub: copy deep-link and/or download read-only share pack. */
+  shareProject: (mode: 'copy' | 'download' | 'both') => Promise<{
+    ok: boolean
+    deepLink?: string
+    pack?: SharePack
+    message: string
+  }>
+
+  /** Apply M&A merged network + optional draft scenario. */
+  applyMergedNetwork: (
+    net: import('../data/csvParsers').UploadedNetwork,
+    draftScenario?: Scenario,
+  ) => void
 }
 
 const FlowformContext = createContext<FlowformContextValue | null>(null)
@@ -332,6 +365,9 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           boot.snap.network,
         ),
     )
+  const [comments, setComments] = useState<ScenarioComment[]>(
+    () => boot.snap.comments ?? [],
+  )
   const optimizeLock = useRef(false)
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const skipPersist = useRef(true)
@@ -371,6 +407,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       lastCandidates,
       theme,
       inventoryPolicies,
+      comments,
     }
   }, [
     horizon,
@@ -384,6 +421,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     emissionFactors,
     lastCandidates,
     inventoryPolicies,
+    comments,
   ])
 
   const persistNow = useCallback(() => {
@@ -424,6 +462,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     emissionFactors,
     lastCandidates,
     inventoryPolicies,
+    comments,
   ])
 
   const applySnapshot = useCallback((snap: ProjectSnapshot) => {
@@ -441,6 +480,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     setInventoryPolicies(
       mergeInventoryPolicies(snap.inventoryPolicies, snap.network),
     )
+    setComments(snap.comments ?? [])
     setSelection({ ids: [], kind: null })
     setOptimizeStatus({ phase: 'idle' })
     if (snap.theme === 'light' || snap.theme === 'dark') {
@@ -738,7 +778,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         miles = haversineMiles(nodeLatLng(a), nodeLatLng(b))
       }
       return {
-        mode: lane.mode,
+        mode: emissionModeKey(lane.mode),
         miles,
         tons: 1,
         fallbackCo2Kg: lane.co2Kg,
@@ -1120,6 +1160,95 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [scenarios, activeScenarioId, network, constraints],
   )
 
+  const addScenarioComment = useCallback(
+    (scenarioId: string, body: string, author?: string) => {
+      setComments((prev) =>
+        addComment(prev, {
+          scenarioId,
+          body,
+          author: author ?? 'You',
+        }),
+      )
+    },
+    [],
+  )
+
+  const deleteScenarioComment = useCallback((id: string) => {
+    setComments((prev) => deleteComment(prev, id))
+  }, [])
+
+  const updateLaneMode = useCallback(
+    (laneId: string, mode: string) => {
+      setNetwork((prev) => {
+        const lanes = prev.lanes.map((l) =>
+          l.id === laneId
+            ? applyLaneModeChange(l, mode, {
+                nodes: prev.nodes,
+                factors: emissionFactors,
+              })
+            : l,
+        )
+        return { ...prev, lanes }
+      })
+    },
+    [emissionFactors],
+  )
+
+  const shareProject = useCallback(
+    async (mode: 'copy' | 'download' | 'both') => {
+      if (!projectMeta) {
+        return { ok: false, message: 'No active project to share.' }
+      }
+      // Flush latest snapshot into storage before export
+      saveProjectState(projectMeta.id, captureSnapshot())
+      const pack = buildSharePack(projectMeta.id, captureSnapshot())
+      if (!pack) {
+        return { ok: false, message: 'Could not build share pack.' }
+      }
+      let copied = false
+      if (mode === 'copy' || mode === 'both') {
+        copied = await copyShareDeepLink(projectMeta)
+      }
+      if (mode === 'download' || mode === 'both') {
+        downloadSharePack(pack)
+      }
+      const parts: string[] = []
+      if (mode === 'copy' || mode === 'both') {
+        parts.push(copied ? 'Deep-link copied' : 'Clipboard unavailable')
+      }
+      if (mode === 'download' || mode === 'both') {
+        parts.push('Share pack downloaded')
+      }
+      return {
+        ok: true,
+        deepLink: pack.deepLink,
+        pack,
+        message: parts.join(' · '),
+      }
+    },
+    [projectMeta, captureSnapshot],
+  )
+
+  const applyMergedNetwork = useCallback(
+    (
+      net: import('../data/csvParsers').UploadedNetwork,
+      draftScenario?: Scenario,
+    ) => {
+      setNetwork(net)
+      setConstraints((prev) => mergeConstraints(prev, net))
+      setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
+      setSelection({ ids: [], kind: null })
+      if (draftScenario) {
+        setScenarios((prev) => {
+          if (prev.some((s) => s.id === draftScenario.id)) return prev
+          return [...prev, draftScenario]
+        })
+        setActiveScenarioId(draftScenario.id)
+      }
+    },
+    [],
+  )
+
   const updateBrief = useCallback((patch: Partial<BriefState>) => {
     setBrief((prev) => ({ ...prev, ...patch }))
   }, [])
@@ -1190,6 +1319,12 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       exportActiveProject,
       importProjectFile,
       refreshProjects,
+      comments,
+      addScenarioComment,
+      deleteScenarioComment,
+      updateLaneMode,
+      shareProject,
+      applyMergedNetwork,
     }),
     [
       horizon,
@@ -1240,6 +1375,12 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       exportActiveProject,
       importProjectFile,
       refreshProjects,
+      comments,
+      addScenarioComment,
+      deleteScenarioComment,
+      updateLaneMode,
+      shareProject,
+      applyMergedNetwork,
     ],
   )
 
