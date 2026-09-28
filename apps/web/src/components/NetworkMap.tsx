@@ -1,11 +1,10 @@
 import {
-  LANES,
-  NODES,
   kindLabel,
   type NetworkLane,
   type NetworkNode,
   type NodeKind,
 } from '../data/sampleNetwork'
+import { useFlowform } from '../state/FlowformContext'
 
 type Props = {
   layers: Record<string, boolean>
@@ -56,11 +55,15 @@ function visibleNode(n: NetworkNode, layers: Record<string, boolean>): boolean {
 }
 
 export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
-  const nodeMap = new Map(NODES.map((n) => [n.id, n]))
+  const { nodes, lanes, network, constraints } = useFlowform()
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]))
   const selectedSet = new Set(selectedIds)
+  const statusById = new Map(
+    constraints.facilities.map((f) => [f.nodeId, f.status]),
+  )
 
   const visibleLanes = layers.lanes
-    ? LANES.filter((l) => {
+    ? lanes.filter((l) => {
         const a = nodeMap.get(l.from)
         const b = nodeMap.get(l.to)
         return a && b && visibleNode(a, layers) && visibleNode(b, layers)
@@ -74,7 +77,7 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
         viewBox="0 0 100 100"
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label="Network map with sample nodes and lanes"
+        aria-label="Network map with nodes and lanes"
         onClick={() => onClear?.()}
       >
         <defs>
@@ -130,14 +133,17 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
           )
         })}
 
-        {NODES.filter((n) => visibleNode(n, layers)).map((node) => {
+        {nodes.filter((n) => visibleNode(n, layers)).map((node) => {
           const selected = selectedSet.has(node.id)
           const fill = colorFor(node.kind)
+          const status = statusById.get(node.id)
+          const closed = status === 'closed'
           return (
             <g
               key={node.id}
-              className={`map-node${selected ? ' is-selected' : ''}`}
+              className={`map-node${selected ? ' is-selected' : ''}${closed ? ' is-closed' : ''}`}
               transform={`translate(${node.x} ${node.y})`}
+              opacity={closed ? 0.35 : 1}
               onClick={(e) => {
                 e.stopPropagation()
                 onSelect(node.id, 'node', e.shiftKey)
@@ -151,6 +157,15 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
                   stroke="var(--ff-accent-text)"
                   strokeWidth="0.35"
                   opacity="0.85"
+                />
+              )}
+              {status === 'candidate' && (
+                <circle
+                  r="2.8"
+                  fill="none"
+                  stroke="#fb7185"
+                  strokeWidth="0.25"
+                  strokeDasharray="0.8 0.6"
                 />
               )}
               <circle
@@ -171,6 +186,7 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
               </text>
               <title>
                 {node.name} · {kindLabel(node.kind)}
+                {status ? ` · ${status}` : ''}
               </title>
             </g>
           )
@@ -190,7 +206,10 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
           <i className="dot supplier" /> Supplier
         </span>
       </div>
-      <p className="map-hint">Click to select · Shift-click to multi-select</p>
+      <p className="map-hint">
+        {network.source === 'upload' ? 'Uploaded data · ' : 'Sample · '}
+        Click to select · Shift multi-select
+      </p>
     </div>
   )
 }

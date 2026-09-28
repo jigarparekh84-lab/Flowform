@@ -28,6 +28,16 @@ export type KpiSnapshot = {
   risk: { value: string; delta: string; better: boolean }
 }
 
+export type OptimizeMeta = {
+  heuristic: 'v1-greedy'
+  openedIds: string[]
+  closedIds: string[]
+  servicePct: number
+  capexUsedM: number
+  /** Positions for map-diff when nodes are not in the sample set. */
+  marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
+}
+
 export type Scenario = {
   id: string
   name: string
@@ -37,6 +47,8 @@ export type Scenario = {
   baseId?: string
   /** Promoted delta items composed into this scenario. */
   deltaIds?: string[]
+  /** Present when produced by Run optimize (heuristic v1). */
+  optimizeMeta?: OptimizeMeta
 }
 
 export type CandidateSite = {
@@ -65,6 +77,46 @@ export type DeltaItem = {
   params: GreenfieldParams
   candidates: CandidateSite[]
 }
+
+export type FacilityStatus = 'open' | 'closed' | 'candidate'
+
+export type FacilityConstraint = {
+  nodeId: string
+  status: FacilityStatus
+  capacityMin: number
+  capacityMax: number
+  /** CapEx $M to open if candidate / currently closed. */
+  fixedCapexM: number
+}
+
+export type NetworkConstraints = {
+  serviceTargetPct: number
+  serviceRadiusMiles: number
+  capexBudgetM: number
+  maxFacilities: number
+  facilities: FacilityConstraint[]
+}
+
+
+export type AssumptionItem = {
+  id: string
+  label: string
+  checked: boolean
+}
+
+export type BriefState = {
+  recommendedScenarioId: string | null
+  comparedIds: string[]
+  assumptions: AssumptionItem[]
+  notes: string
+  sentToHandoffAt: string | null
+}
+
+export type OptimizeRunStatus =
+  | { phase: 'idle' }
+  | { phase: 'running'; progress: number; message: string }
+  | { phase: 'done'; scenarioId: string; message: string; log: string[] }
+  | { phase: 'error'; message: string }
 
 export const PROJECT_NAME = 'NA Footprint 2027'
 
@@ -329,6 +381,34 @@ export function mapDiffForScenario(
   if (scenario.id === referenceId) return []
 
   const marks: MapDiffMark[] = []
+
+  if (scenario.optimizeMeta) {
+    if (scenario.optimizeMeta.marks && scenario.optimizeMeta.marks.length > 0) {
+      return scenario.optimizeMeta.marks.map((m) => ({ ...m }))
+    }
+    for (const id of scenario.optimizeMeta.openedIds) {
+      const n = NODES.find((x) => x.id === id)
+      marks.push({
+        id: `opt-open-${id}`,
+        kind: 'open',
+        label: `${n?.name ?? id} (open)`,
+        x: n?.x ?? 50,
+        y: n?.y ?? 50,
+      })
+    }
+    for (const id of scenario.optimizeMeta.closedIds) {
+      const n = NODES.find((x) => x.id === id)
+      marks.push({
+        id: `opt-close-${id}`,
+        kind: 'close',
+        label: `${n?.name ?? id} (close)`,
+        x: n?.x ?? 50,
+        y: n?.y ?? 50,
+      })
+    }
+    if (marks.length > 0) return marks
+  }
+
   const usedDeltas = (scenario.deltaIds ?? [])
     .map((id) => deltas.find((d) => d.id === id))
     .filter((d): d is DeltaItem => !!d)

@@ -4,7 +4,7 @@
 
 Map-first studio for supply chain **network design**: greenfield footprint, scenario exploration, compare, and handoff to Ritara for APS / planning. **Not APS.** Flowform designs the network; Ritara runs the plan.
 
-> Fresh scaffold. No Ritara source was copied. Local only — do not upload or publish until intentional.
+> No Ritara source was copied. Map-first network design studio — designs the footprint; Ritara runs the plan.
 
 ---
 
@@ -39,19 +39,22 @@ Nav should serve the map, not compete with it. See `docs/UX_BRIEF.md`.
 
 **In**
 
-- App chrome (logo, project stub, Active scenario, Horizon, Run+Compare, ⌘K)
+- App chrome (logo, project stub, Active scenario, Horizon, **Run** + Compare, theme toggle, ⌘K)
 - Left IA nav: Projects · Network · Greenfield · Scenarios · Compare · Brief · Data · Handoff
-- Network Canvas: interactive map selection (click / Shift multi-select) synced to inspector + tables
-- Greenfield Studio: wizard + mock candidate pins + promote to Candidates delta
-- Scenarios library: deltas + compose Baseline + greenfield into named Active scenario
-- Shared React context for network / scenario / delta state
-- Placeholder rooms for Projects, Compare, Brief, Data, Handoff
+- Network Canvas: interactive map selection synced to inspector + tables; uses uploaded or sample data
+- **Data room**: CSV upload (sites / demand / lanes), templates, validation (required columns, geocode %, baseline reconcile), load into map
+- **Candidates & constraints** in Network inspector: open/close/candidate, capacity bands, service target %, CapEx budget, max facilities
+- **Run optimize**: client-side **heuristic v1** (greedy open/close under CapEx + service radius) — not a full MIP; produces a Compare-selectable scenario with chrome progress
+- Greenfield Studio + Scenarios library (compose) + Compare (matrix / map-diff / waterfall)
+- **Decision Brief**: recommendation banner, scenario cards vs Reference, assumptions checklist, Send to Handoff
+- Handoff room: receives brief JSON stub for Ritara intake (contract only)
+- Shared React context for network / constraints / scenarios / optimize / brief
 - Docs: UX brief + product blueprint
 - Local Vite + React + TypeScript app on port **5180**
 
 **Out (for now)**
 
-- Real GIS / tile maps, solvers, optimization
+- Real GIS / tile maps, full MIP solver
 - Auth, multi-tenant, cloud deploy
 - Direct Ritara API integration (handoff is design-only stub)
 - APS / scheduling / MRP — that stays in Ritara

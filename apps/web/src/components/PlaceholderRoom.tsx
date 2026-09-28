@@ -9,18 +9,6 @@ const COPY: Partial<Record<NavItem, { title: string; body: string }>> = {
     title: 'Projects',
     body: 'Workspace home for network design projects. Open or create a footprint study — stub for MVP.',
   },
-  Brief: {
-    title: 'Brief',
-    body: 'Narrative + assumptions package for stakeholders. Capture the design story before handoff.',
-  },
-  Data: {
-    title: 'Data',
-    body: 'Imports, reference tables, and validation for nodes, lanes, demand, and cost drivers.',
-  },
-  Handoff: {
-    title: 'Handoff',
-    body: 'Export a clean brief of nodes, lanes, and assumptions toward Ritara APS. Design exit ramp — no planner screens here.',
-  },
 }
 
 export function PlaceholderRoom({ room }: Props) {

@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import './App.css'
 import { CompareResults } from './components/CompareResults'
+import { DataRoom } from './components/DataRoom'
+import { DecisionBrief } from './components/DecisionBrief'
 import { GreenfieldStudio } from './components/GreenfieldStudio'
+import { HandoffRoom } from './components/HandoffRoom'
 import { LeftNav, type NavItem } from './components/LeftNav'
 import { NetworkCanvas } from './components/NetworkCanvas'
 import { PlaceholderRoom } from './components/PlaceholderRoom'
@@ -32,10 +35,12 @@ function App() {
           {room === 'Greenfield' && <GreenfieldStudio />}
           {room === 'Scenarios' && <ScenariosLibrary />}
           {room === 'Compare' && <CompareResults />}
-          {room !== 'Network' &&
-            room !== 'Greenfield' &&
-            room !== 'Scenarios' &&
-            room !== 'Compare' && <PlaceholderRoom room={room} />}
+          {room === 'Brief' && (
+            <DecisionBrief onHandoff={() => setRoom('Handoff')} />
+          )}
+          {room === 'Data' && <DataRoom />}
+          {room === 'Handoff' && <HandoffRoom />}
+          {room === 'Projects' && <PlaceholderRoom room={room} />}
         </main>
       </div>
     </div>

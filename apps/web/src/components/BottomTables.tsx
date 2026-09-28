@@ -1,10 +1,6 @@
 import { useState } from 'react'
-import {
-  LANES,
-  NODES,
-  kindLabel,
-  nodeById,
-} from '../data/sampleNetwork'
+import { kindLabel } from '../data/sampleNetwork'
+import { useFlowform } from '../state/FlowformContext'
 
 type Tab = 'facilities' | 'lanes'
 
@@ -21,8 +17,12 @@ export function BottomTables({
   onSelectNode,
   onSelectLane,
 }: Props) {
+  const { nodes, lanes, nodeById, constraints } = useFlowform()
   const [tab, setTab] = useState<Tab>('facilities')
   const selectedSet = new Set(selectedIds)
+  const statusById = new Map(
+    constraints.facilities.map((f) => [f.nodeId, f.status]),
+  )
 
   return (
     <div className="bottom-tables">
@@ -54,14 +54,16 @@ export function BottomTables({
               <tr>
                 <th>Name</th>
                 <th>Type</th>
+                <th>Status</th>
                 <th>Region</th>
                 <th>Capacity</th>
               </tr>
             </thead>
             <tbody>
-              {NODES.map((n) => {
+              {nodes.map((n) => {
                 const selected =
                   selectedKind === 'node' && selectedSet.has(n.id)
+                const status = statusById.get(n.id)
                 return (
                   <tr
                     key={n.id}
@@ -70,6 +72,7 @@ export function BottomTables({
                   >
                     <td>{n.name}</td>
                     <td>{kindLabel(n.kind)}</td>
+                    <td>{status ?? '—'}</td>
                     <td>{n.region}</td>
                     <td>{n.capacity}</td>
                   </tr>
@@ -90,7 +93,7 @@ export function BottomTables({
               </tr>
             </thead>
             <tbody>
-              {LANES.map((l) => {
+              {lanes.map((l) => {
                 const selected =
                   selectedKind === 'lane' && selectedSet.has(l.id)
                 return (

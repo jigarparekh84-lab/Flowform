@@ -1,4 +1,5 @@
 import { PROJECT_NAME, HORIZON_OPTIONS, type Scenario } from '../data/sampleNetwork'
+import { useFlowform } from '../state/FlowformContext'
 import type { ThemeMode } from '../state/theme'
 
 type Props = {
@@ -18,6 +19,9 @@ export function TopChrome({
   theme,
   onToggleTheme,
 }: Props) {
+  const { optimizeStatus, runOptimize } = useFlowform()
+  const running = optimizeStatus.phase === 'running'
+
   return (
     <header className="top-chrome">
       <div className="chrome-left">
@@ -66,6 +70,26 @@ export function TopChrome({
             ))}
           </select>
         </label>
+        {optimizeStatus.phase !== 'idle' && (
+          <div
+            className={`run-status run-${optimizeStatus.phase}`}
+            title={
+              optimizeStatus.phase === 'done'
+                ? optimizeStatus.log.join('\n')
+                : optimizeStatus.message
+            }
+          >
+            {optimizeStatus.phase === 'running' && (
+              <span className="run-bar" style={{ width: `${optimizeStatus.progress}%` }} />
+            )}
+            <span className="run-msg">
+              {optimizeStatus.phase === 'running' &&
+                `Run ${optimizeStatus.progress}% · ${optimizeStatus.message}`}
+              {optimizeStatus.phase === 'done' && optimizeStatus.message}
+              {optimizeStatus.phase === 'error' && optimizeStatus.message}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="chrome-right">
@@ -81,8 +105,14 @@ export function TopChrome({
           </span>
           <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
         </button>
-        <button type="button" className="btn ghost">
-          Run
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={running}
+          onClick={() => void runOptimize()}
+          title="Heuristic v1 — greedy open/close under CapEx + service radius (not a full MIP)"
+        >
+          {running ? 'Running…' : 'Run'}
         </button>
         <button type="button" className="btn primary" onClick={onCompare}>
           Compare
