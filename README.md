@@ -130,7 +130,7 @@ Open http://localhost:5180.
 
 Optional: `VITE_API_URL` (default `http://127.0.0.1:5182`) so **Run** can reach the API.
 
-Optional Carto basemap key: copy `apps/web/.env.example` → `.env.local` and set `VITE_CARTO_API_KEY` (gitignored). MapLibre appends it to CartoCDN tile URLs when present.
+Optional Carto basemap key: copy `apps/web/.env.example` → `.env.local` and set `VITE_CARTO_API_KEY` (gitignored). MapLibre appends it as `?key=` on CartoCDN tile URLs (Carto’s required param name). Hard-refresh after changing `.env.local`.
 
 ### DES-lite
 

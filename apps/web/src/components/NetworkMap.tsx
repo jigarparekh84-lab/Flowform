@@ -7,7 +7,7 @@ import type {
 } from 'maplibre-gl'
 import type { FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { cartoRasterStyle, nodeLatLng } from '../data/geo'
+import { cartoApiKey, cartoRasterStyle, nodeLatLng } from '../data/geo'
 import {
   kindLabel,
   type NetworkLane,
@@ -105,7 +105,9 @@ export function NetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
       </div>
       <div className="map-chrome-bar">
         <p className="map-hint">
-          {mode === 'maplibre' ? 'MapLibre · OSM/Carto tiles · ' : 'SVG fallback · '}
+          {mode === 'maplibre'
+            ? `MapLibre · Carto${cartoApiKey() ? '' : ' · KEY MISSING'} · `
+            : 'SVG fallback · '}
           Click to select · Shift multi-select
           {mapError ? ` · tiles failed (${mapError})` : ''}
         </p>

@@ -68,15 +68,28 @@ export type RasterStyleSpec = {
   }[]
 }
 
-/** CartoCDN raster basemap; uses VITE_CARTO_API_KEY when set (.env.local). */
-export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
-  const key =
+/** Carto basemap API key from apps/web/.env.local (VITE_CARTO_API_KEY). */
+export function cartoApiKey(): string {
+  return (
     (import.meta as ImportMeta & { env?: { VITE_CARTO_API_KEY?: string } }).env
       ?.VITE_CARTO_API_KEY?.trim() || ''
-  const q = key ? `?api_key=${encodeURIComponent(key)}` : ''
-  const path = theme === 'dark' ? 'dark_all' : 'light_all'
-  const tiles = ['a', 'b', 'c'].map(
-    (h) => `https://${h}.basemaps.cartocdn.com/${path}/{z}/{x}/{y}.png${q}`,
+  )
+}
+
+/**
+ * CartoCDN raster basemap.
+ * Carto requires `?key=` (not `api_key`) — without it tiles are watermarked
+ * "API key required". Free key: https://carto.com/basemaps/apikey/
+ */
+export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
+  const key = cartoApiKey()
+  const q = key ? `?key=${encodeURIComponent(key)}` : ''
+  // Prefer /rastertiles/{style}/ URLs from current Carto docs
+  const path =
+    theme === 'dark' ? 'rastertiles/dark_all' : 'rastertiles/light_all'
+  const tiles = ['a', 'b', 'c', 'd'].map(
+    (h) =>
+      `https://${h}.basemaps.cartocdn.com/${path}/{z}/{x}/{y}.png${q}`,
   )
   return {
     version: 8,
@@ -84,16 +97,17 @@ export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
       theme === 'dark'
         ? key
           ? 'Flowform Dark (Carto · keyed)'
-          : 'Flowform Dark (Carto)'
+          : 'Flowform Dark (Carto · key missing)'
         : key
           ? 'Flowform Light (Carto · keyed)'
-          : 'Flowform Light (Carto)',
+          : 'Flowform Light (Carto · key missing)',
     sources: {
       carto: {
         type: 'raster',
         tiles,
         tileSize: 256,
-        attribution: '© OpenStreetMap © CARTO',
+        attribution:
+          '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, © <a href="https://carto.com/attributions">CARTO</a>',
       },
     },
     layers: [
@@ -102,7 +116,7 @@ export function cartoRasterStyle(theme: 'light' | 'dark'): RasterStyleSpec {
         type: 'raster',
         source: 'carto',
         minzoom: 0,
-        maxzoom: 19,
+        maxzoom: 20,
       },
     ],
   }
