@@ -78,7 +78,7 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints (typically `http://localhost:5173`).
+Open the URL Vite prints (typically `http://localhost:5180`).
 
 Other scripts (from `apps/web`):
 
