@@ -1243,6 +1243,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       hardServiceConstraints?: boolean
       productBreakdown?: ApiOptimizeResponse['productBreakdown']
       infeasibilityReport?: ApiOptimizeResponse['infeasibilityReport']
+      laneUtilization?: ApiOptimizeResponse['laneUtilization']
+      laneCapacity?: ApiOptimizeResponse['laneCapacity']
+      bindingLaneCapacities?: ApiOptimizeResponse['bindingLaneCapacities']
+      modeChoice?: ApiOptimizeResponse['modeChoice']
       log: string[]
       name: string
       kpis: Scenario['kpis']
@@ -1276,6 +1280,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           hardServiceConstraints: args.hardServiceConstraints,
           productBreakdown: args.productBreakdown,
           infeasibilityReport: args.infeasibilityReport,
+          laneUtilization: args.laneUtilization,
+          laneCapacity: args.laneCapacity,
+          bindingLaneCapacities: args.bindingLaneCapacities,
+          modeChoice: args.modeChoice,
           solvedAt: new Date().toISOString(),
           marks: [
             ...openedIds.map((id) => {
@@ -1422,6 +1430,17 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             api.productBreakdown && api.productBreakdown.length > 1
               ? ` · ${api.productBreakdown.length} SKUs/groups`
               : ''
+          const mix = api.objectiveBreakdown?.modeMix ?? []
+          const modeMsg =
+            api.modeChoice?.enabled && mix.length
+              ? ` · modes ${mix
+                  .slice(0, 3)
+                  .map((m) => `${m.mode} ${Math.round(m.sharePct)}%`)
+                  .join('/')}`
+              : ''
+          const laneMsg = api.bindingLaneCapacities?.length
+            ? ` · ${api.bindingLaneCapacities.length} binding lane cap(s)`
+            : ''
           return applyOptimizeResult({
             openedIds: api.openedIds ?? [],
             closedIds: api.closedIds ?? [],
@@ -1439,6 +1458,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             hardServiceConstraints: api.hardServiceConstraints,
             productBreakdown: api.productBreakdown,
             infeasibilityReport: report,
+            laneUtilization: api.laneUtilization,
+            laneCapacity: api.laneCapacity,
+            bindingLaneCapacities: api.bindingLaneCapacities,
+            modeChoice: api.modeChoice,
             log: api.log,
             name: infeas
               ? `Optimize Infeasible ${new Date().toLocaleTimeString()}`
@@ -1447,7 +1470,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             skipConstraintApply: infeas,
             statusMessage: infeas
               ? `API ${api.solver} · Infeasible${timeMsg}${reportMsg}${skuMsg}`
-              : `API ${api.solver} · ${api.status}${timeMsg} · ${api.model ?? 'MIP'} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}${skuMsg}`,
+              : `API ${api.solver} · ${api.status}${timeMsg} · ${api.model ?? 'MIP'} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}${skuMsg}${modeMsg}${laneMsg}`,
           })
         } catch (apiErr) {
           const msg =

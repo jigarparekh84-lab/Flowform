@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CommentsPanel } from './CommentsPanel'
 import { DecisionLogPanel } from './DecisionLogPanel'
+import { MipLaneModePanel } from './MipLaneModes'
 import { EmptyState } from './ui/EmptyState'
 import { RoomHeader } from './ui/RoomHeader'
 import {
@@ -479,7 +480,7 @@ export function CompareResults() {
           />
         )}
         {view === 'modes' && (
-          <ModeMixView rows={modeMix} />
+          <ModeMixView rows={modeMix} selected={selected} />
         )}
         {view === 'products' && (
           <ProductsView
@@ -598,6 +599,21 @@ function MatrixView({
               })}
             </tbody>
           </table>
+          {withBreakdown.some(
+            (s) =>
+              (s.optimizeMeta?.objectiveBreakdown?.laneFixedM ?? 0) > 0 ||
+              (s.optimizeMeta?.objectiveBreakdown?.carbonM ?? 0) > 0,
+          ) && (
+            <p className="muted tiny" style={{ marginTop: '0.5rem' }}>
+              Lane-mode fixed charges / carbon (in Total):{' '}
+              {withBreakdown
+                .map((s) => {
+                  const bd = s.optimizeMeta!.objectiveBreakdown!
+                  return `${s.name}: lane fixed $${(bd.laneFixedM ?? 0).toFixed(2)}M · carbon $${(bd.carbonM ?? 0).toFixed(2)}M`
+                })
+                .join(' · ')}
+            </p>
+          )}
           {withBreakdown.some((s) => (s.optimizeMeta?.shadowPrices ?? []).some((p) => p.binding)) && (
             <p className="muted tiny" style={{ marginTop: '0.5rem' }}>
               Binding capacity duals:{' '}
@@ -616,6 +632,8 @@ function MatrixView({
           )}
         </section>
       )}
+
+      <MipLaneModePanel scenarios={withBreakdown} />
 
       {selected.some((s) => s.optimizeMeta?.infeasibilityReport) && (
         <section className="library-card infeas-card" aria-label="Infeasibility report" style={{ marginBottom: '1rem' }}>
@@ -2054,14 +2072,22 @@ function ProductsView({
 
 function ModeMixView({
   rows,
+  selected,
 }: {
   rows: ReturnType<typeof summarizeModeMix>
+  selected: Scenario[]
 }) {
   if (rows.length === 0) {
-    return <p className="hint pad">No lanes in the active network.</p>
+    return (
+      <>
+        <MipLaneModePanel scenarios={selected} />
+        <p className="hint pad">No lanes in the active network.</p>
+      </>
+    )
   }
   return (
     <div className="compare-modes-layout">
+      <MipLaneModePanel scenarios={selected} />
       <section className="library-card modes-summary" aria-label="Mode mix">
         <h2>Transport mode mix</h2>
         <p className="muted tiny">

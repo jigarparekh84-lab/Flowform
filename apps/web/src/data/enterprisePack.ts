@@ -73,13 +73,39 @@ export type EnterpriseLane = {
   id: string
   from: string
   to: string
+  /** Primary / headline mode (legacy single-mode lanes). */
   mode: string
   costPerUnit: number
   leadDays: number
-  /** Lane throughput capacity (units). */
+  /** Lane throughput capacity (units) — caps the total across all modes. */
   capacity: number
   co2Kg?: number
+  /**
+   * Depth 7: transport mode alternatives (e.g. Truck / Rail / Intermodal).
+   * The MIP chooses the split subject to per-mode capacity, transit vs
+   * maxLeadTimeDays, optional fixed activation charge, and lane capacity.
+   */
+  modes?: EnterpriseLaneMode[]
 }
+
+export type EnterpriseLaneMode = {
+  mode: string
+  costPerUnit: number
+  leadDays: number
+  capacity?: number
+  co2KgPerUnit?: number
+  fixedCostM?: number
+}
+
+/** Modes the planning factors / emissions table know about. */
+export const KNOWN_LANE_MODES = [
+  'Truck',
+  'Rail',
+  'Intermodal',
+  'Ocean',
+  'Air',
+  'Parcel',
+] as const
 
 export type EnterpriseBomRow = {
   id: string
@@ -117,6 +143,8 @@ export type EnterprisePack = {
     maxLeadTimeDays?: number
     aggregateProductsByGroup?: boolean | 'auto' | 'always' | 'never'
     maxProductCommodities?: number
+    enforceLaneCapacity?: boolean
+    carbonPricePerTonne?: number
   }
 }
 
@@ -137,6 +165,16 @@ export type ValidationErrorCode =
   | 'DEMAND_VOLUME_NONPOSITIVE'
   | 'LANE_COST_NEGATIVE'
   | 'LANE_CAPACITY_NONPOSITIVE'
+  | 'LANE_MODE_EMPTY'
+  | 'LANE_MODE_UNKNOWN'
+  | 'LANE_MODE_DUPLICATE'
+  | 'LANE_MODE_COST_NEGATIVE'
+  | 'LANE_MODE_LEAD_INVALID'
+  | 'LANE_MODE_CAPACITY_NONPOSITIVE'
+  | 'LANE_MODE_FIXED_COST_NEGATIVE'
+  | 'LANE_MODE_CO2_NEGATIVE'
+  | 'LANE_MODE_CAPACITY_BELOW_LANE'
+  | 'LANE_ROUTE_DUPLICATE'
   | 'FIXED_COST_NEGATIVE'
   | 'BOM_ORPHAN_PARENT'
   | 'BOM_ORPHAN_CHILD'
@@ -178,6 +216,9 @@ export type EnterpriseValidationScorecard = {
   missingEndpointCount: number
   capacityIssues: number
   bomCycleDetected: boolean
+  /** Depth 7: lanes carrying a modes[] array + total mode options. */
+  multiModeLaneCount: number
+  laneModeOptionCount: number
   issues: EnterpriseValidationIssue[]
 }
 
@@ -463,6 +504,7 @@ export function validateEnterprisePack(
   }
 
   const laneIds = new Set<string>()
+  const routeModes = new Map<string, string>()
   let missingEndpointCount = 0
   for (const lane of pack.lanes) {
     if (laneIds.has(lane.id)) {
@@ -514,6 +556,133 @@ export function validateEnterprisePack(
         entityId: lane.id,
         hint: 'Set a positive lane capacity (units) or a large planning default.',
       })
+    }
+
+    // Depth 7 — lane mode options
+    if (lane.modes !== undefined) {
+      if (!Array.isArray(lane.modes) || lane.modes.length === 0) {
+        issues.push({
+          level: 'warn',
+          code: 'LANE_MODE_EMPTY',
+          message: `Lane "${lane.id}" has an empty modes list.`,
+          entityId: lane.id,
+          hint: 'Remove modes[] (single-mode lane) or add Truck / Rail / Intermodal options.',
+        })
+      } else {
+        const seenModes = new Set<string>()
+        let modeCapSum = 0
+        let allModesCapped = true
+        for (const m of lane.modes) {
+          const label = String(m?.mode ?? '').trim()
+          const key = label.toLowerCase()
+          const ref = `${lane.id}/${label || '?'}`
+          if (!label) {
+            issues.push({
+              level: 'error',
+              code: 'LANE_MODE_UNKNOWN',
+              message: `Lane "${lane.id}" has a mode option without a mode name.`,
+              entityId: lane.id,
+              hint: `Set mode to one of ${KNOWN_LANE_MODES.join(', ')}.`,
+            })
+          } else if (
+            !KNOWN_LANE_MODES.some((k) => k.toLowerCase() === key)
+          ) {
+            issues.push({
+              level: 'warn',
+              code: 'LANE_MODE_UNKNOWN',
+              message: `Lane "${lane.id}" mode "${label}" is not a known planning mode.`,
+              entityId: ref,
+              hint: `Known modes: ${KNOWN_LANE_MODES.join(', ')} (custom modes use Truck CO₂ factors).`,
+            })
+          }
+          if (key && seenModes.has(key)) {
+            issues.push({
+              level: 'error',
+              code: 'LANE_MODE_DUPLICATE',
+              message: `Lane "${lane.id}" lists mode "${label}" more than once.`,
+              entityId: ref,
+              hint: 'Keep one option per mode per lane (the optimizer uses the first).',
+            })
+          }
+          if (key) seenModes.add(key)
+          if (!(Number.isFinite(m.costPerUnit) && m.costPerUnit >= 0)) {
+            issues.push({
+              level: 'error',
+              code: 'LANE_MODE_COST_NEGATIVE',
+              message: `Lane "${ref}" costPerUnit must be ≥ 0 (got ${m.costPerUnit}).`,
+              entityId: ref,
+              hint: 'Set the per-mode $/unit rate.',
+            })
+          }
+          if (!(Number.isFinite(m.leadDays) && m.leadDays >= 0)) {
+            issues.push({
+              level: 'error',
+              code: 'LANE_MODE_LEAD_INVALID',
+              message: `Lane "${ref}" leadDays must be a number ≥ 0 (got ${m.leadDays}).`,
+              entityId: ref,
+              hint: 'Set transit days — used against maxLeadTimeDays for hard service.',
+            })
+          }
+          if (m.capacity != null) {
+            if (!(m.capacity > 0)) {
+              capacityIssues++
+              issues.push({
+                level: 'error',
+                code: 'LANE_MODE_CAPACITY_NONPOSITIVE',
+                message: `Lane "${ref}" capacity must be > 0 (got ${m.capacity}).`,
+                entityId: ref,
+                hint: 'Omit capacity for an uncapacitated mode or set a positive limit.',
+              })
+            } else {
+              modeCapSum += m.capacity
+            }
+          } else {
+            allModesCapped = false
+          }
+          if (m.fixedCostM != null && !(m.fixedCostM >= 0)) {
+            issues.push({
+              level: 'error',
+              code: 'LANE_MODE_FIXED_COST_NEGATIVE',
+              message: `Lane "${ref}" fixedCostM must be ≥ 0 (got ${m.fixedCostM}).`,
+              entityId: ref,
+              hint: 'Fixed activation charge in $M (0 = no charge).',
+            })
+          }
+          if (m.co2KgPerUnit != null && !(m.co2KgPerUnit >= 0)) {
+            issues.push({
+              level: 'error',
+              code: 'LANE_MODE_CO2_NEGATIVE',
+              message: `Lane "${ref}" co2KgPerUnit must be ≥ 0 (got ${m.co2KgPerUnit}).`,
+              entityId: ref,
+              hint: 'kg CO₂ per unit shipped on this mode.',
+            })
+          }
+        }
+        if (allModesCapped && lane.capacity > 0 && modeCapSum < lane.capacity) {
+          issues.push({
+            level: 'info',
+            code: 'LANE_MODE_CAPACITY_BELOW_LANE',
+            message: `Lane "${lane.id}" mode capacities sum to ${modeCapSum} < lane capacity ${lane.capacity}; mode caps bind first.`,
+            entityId: lane.id,
+            hint: 'Effective lane capacity = min(lane capacity, Σ mode capacities).',
+          })
+        }
+      }
+    }
+
+    const routeKey = `${lane.from}→${lane.to}|${String(lane.mode ?? '').toLowerCase()}`
+    if (!lane.modes?.length) {
+      if (routeModes.has(routeKey)) {
+        issues.push({
+          level: 'warn',
+          code: 'LANE_ROUTE_DUPLICATE',
+          message: `Lanes "${routeModes.get(routeKey)}" and "${lane.id}" repeat ${lane.from}→${lane.to} with the same mode.`,
+          entityId: lane.id,
+          hint: 'The optimizer keeps the last row; use distinct modes (they become alternatives) or merge into modes[].',
+        })
+      } else {
+        routeModes.set(routeKey, lane.id)
+      }
     }
   }
 
@@ -645,6 +814,13 @@ function scorecardFromIssues(
     missingEndpointCount: extra?.missingEndpointCount ?? 0,
     capacityIssues: extra?.capacityIssues ?? 0,
     bomCycleDetected: extra?.bomCycleDetected ?? false,
+    multiModeLaneCount: (pack?.lanes ?? []).filter(
+      (l) => Array.isArray(l.modes) && l.modes.length > 0,
+    ).length,
+    laneModeOptionCount: (pack?.lanes ?? []).reduce(
+      (n, l) => n + (Array.isArray(l.modes) ? l.modes.length : 0),
+      0,
+    ),
     issues,
   }
 }
@@ -817,6 +993,7 @@ export function buildEnterprisePack(args: {
     leadDays: l.leadDays,
     capacity: l.capacityUnits && l.capacityUnits > 0 ? l.capacityUnits : 1_000_000,
     co2Kg: l.co2Kg,
+    ...(l.modes?.length ? { modes: l.modes.map((m) => ({ ...m })) } : {}),
   }))
 
   const bomRows: EnterpriseBomRow[] = bom.rows.map((r) => ({
@@ -864,6 +1041,12 @@ export function buildEnterprisePack(args: {
         : {}),
       ...(constraints.maxProductCommodities != null
         ? { maxProductCommodities: constraints.maxProductCommodities }
+        : {}),
+      ...(constraints.enforceLaneCapacity != null
+        ? { enforceLaneCapacity: constraints.enforceLaneCapacity }
+        : {}),
+      ...(constraints.carbonPricePerTonne != null
+        ? { carbonPricePerTonne: constraints.carbonPricePerTonne }
         : {}),
     },
   }
@@ -921,6 +1104,7 @@ export function packToUploadedNetwork(pack: EnterprisePack): UploadedNetwork {
     leadDays: l.leadDays,
     co2Kg: l.co2Kg ?? 10,
     capacityUnits: l.capacity,
+    ...(l.modes?.length ? { modes: l.modes.map((m) => ({ ...m })) } : {}),
   }))
 
   let geocodeHits = 0
@@ -982,6 +1166,12 @@ export function packToConstraints(pack: EnterprisePack): NetworkConstraints {
       : {}),
     ...(g.maxProductCommodities != null
       ? { maxProductCommodities: g.maxProductCommodities }
+      : {}),
+    ...(g.enforceLaneCapacity != null
+      ? { enforceLaneCapacity: g.enforceLaneCapacity }
+      : {}),
+    ...(g.carbonPricePerTonne != null
+      ? { carbonPricePerTonne: g.carbonPricePerTonne }
       : {}),
     facilities,
   }
@@ -1148,6 +1338,33 @@ export function emissionFactorsFromPack(
   }))
 }
 
+/**
+ * Depth 7: Truck / Intermodal / Rail options for stress plant→DC lanes.
+ * Integer-milli math keeps the JSON identical to the checked-in samples.
+ */
+export function stressLaneModes(cost: number, lead: number): EnterpriseLaneMode[] {
+  const cm = Math.round(cost * 1000)
+  return [
+    { mode: 'Truck', costPerUnit: cm / 1000, leadDays: lead, capacity: 30000, co2KgPerUnit: 12 },
+    {
+      mode: 'Intermodal',
+      costPerUnit: (cm * 82) / 100 / 1000,
+      leadDays: lead + 1,
+      capacity: 20000,
+      co2KgPerUnit: 5,
+      fixedCostM: 0.02,
+    },
+    {
+      mode: 'Rail',
+      costPerUnit: (cm * 7) / 10 / 1000,
+      leadDays: lead + 2,
+      capacity: 15000,
+      co2KgPerUnit: 2.5,
+      fixedCostM: 0.05,
+    },
+  ]
+}
+
 /** Generate a larger stress sample (100+ demand nodes) for public/samples. */
 export function generateStressSamplePack(opts?: {
   demandCount?: number
@@ -1287,6 +1504,7 @@ export function generateStressSamplePack(opts?: {
         leadDays: 2 + (laneN % 5),
         capacity: 50000,
         co2Kg: 10,
+        modes: stressLaneModes(0.4 + (laneN % 10) * 0.05, 2 + (laneN % 5)),
       })
     }
   }

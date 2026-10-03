@@ -64,18 +64,20 @@ def pack_to_optimize_payload(pack: dict[str, Any]) -> dict[str, Any]:
 
     lanes: list[dict[str, Any]] = []
     for i, lane in enumerate(pack.get("lanes") or []):
-        lanes.append(
-            {
-                "id": lane.get("id") or f"l{i}",
-                "from": lane["from"],
-                "to": lane["to"],
-                "mode": lane.get("mode") or "Truck",
-                "costPerUnit": float(lane.get("costPerUnit") or 1.0),
-                "leadDays": int(lane.get("leadDays") or 2),
-                "co2Kg": float(lane.get("co2Kg") or 10),
-                "capacityUnits": lane.get("capacity"),
-            }
-        )
+        row: dict[str, Any] = {
+            "id": lane.get("id") or f"l{i}",
+            "from": lane["from"],
+            "to": lane["to"],
+            "mode": lane.get("mode") or "Truck",
+            "costPerUnit": float(lane.get("costPerUnit") or 1.0),
+            "leadDays": int(lane.get("leadDays") or 2),
+            "co2Kg": float(lane.get("co2Kg") or 10),
+            "capacityUnits": lane.get("capacity"),
+        }
+        # Depth 7: per-lane transport mode options (enterprise-data-v1 lanes[].modes)
+        if lane.get("modes"):
+            row["modes"] = [dict(m) for m in lane["modes"]]
+        lanes.append(row)
 
     skus = list(pack.get("skus") or [])
     product_groups = list(pack.get("productGroups") or [])

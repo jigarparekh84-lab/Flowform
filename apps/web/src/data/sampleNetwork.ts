@@ -23,6 +23,26 @@ export type NetworkLane = {
   co2Kg: number
   /** Optional lane throughput capacity (units); used by enterprise pack / MIP. */
   capacityUnits?: number
+  /**
+   * Depth 7: transport mode alternatives on this lane. When present the MIP
+   * chooses the mode mix (cost / transit / CO2 / capacity / fixed charge).
+   */
+  modes?: LaneModeOption[]
+}
+
+/** One transport mode option on a lane (enterprise-data-v1 lanes[].modes). */
+export type LaneModeOption = {
+  mode: string
+  /** $/unit for this mode. */
+  costPerUnit: number
+  /** Transit days for this mode (checked against maxLeadTimeDays). */
+  leadDays: number
+  /** Optional mode capacity (units); lane capacity still caps the total. */
+  capacity?: number
+  /** kg CO2 per unit shipped on this mode. */
+  co2KgPerUnit?: number
+  /** Optional fixed charge ($M) to activate this lane-mode. */
+  fixedCostM?: number
 }
 
 export type KpiCell = { value: string; delta: string; better: boolean }
@@ -39,13 +59,77 @@ export type KpiSnapshot = {
   invUnits?: KpiCell
 }
 
+export type OptimizeModeMixRow = {
+  mode: string
+  volume: number
+  sharePct: number
+  transportM: number
+  laneFixedM?: number
+  co2Kg: number
+  laneCount: number
+  avgLeadDays?: number | null
+}
+
 export type OptimizeObjectiveBreakdown = {
   totalM: number
   transportM: number
   fixedCapexM: number
   fixedOpexM: number
   uncoveredPenaltyM: number
+  /** Depth 7: fixed activation charges on chosen lane-modes. */
+  laneFixedM?: number
+  /** Depth 7: carbon cost when carbonPricePerTonne is set. */
+  carbonM?: number
+  /** Depth 7: optimized flow volume by transport mode. */
+  modeMix?: OptimizeModeMixRow[]
   currency?: string
+}
+
+/** Lane / lane-mode capacity constraint row from the MIP (with LP dual). */
+export type OptimizeLaneCapacityRow = {
+  laneId: string | null
+  from: string
+  to: string
+  scope: 'lane' | 'lane-mode' | string
+  mode: string | null
+  capacity: number
+  volume: number
+  utilizationPct: number
+  slack: number
+  binding: boolean
+  shadowPrice: number | null
+  unit?: string
+  method?: string
+  fixedCharge?: boolean
+}
+
+/** Per-lane utilization rollup with per-mode split. */
+export type OptimizeLaneUtilizationRow = {
+  laneId: string | null
+  from: string
+  to: string
+  volume: number
+  capacity: number | null
+  utilizationPct: number | null
+  binding: boolean
+  modes: {
+    mode: string
+    volume: number
+    capacity: number | null
+    utilizationPct: number | null
+  }[]
+}
+
+export type OptimizeModeChoiceSummary = {
+  enabled: boolean
+  lanesWithModes?: number
+  modeOptions?: number
+  capacitatedLanes?: number
+  capacitatedLaneModes?: number
+  fixedCostLaneModes?: number
+  laneModeBinaries?: number
+  serviceFilteredModes?: number
+  carbonPricePerTonne?: number
 }
 
 export type OptimizeOpenFacility = {
@@ -87,6 +171,11 @@ export type OptimizeMeta = {
     transportCostM?: number
     productId?: string
     productLabel?: string
+    /** Depth 7: chosen transport mode / lane id / transit / CO2 for this flow. */
+    mode?: string
+    laneId?: string
+    leadDays?: number
+    co2Kg?: number
   }[]
   /** Objective cost stack from fixed-charge MIP. */
   objectiveBreakdown?: OptimizeObjectiveBreakdown
@@ -124,6 +213,13 @@ export type OptimizeMeta = {
     method?: string
     note?: string
   }
+  /** Depth 7: lane utilization rollup (capacitated / multi-mode lanes). */
+  laneUtilization?: OptimizeLaneUtilizationRow[]
+  /** Depth 7: lane + lane-mode capacity rows with shadow prices. */
+  laneCapacity?: OptimizeLaneCapacityRow[]
+  /** Depth 7: binding subset of laneCapacity. */
+  bindingLaneCapacities?: OptimizeLaneCapacityRow[]
+  modeChoice?: OptimizeModeChoiceSummary
   /** Positions for map-diff when nodes are not in the sample set. */
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }
@@ -238,6 +334,10 @@ export type NetworkConstraints = {
   maxLeadTimeDays?: number
   aggregateProductsByGroup?: boolean | 'auto' | 'always' | 'never'
   maxProductCommodities?: number
+  /** Depth 7: enforce lane / lane-mode capacities in the MIP (default true). */
+  enforceLaneCapacity?: boolean
+  /** Depth 7: $ per tonne CO2 added to lane-mode cost (mode choice). */
+  carbonPricePerTonne?: number
   facilities: FacilityConstraint[]
 }
 

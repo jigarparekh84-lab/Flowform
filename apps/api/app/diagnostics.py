@@ -21,6 +21,7 @@ def diagnose_network_conflicts(
     hard_service: bool,
     capex_of,
     parse_volume,
+    lane_shortfalls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Structural conflict hints for infeasible (or near-infeasible) MIPs.
@@ -28,6 +29,9 @@ def diagnose_network_conflicts(
     dem_map keys are (customer_id, product_id) -> volume.
     reachable[(cust, prod)] = set of facility ids that can serve that demand.
     capable[fid] = set of product ids or None (= all).
+    lane_shortfalls (depth 7) = {"customers": [...], "plantOutbound": {...} | None,
+    "maxLeadTimeDays": float | None} — structural lane capacity vs demand
+    using only mode options that survive the service (lead-time) filter.
     """
     hints: list[dict[str, Any]] = []
     metrics: dict[str, Any] = {}
@@ -188,6 +192,68 @@ def diagnose_network_conflicts(
                     "hint": "Expand capacityByProduct / capacityMax for capable sites.",
                 }
             )
+
+    # Depth 7 — lane / lane-mode capacity shortfalls
+    ls = lane_shortfalls or {}
+    lane_rows = list(ls.get("customers") or [])
+    metrics["laneShortfallCustomers"] = len(lane_rows)
+    metrics["laneShortfallVolume"] = round(
+        sum(float(r.get("shortfall") or 0.0) for r in lane_rows), 2
+    )
+    if lane_rows:
+        filtered = sum(int(r.get("serviceFilteredModes") or 0) for r in lane_rows)
+        max_lead = ls.get("maxLeadTimeDays")
+        worst = lane_rows[0]
+        hints.append(
+            {
+                "code": "LANE_CAPACITY_SHORTFALL",
+                "severity": "high",
+                "message": (
+                    f"{len(lane_rows)} customer(s) have inbound lane capacity below "
+                    f"demand (short {metrics['laneShortfallVolume']:.0f} units; worst "
+                    f"{worst['customerId']}: cap {worst['inboundLaneCapacity']:.0f} "
+                    f"< demand {worst['demand']:.0f})."
+                ),
+                "entities": [r["customerId"] for r in lane_rows[:8]],
+                "hint": (
+                    "Raise lane / lane-mode capacity, add a mode or parallel lane, "
+                    "or open a facility with an uncapacitated route."
+                ),
+            }
+        )
+        if filtered and max_lead is not None:
+            hints.append(
+                {
+                    "code": "MODE_SERVICE_CAPACITY_CONFLICT",
+                    "severity": "medium",
+                    "message": (
+                        f"{filtered} slower mode option(s) on those lanes exceed "
+                        f"maxLeadTimeDays={max_lead:g}; remaining faster modes lack "
+                        "capacity."
+                    ),
+                    "entities": sorted(
+                        {lid for r in lane_rows for lid in (r.get("laneIds") or [])}
+                    )[:8],
+                    "hint": (
+                        "Relax maxLeadTimeDays, add capacity on fast modes "
+                        "(truck / intermodal), or shorten slow-mode transit."
+                    ),
+                }
+            )
+    plant_short = ls.get("plantOutbound")
+    if plant_short:
+        hints.append(
+            {
+                "code": "PLANT_OUTBOUND_LANE_SHORTFALL",
+                "severity": "high",
+                "message": (
+                    f"Plant outbound lane capacity {plant_short['outboundLaneCapacity']:.0f} "
+                    f"< total demand {plant_short['demand']:.0f}."
+                ),
+                "entities": list(plant_short.get("laneIds") or [])[:8],
+                "hint": "Add capacity / modes on plant→DC and plant→customer lanes.",
+            }
+        )
 
     if hard_service and not hints:
         hints.append(

@@ -146,6 +146,69 @@ function testStressSample() {
   assert.ok(card.ok)
 }
 
+function testLaneModesValidation() {
+  const pack = basePack()
+  const lane = pack.lanes[0]!
+  lane.capacity = 5000
+  lane.modes = [
+    { mode: 'Truck', costPerUnit: 1.2, leadDays: 2, capacity: 1000 },
+    { mode: 'Rail', costPerUnit: 0.7, leadDays: 5, capacity: 2000, fixedCostM: 0.05 },
+  ]
+  let card = validateEnterprisePack(pack)
+  assert.equal(card.errorCount, 0, JSON.stringify(card.issues.filter((i) => i.level === 'error'), null, 2))
+  assert.equal(card.multiModeLaneCount, 1)
+  assert.equal(card.laneModeOptionCount, 2)
+  // Σ mode caps 3000 < lane cap 5000 → info
+  assert.ok(card.issues.some((i) => i.code === 'LANE_MODE_CAPACITY_BELOW_LANE'))
+
+  lane.modes = [
+    { mode: 'Truck', costPerUnit: -1, leadDays: 2 },
+    { mode: 'truck', costPerUnit: 1, leadDays: -3, capacity: 0 },
+    { mode: 'Hyperloop', costPerUnit: 1, leadDays: 1, fixedCostM: -2, co2KgPerUnit: -1 },
+  ]
+  card = validateEnterprisePack(pack)
+  const codes = new Set(card.issues.map((i) => i.code))
+  for (const code of [
+    'LANE_MODE_COST_NEGATIVE',
+    'LANE_MODE_DUPLICATE',
+    'LANE_MODE_LEAD_INVALID',
+    'LANE_MODE_CAPACITY_NONPOSITIVE',
+    'LANE_MODE_UNKNOWN',
+    'LANE_MODE_FIXED_COST_NEGATIVE',
+    'LANE_MODE_CO2_NEGATIVE',
+  ] as const) {
+    assert.ok(codes.has(code), `expected ${code}`)
+  }
+  assert.ok(!card.ok)
+
+  lane.modes = []
+  card = validateEnterprisePack(pack)
+  assert.ok(card.issues.some((i) => i.code === 'LANE_MODE_EMPTY'))
+}
+
+function testLaneModesWiredToPayload() {
+  const pack = generateStressSamplePack({ demandCount: 120 })
+  const payload = packToOptimizePayload(pack)
+  const multi = payload.network.lanes.filter((l) => (l.modes?.length ?? 0) > 0)
+  assert.equal(multi.length, 24, 'plant→DC lanes carry Truck/Intermodal/Rail')
+  const first = multi[0]!
+  assert.deepEqual(
+    first.modes!.map((m) => m.mode),
+    ['Truck', 'Intermodal', 'Rail'],
+  )
+  assert.equal(first.capacityUnits, 50000)
+  const rail = first.modes!.find((m) => m.mode === 'Rail')!
+  assert.ok(rail.costPerUnit < first.costPerUnit && rail.leadDays > first.leadDays)
+}
+
+function testDuplicateRouteWarn() {
+  const pack = basePack()
+  const lane = pack.lanes[0]!
+  pack.lanes.push({ ...lane, id: `${lane.id}-dup` })
+  const card = validateEnterprisePack(pack)
+  assert.ok(card.issues.some((i) => i.code === 'LANE_ROUTE_DUPLICATE'))
+}
+
 const tests: [string, () => void][] = [
   ['valid sample pack', testValidSamplePack],
   ['duplicate site id', testDuplicateSiteId],
@@ -156,6 +219,9 @@ const tests: [string, () => void][] = [
   ['geocode gap', testGeocodeGap],
   ['optimize payload wiring', testOptimizePayloadWiring],
   ['stress sample 120 demand', testStressSample],
+  ['lane modes validation codes', testLaneModesValidation],
+  ['lane modes wired to MIP payload', testLaneModesWiredToPayload],
+  ['duplicate lane route warn', testDuplicateRouteWarn],
 ]
 
 let failed = 0

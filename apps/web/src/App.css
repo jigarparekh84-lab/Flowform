@@ -4083,3 +4083,96 @@ td.empty-cell .empty-state {
 .roadmap-studio code {
   font-size: 0.85em;
 }
+
+/* Depth 7 — MIP lane capacity + mode choice */
+.mip-lanes-block + .mip-lanes-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--ff-border, #333);
+}
+.mip-lanes-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  margin: 0.35rem 0 0.5rem;
+}
+.mip-mode-stack {
+  display: flex;
+  width: 100%;
+  height: 1.35rem;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ff-kbd-bg);
+  margin-bottom: 0.6rem;
+}
+.mip-mode-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.lane-cap-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+.lane-cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ff-bad, #f87171) 45%, transparent);
+  background: color-mix(in srgb, var(--ff-bad, #f87171) 12%, transparent);
+  font-family: ui-monospace, monospace;
+}
+.lane-cap-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.lane-binding-tag {
+  margin-left: 0.35rem;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ff-bad, #f87171);
+}
+.lane-util-track {
+  display: inline-block;
+  width: 4.5rem;
+  height: 0.45rem;
+  margin-right: 0.35rem;
+  border-radius: 999px;
+  background: var(--ff-kbd-bg);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.lane-util-fill {
+  height: 100%;
+  background: var(--ff-accent, #38bdf8);
+}
+.lane-util-fill.is-hot {
+  background: #fbbf24;
+}
+.lane-util-fill.is-binding {
+  background: var(--ff-bad, #f87171);
+}
+.lane-mode-pill {
+  display: inline-block;
+  margin: 0 0.25rem 0.15rem 0;
+  padding: 0 0.35rem;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
+}

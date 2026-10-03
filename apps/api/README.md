@@ -194,3 +194,33 @@ per-scenario costs/flows, and an EVPI-ish gap (here-and-now E[cost] − wait-and
 ```bash
 pytest -q tests/test_stochastic.py
 ```
+
+## Depth slice 7 — Lane capacity + transport mode choice
+
+`POST /optimize` lanes may carry a total `capacity` / `capacityUnits` and a
+`modes[]` list; the MIP picks the mode split per lane:
+
+```json
+{ "id": "ln-1", "from": "plt-1", "to": "dc-1", "capacity": 50000,
+  "modes": [
+    { "mode": "Truck", "costPerUnit": 0.45, "leadDays": 3, "capacity": 30000, "co2KgPerUnit": 12 },
+    { "mode": "Intermodal", "costPerUnit": 0.369, "leadDays": 4, "capacity": 20000, "co2KgPerUnit": 5, "fixedCostM": 0.02 },
+    { "mode": "Rail", "costPerUnit": 0.315, "leadDays": 5, "capacity": 15000, "co2KgPerUnit": 2.5, "fixedCostM": 0.05 }
+  ] }
+```
+
+- Per-mode $/unit, transit days (modes slower than `maxLeadTimeDays` are cut), CO₂/unit,
+  optional capacity, optional fixed activation charge (binary per lane-mode).
+- Lane capacity caps the total across modes and products; mode capacity caps that mode.
+- Duplicate `from→to` rows with different `mode` become alternatives (same mode → last row wins, as before).
+- Constraints: `enforceLaneCapacity` (default true), `carbonPricePerTonne`, `tonsPerUnit`,
+  `emissionKgPerTonMileByMode` (fallback CO₂ when a mode has no `co2KgPerUnit`).
+- Response adds `laneFlows`, `laneUtilization`, `laneCapacity` (with LP shadow prices from a
+  pure LP with every binary fixed), `bindingLaneCapacities`, `laneCapacityShortfalls`,
+  `modeChoice`, and `objectiveBreakdown.modeMix / laneFixedM / carbonM`; flows carry `mode`, `laneId`, `leadDays`, `co2Kg`.
+- Infeasibility hints: `LANE_CAPACITY_SHORTFALL`, `MODE_SERVICE_CAPACITY_CONFLICT`, `PLANT_OUTBOUND_LANE_SHORTFALL`.
+- Networks without modes/lane capacity build the identical legacy model.
+
+```bash
+pytest -q tests/test_depth7_lane_modes.py
+```

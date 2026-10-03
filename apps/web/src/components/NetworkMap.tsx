@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type {
+  ExpressionSpecification,
   GeoJSONSource,
   Map as MapLibreMap,
   StyleSpecification,
@@ -22,6 +23,7 @@ import {
   type ProductMixState,
 } from '../data/productGroups'
 import { bomDrivenLaneIds } from '../data/bom'
+import { mipLaneColor, mipLaneStyleMap, type MipLaneStyle } from '../data/laneMip'
 import { useFlowform } from '../state/FlowformContext'
 import { useTheme } from '../state/theme'
 
@@ -183,8 +185,9 @@ function MapLibreCanvas({
   onClear,
   onFail,
 }: Props & { onFail: (reason: string) => void }) {
-  const { nodes, lanes, network, constraints, productMix, bom } = useFlowform()
+  const { nodes, lanes, network, constraints, productMix, bom, activeScenario } = useFlowform()
   const { theme } = useTheme()
+  const laneMeta = activeScenario?.optimizeMeta
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const failedRef = useRef(false)
@@ -309,6 +312,7 @@ function MapLibreCanvas({
         territoryById,
         productMix,
         bomLaneIds,
+        mipLanes: mipLaneStyleMap(laneMeta),
       })
     }
 
@@ -318,10 +322,32 @@ function MapLibreCanvas({
       map.once('styledata', apply)
       map.once('load', apply)
     }
-  }, [nodes, lanes, layers, selectedIds, constraints, network, theme, productMix, bom])
+  }, [nodes, lanes, layers, selectedIds, constraints, network, theme, productMix, bom, laneMeta])
 
   return <div ref={containerRef} className="maplibre-root" role="img" aria-label="Network map" />
 }
+
+/** Lane paint: selected > MIP binding/hot (depth 7) > BOM > default. */
+const LANE_COLOR_EXPR: ExpressionSpecification = [
+  'case',
+  ['==', ['get', 'selected'], 1],
+  '#7dd3fc',
+  ['!=', ['get', 'mipColor'], ''],
+  ['to-color', ['get', 'mipColor']],
+  ['==', ['get', 'bom'], 1],
+  '#c084fc',
+  '#64748b',
+]
+const LANE_WIDTH_EXPR: ExpressionSpecification = [
+  'case',
+  ['==', ['get', 'selected'], 1],
+  3.5,
+  ['==', ['get', 'mipBinding'], 1],
+  3.2,
+  ['==', ['get', 'bom'], 1],
+  2.8,
+  2,
+]
 
 function syncNetworkLayers(
   map: MapLibreMap,
@@ -336,9 +362,11 @@ function syncNetworkLayers(
     territoryById?: Map<string, { color: string; label: string }> | null
     productMix: ProductMixState
     bomLaneIds: Set<string>
+    /** Depth 7: MIP lane utilization / binding (laneId keyed). */
+    mipLanes?: Map<string, MipLaneStyle>
   },
 ) {
-  const { nodes, lanes, layers, selectedIds, statusById, utilById, territoryById, productMix, bomLaneIds } = args
+  const { nodes, lanes, layers, selectedIds, statusById, utilById, territoryById, productMix, bomLaneIds, mipLanes } = args
   const selectedSet = new Set(selectedIds)
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
 
@@ -376,6 +404,8 @@ function syncNetworkLayers(
           selected: selectedSet.has(lane.id) ? 1 : 0,
           bom: bomLaneIds.has(lane.id) ? 1 : 0,
           mode: lane.mode,
+          mipColor: mipLaneColor(mipLanes?.get(lane.id)) ?? '',
+          mipBinding: mipLanes?.get(lane.id)?.binding ? 1 : 0,
         },
         geometry: {
           type: 'LineString',
@@ -447,22 +477,8 @@ function syncNetworkLayers(
       type: 'line',
       source: 'ff-lanes',
       paint: {
-        'line-color': [
-          'case',
-          ['==', ['get', 'selected'], 1],
-          '#7dd3fc',
-          ['==', ['get', 'bom'], 1],
-          '#c084fc',
-          '#64748b',
-        ],
-        'line-width': [
-          'case',
-          ['==', ['get', 'selected'], 1],
-          3.5,
-          ['==', ['get', 'bom'], 1],
-          2.8,
-          2,
-        ],
+        'line-color': LANE_COLOR_EXPR,
+        'line-width': LANE_WIDTH_EXPR,
         'line-opacity': 0.85,
       },
       layout: {
@@ -473,22 +489,8 @@ function syncNetworkLayers(
   }
 
   if (map.getLayer('ff-lanes-line')) {
-    map.setPaintProperty('ff-lanes-line', 'line-color', [
-      'case',
-      ['==', ['get', 'selected'], 1],
-      '#7dd3fc',
-      ['==', ['get', 'bom'], 1],
-      '#c084fc',
-      '#64748b',
-    ])
-    map.setPaintProperty('ff-lanes-line', 'line-width', [
-      'case',
-      ['==', ['get', 'selected'], 1],
-      3.5,
-      ['==', ['get', 'bom'], 1],
-      2.8,
-      2,
-    ])
+    map.setPaintProperty('ff-lanes-line', 'line-color', LANE_COLOR_EXPR)
+    map.setPaintProperty('ff-lanes-line', 'line-width', LANE_WIDTH_EXPR)
   }
 
   if (!map.getLayer('ff-nodes-halo')) {
@@ -569,7 +571,8 @@ function syncNetworkLayers(
 }
 
 function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
-  const { nodes, lanes, network, constraints, productMix, bom } = useFlowform()
+  const { nodes, lanes, network, constraints, productMix, bom, activeScenario } = useFlowform()
+  const mipLanes = mipLaneStyleMap(activeScenario?.optimizeMeta)
   const nodeMap = new Map(nodes.map((n) => [n.id, n]))
   const selectedSet = new Set(selectedIds)
   const statusById = new Map(
@@ -645,6 +648,8 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
         const b = nodeMap.get(lane.to)!
         const selected = selectedSet.has(lane.id)
         const isBom = bomLaneIds.has(lane.id)
+        const mip = mipLanes.get(lane.id)
+        const mipColor = mipLaneColor(mip)
         return (
           <path
             key={lane.id}
@@ -653,18 +658,29 @@ function SvgNetworkMap({ layers, selectedIds, onSelect, onClear }: Props) {
             stroke={
               selected
                 ? 'var(--ff-accent-text)'
-                : isBom
-                  ? '#c084fc'
-                  : 'var(--ff-lane)'
+                : mipColor
+                  ? mipColor
+                  : isBom
+                    ? '#c084fc'
+                    : 'var(--ff-lane)'
             }
-            strokeWidth={selected ? 0.55 : isBom ? 0.48 : 0.35}
+            strokeWidth={selected ? 0.55 : mip?.binding ? 0.52 : isBom ? 0.48 : 0.35}
             strokeLinecap="round"
             className="lane-arc"
             onClick={(e) => {
               e.stopPropagation()
               onSelect(lane.id, 'lane', e.shiftKey)
             }}
-          />
+          >
+            {mip ? (
+              <title>
+                {lane.id} · MIP {Math.round(mip.volume).toLocaleString()} u
+                {mip.utilizationPct != null ? ` · ${mip.utilizationPct.toFixed(0)}% of cap` : ''}
+                {mip.binding ? ' · binding' : ''}
+                {mip.modes ? ` · ${mip.modes}` : ''}
+              </title>
+            ) : null}
+          </path>
         )
       })}
 

@@ -19,9 +19,11 @@ app = FastAPI(
         "open/close DCs & plants, capacitated flows plant→DC→customer, "
         "optional supplier→plant BOM, multi-SKU/product-group flows, hard service constraints, "
         "infeasibility diagnostics, objective breakdown + capacity duals. "
+        "Lane transport mode choice (truck / rail / intermodal: $/unit, transit, CO2, "
+        "capacity, fixed charge) with lane + lane-mode capacity and LP duals. "
         "Multi-period CapEx NPV: POST /optimize/multi-period. Stochastic scenario-tree / robust: POST /optimize/stochastic."
     ),
-    version="0.5.0",
+    version="0.6.0",
 )
 
 app.add_middleware(
@@ -115,7 +117,9 @@ class OptimizeRequest(BaseModel):
         ...,
         description=(
             "nodes, lanes, demandVolume; optional demandByProduct, skus, "
-            "productGroups, bomDemand, facilityProducts"
+            "productGroups, bomDemand, facilityProducts. lanes[] may carry "
+            "capacity/capacityUnits and modes[] = {mode, costPerUnit, leadDays, "
+            "co2KgPerUnit, capacity, fixedCostM}"
         ),
     )
     constraints: dict[str, Any] = Field(
@@ -124,7 +128,8 @@ class OptimizeRequest(BaseModel):
             "globals (serviceRadiusMiles, capexBudgetM, maxFacilities, "
             "serviceTargetPct, hardServiceConstraints, maxLeadTimeDays, "
             "aggregateProductsByGroup, maxProductCommodities, "
-            "optimizePlants, forceOpenSeed) "
+            "optimizePlants, forceOpenSeed, enforceLaneCapacity, "
+            "carbonPricePerTonne, tonsPerUnit, emissionKgPerTonMileByMode) "
             "+ facilities[] with capacity/fixedCapexM/capableProductIds"
         ),
     )

@@ -1,7 +1,7 @@
 """
 Industrial fixed-charge multi-echelon network-design MIP (PuLP + HiGHS/CBC).
 
-Model (depth slices 1–4):
+Model (depth slices 1–4, 7):
   - Binary open/close for DCs (and optional plants) with fixed CapEx + OpEx
   - Capacitated facilities; optional minimum throughput when open
   - Flow conservation plant → DC → customer
@@ -14,6 +14,11 @@ Model (depth slices 1–4):
   - Facility product capability constraints; demand satisfaction per SKU/group
   - Post-MIP LP (binaries fixed) for capacity shadow prices / duals
   - Best-effort infeasibility diagnostics (no full IIS)
+  - Depth 7: transport mode choice per lane (truck / rail / intermodal …) with
+    per-mode $/unit, transit days, CO2 factor, optional capacity and optional
+    fixed activation charge (binary); lane + lane-mode capacity constraints;
+    hard service filters modes by transit; lane capacity LP duals; mode mix.
+    Networks without mode/capacity data build the identical legacy model.
 """
 
 from __future__ import annotations
@@ -143,7 +148,15 @@ def _lane_cost_map(lanes: list[dict[str, Any]]) -> dict[tuple[str, str], float]:
         fr, to = lane.get("from"), lane.get("to")
         if not fr or not to:
             continue
-        cpu = float(lane.get("costPerUnit") or 0.0)
+        cpu = _num(lane.get("costPerUnit"))
+        if cpu is None:
+            # Multi-mode lane without a headline rate → cheapest mode
+            mode_costs = [
+                c
+                for c in (_num(m.get("costPerUnit")) for m in _lane_modes_raw(lane))
+                if c is not None
+            ]
+            cpu = min(mode_costs) if mode_costs else 0.0
         out[(str(fr), str(to))] = cpu / 1000.0
     return out
 
@@ -156,6 +169,14 @@ def _lane_lead_map(lanes: list[dict[str, Any]]) -> dict[tuple[str, str], float]:
             continue
         if lane.get("leadDays") is not None:
             out[(str(fr), str(to))] = float(lane["leadDays"])
+        else:
+            mode_leads = [
+                d
+                for d in (_num(m.get("leadDays")) for m in _lane_modes_raw(lane))
+                if d is not None
+            ]
+            if mode_leads:
+                out[(str(fr), str(to))] = min(mode_leads)
     return out
 
 
@@ -204,6 +225,335 @@ def _arc_allowed(
         if lead > max_lead + 1e-9:
             return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Depth slice 7 — lane capacity + transport mode choice
+# ---------------------------------------------------------------------------
+
+DEFAULT_MODE_KEY = ""  # legacy single-mode arc (variable keys unchanged)
+DEFAULT_MODE_LABEL = "Truck"
+ROAD_MILES_PER_DAY = 400.0
+DEFAULT_EMISSION_KG_PER_TON_MILE: dict[str, float] = {
+    "truck": 0.161,
+    "rail": 0.022,
+    "intermodal": 0.065,
+    "ocean": 0.01,
+    "air": 0.98,
+    "parcel": 0.25,
+}
+_MODE_ALIASES = {
+    "truck": "Truck",
+    "ftl": "Truck",
+    "ltl": "Truck",
+    "road": "Truck",
+    "rail": "Rail",
+    "train": "Rail",
+    "intermodal": "Intermodal",
+    "imdl": "Intermodal",
+    "ocean": "Ocean",
+    "sea": "Ocean",
+    "air": "Air",
+    "parcel": "Parcel",
+}
+
+
+def _num(v: Any) -> float | None:
+    if v is None or isinstance(v, bool):
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f):
+        return None
+    return f
+
+
+def _mode_label(raw: Any, fallback: str = DEFAULT_MODE_LABEL) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return fallback
+    return _MODE_ALIASES.get(s.lower(), s)
+
+
+def _lane_modes_raw(lane: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = lane.get("modes") or lane.get("modeOptions")
+    if isinstance(raw, list):
+        return [m for m in raw if isinstance(m, dict)]
+    return []
+
+
+def _lane_capacity(lane: dict[str, Any]) -> float | None:
+    for k in ("capacityUnits", "capacity", "maxUnits"):
+        f = _num(lane.get(k))
+        if f is not None and f > 0:
+            return f
+    return None
+
+
+def _build_lane_options(
+    lanes: list[dict[str, Any]],
+    constraints: dict[str, Any],
+    log: list[str],
+) -> tuple[dict[tuple[str, str], dict[str, Any]], dict[str, Any]]:
+    """
+    Normalize lanes into per-(from,to) mode options.
+
+    lane_opts[(from, to)] = {
+        laneId, capacity (lane total, all modes + products) | None,
+        explicitModes: bool,
+        options: [{key, label, costM | None, leadDays | None, co2KgPerUnit | None,
+                   capacity | None, fixedCostM, laneId}]
+    }
+
+    Legacy lanes (no ``modes``) yield one option with key "" so the MIP keeps
+    the exact pre-slice-7 variables. Duplicate from→to rows with distinct
+    ``mode`` labels become mode alternatives (each row's capacity = that
+    mode's capacity); same-mode duplicates keep legacy last-row-wins.
+    """
+    enforce_cap = constraints.get("enforceLaneCapacity", True) is not False
+    merge_dup = constraints.get("mergeDuplicateLaneModes", True) is not False
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    stats = {
+        "lanesWithModes": 0,
+        "modeOptions": 0,
+        "capacitatedLanes": 0,
+        "capacitatedLaneModes": 0,
+        "fixedCostLaneModes": 0,
+        "mergedDuplicateLanes": 0,
+        "enforceLaneCapacity": enforce_cap,
+    }
+
+    for i, lane in enumerate(lanes):
+        fr, to = lane.get("from"), lane.get("to")
+        if not fr or not to:
+            continue
+        key = (str(fr), str(to))
+        lane_id = str(lane.get("id") or f"{fr}->{to}")
+        lane_cap = _lane_capacity(lane) if enforce_cap else None
+        base_cost = _num(lane.get("costPerUnit"))
+        base_lead = _num(lane.get("leadDays"))
+        base_co2 = _num(lane.get("co2KgPerUnit"))
+        modes_raw = _lane_modes_raw(lane)
+        entry: dict[str, Any]
+        if modes_raw:
+            opts: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            for m in modes_raw:
+                label = _mode_label(m.get("mode") or m.get("id") or m.get("name"))
+                mk = label.lower()
+                if mk in seen:
+                    continue
+                seen.add(mk)
+                cost = _num(m.get("costPerUnit"))
+                if cost is None:
+                    cost = base_cost
+                lead = _num(m.get("leadDays"))
+                if lead is None:
+                    lead = _num(m.get("transitDays"))
+                if lead is None:
+                    lead = base_lead
+                cap = _num(m.get("capacity"))
+                if cap is None:
+                    cap = _num(m.get("capacityUnits"))
+                cap = cap if (enforce_cap and cap is not None and cap > 0) else None
+                fixed = max(0.0, _num(m.get("fixedCostM")) or 0.0)
+                co2 = _num(m.get("co2KgPerUnit"))
+                if co2 is None:
+                    co2 = base_co2
+                opts.append(
+                    {
+                        "key": mk,
+                        "label": label,
+                        "costM": None if cost is None else cost / 1000.0,
+                        "leadDays": lead,
+                        "co2KgPerUnit": co2,
+                        "capacity": cap,
+                        "fixedCostM": fixed,
+                        "laneId": lane_id,
+                    }
+                )
+            entry = {
+                "laneId": lane_id,
+                "capacity": lane_cap,
+                "explicitModes": True,
+                "options": opts,
+            }
+        else:
+            entry = {
+                "laneId": lane_id,
+                "capacity": lane_cap,
+                "explicitModes": False,
+                "options": [
+                    {
+                        "key": DEFAULT_MODE_KEY,
+                        "label": _mode_label(lane.get("mode")),
+                        # Legacy: missing costPerUnit → 0 (not distance proxy)
+                        "costM": (base_cost or 0.0) / 1000.0,
+                        "leadDays": base_lead,
+                        "co2KgPerUnit": base_co2,
+                        "capacity": None,
+                        "fixedCostM": 0.0,
+                        "laneId": lane_id,
+                    }
+                ],
+            }
+
+        prev = out.get(key)
+        if prev is None or not merge_dup:
+            out[key] = entry
+            continue
+        same_single = (
+            not prev["explicitModes"]
+            and not entry["explicitModes"]
+            and prev["options"][0]["label"].lower()
+            == entry["options"][0]["label"].lower()
+        )
+        if same_single:
+            out[key] = entry  # legacy last-row-wins
+            continue
+        merged: dict[str, dict[str, Any]] = {}
+        lane_caps: list[float] = []
+        for src in (prev, entry):
+            if src["explicitModes"] and src["capacity"] is not None:
+                lane_caps.append(float(src["capacity"]))
+            for o in src["options"]:
+                o2 = dict(o)
+                if not src["explicitModes"]:
+                    o2["key"] = o2["label"].lower()
+                    if o2["capacity"] is None:
+                        o2["capacity"] = src["capacity"]
+                merged[o2["key"]] = o2
+        out[key] = {
+            "laneId": prev["laneId"],
+            "capacity": min(lane_caps) if lane_caps else None,
+            "explicitModes": True,
+            "options": list(merged.values()),
+        }
+        stats["mergedDuplicateLanes"] += 1
+
+    for entry in out.values():
+        if entry["explicitModes"]:
+            stats["lanesWithModes"] += 1
+            stats["modeOptions"] += len(entry["options"])
+        if entry["capacity"] is not None:
+            stats["capacitatedLanes"] += 1
+        for o in entry["options"]:
+            if o["capacity"] is not None:
+                stats["capacitatedLaneModes"] += 1
+            if o["fixedCostM"] > 0:
+                stats["fixedCostLaneModes"] += 1
+
+    if stats["lanesWithModes"] or stats["capacitatedLanes"]:
+        log.append(
+            f"Lanes: {stats['lanesWithModes']} multi-mode lane(s) · "
+            f"{stats['modeOptions']} mode option(s) · "
+            f"{stats['capacitatedLanes']} lane cap(s) · "
+            f"{stats['capacitatedLaneModes']} lane-mode cap(s) · "
+            f"{stats['fixedCostLaneModes']} fixed-charge lane-mode(s)"
+            + (
+                f" · merged {stats['mergedDuplicateLanes']} duplicate lane row(s)"
+                if stats["mergedDuplicateLanes"]
+                else ""
+            )
+            + "."
+        )
+    if not enforce_cap:
+        log.append("Lane capacity enforcement OFF (enforceLaneCapacity=false).")
+    return out, stats
+
+
+def _co2_kg_per_unit(
+    label: str,
+    explicit: float | None,
+    miles: float,
+    emission_factors: dict[str, float],
+    tons_per_unit: float,
+) -> float:
+    if explicit is not None:
+        return float(explicit)
+    f = emission_factors.get(
+        label.lower(), emission_factors.get("truck", DEFAULT_EMISSION_KG_PER_TON_MILE["truck"])
+    )
+    return miles * f * tons_per_unit
+
+
+def _arc_mode_options(
+    fr: dict[str, Any],
+    to: dict[str, Any],
+    lane_opts: dict[tuple[str, str], dict[str, Any]],
+    radius: float,
+    radius_scale: float,
+    max_lead: float | None,
+) -> tuple[list[dict[str, Any]], float, int]:
+    """
+    Allowed mode options for an arc → (options, miles, n_filtered_by_lead).
+
+    Mirrors legacy ``_arc_allowed`` / ``_transport_unit_cost`` exactly for
+    single-mode lanes and distance-proxy arcs.
+    """
+    miles = _dist_miles(fr, to)
+    entry = lane_opts.get((fr["id"], to["id"]))
+    if entry is None:
+        if miles > radius * radius_scale + 1e-6:
+            return [], miles, 0
+        lead = miles / ROAD_MILES_PER_DAY
+        if max_lead is not None and lead > max_lead + 1e-9:
+            return [], miles, 1
+        return (
+            [
+                {
+                    "key": DEFAULT_MODE_KEY,
+                    "label": DEFAULT_MODE_LABEL,
+                    "cost": miles * DEFAULT_TRANSPORT_PER_MILE,
+                    "leadDays": lead,
+                    "co2KgPerUnit": None,
+                    "capacity": None,
+                    "fixedCostM": 0.0,
+                    "laneId": None,
+                }
+            ],
+            miles,
+            0,
+        )
+    res: list[dict[str, Any]] = []
+    filtered = 0
+    for o in entry["options"]:
+        lead = o["leadDays"] if o["leadDays"] is not None else miles / ROAD_MILES_PER_DAY
+        if max_lead is not None and lead > max_lead + 1e-9:
+            filtered += 1
+            continue
+        cost = o["costM"] if o["costM"] is not None else miles * DEFAULT_TRANSPORT_PER_MILE
+        res.append({**o, "cost": cost, "leadDays": lead})
+    return res, miles, filtered
+
+
+def _highs_row_duals(prob: Any) -> dict[str, float] | None:
+    """
+    Row duals straight from the highspy model PuLP leaves on ``prob`` (PuLP's
+    HiGHS API does not copy duals onto constraints). Rows are added in
+    ``prob.constraints`` order. Returns None when unavailable (e.g. CBC).
+    """
+    model = getattr(prob, "solverModel", None)
+    if model is None or not hasattr(model, "getSolution"):
+        return None
+    try:
+        sol = model.getSolution()
+        if not bool(getattr(sol, "dual_valid", True)):
+            return None
+        duals = [float(d) for d in sol.row_dual]
+    except Exception:  # noqa: BLE001
+        return None
+    names = list(prob.constraints.keys())
+    if len(duals) != len(names):
+        return None
+    return dict(zip(names, duals))
+
+
+def _vk(a: str, b: str, p: str, mk: str) -> tuple:
+    """Variable key — legacy 3-tuple for default mode keeps the model identical."""
+    return (a, b, p) if mk == DEFAULT_MODE_KEY else (a, b, p, mk)
 
 
 def _build_bom_edges(
@@ -434,6 +784,8 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     Echelons: (supplier→) plant → DC → customer, with optional plant→customer
     direct when within service radius / existing lane.
     Multi-SKU / product-group commodities when demandByProduct present.
+    Depth 7: per-lane transport mode choice (cost / transit / CO2 / capacity /
+    optional fixed activation charge) and lane + lane-mode capacity limits.
     """
     log: list[str] = [
         "Flowform fixed-charge multi-echelon MIP (PuLP).",
@@ -445,8 +797,25 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     nodes = list(network.get("nodes") or [])
     lanes = list(network.get("lanes") or [])
     demand_volume = dict(network.get("demandVolume") or {})
-    lane_costs = _lane_cost_map(lanes)
-    lane_leads = _lane_lead_map(lanes)
+    lane_opts, lane_stats = _build_lane_options(lanes, constraints, log)
+
+    carbon_price = _num(constraints.get("carbonPricePerTonne")) or 0.0
+    tons_per_unit = _num(constraints.get("tonsPerUnit"))
+    if tons_per_unit is None or tons_per_unit <= 0:
+        tons_per_unit = 1.0
+    ef_raw = (
+        constraints.get("emissionKgPerTonMileByMode")
+        or network.get("emissionKgPerTonMileByMode")
+        or (network.get("costFactors") or {}).get("emissionKgPerTonMileByMode")
+        or {}
+    )
+    emission_factors = dict(DEFAULT_EMISSION_KG_PER_TON_MILE)
+    for k, v in (ef_raw.items() if isinstance(ef_raw, dict) else []):
+        fv = _num(v)
+        if fv is not None:
+            emission_factors[str(k).lower()] = fv
+    if carbon_price > 0:
+        log.append(f"Carbon price ${carbon_price}/t CO2 added to lane-mode cost.")
 
     plants = [n for n in nodes if n.get("kind") == "plant"]
     dcs = [n for n in nodes if n.get("kind") in ("dc", "candidate")]
@@ -531,13 +900,46 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             return True
         return prod in able
 
-    # --- Arc sets (facility, customer, product, cost, miles) ---
-    arcs_dc_cust: list[tuple[str, str, str, float, float]] = []
-    arcs_plant_dc: list[tuple[str, str, str, float, float]] = []
-    arcs_plant_cust: list[tuple[str, str, str, float, float]] = []
+    # --- Arc sets (from, to, product, unit cost, miles, mode key) ---
+    Arc = tuple  # (a, b, p, cost, miles, mk)
+    arcs_dc_cust: list[Arc] = []
+    arcs_plant_dc: list[Arc] = []
+    arcs_plant_cust: list[Arc] = []
     reachable: dict[tuple[str, str], set[str]] = {
         (c, p): set() for (c, p) in dem_map
     }
+    # (a, b, mk) → option meta (label, leadDays, co2/unit, capacity, fixed, laneId, carbon)
+    arc_meta: dict[tuple[str, str, str], dict[str, Any]] = {}
+    # (a, b) → set of mode keys that survived service filtering (customer-bound)
+    lead_filtered_modes = 0
+
+    def _options_for(
+        fr: dict[str, Any], to: dict[str, Any], scale: float
+    ) -> tuple[list[dict[str, Any]], float]:
+        nonlocal lead_filtered_modes
+        opts, miles, filtered = _arc_mode_options(
+            fr, to, lane_opts, radius, scale, max_lead
+        )
+        lead_filtered_modes += filtered
+        for o in opts:
+            mkey = (fr["id"], to["id"], o["key"])
+            if mkey not in arc_meta:
+                co2 = _co2_kg_per_unit(
+                    o["label"], o["co2KgPerUnit"], miles, emission_factors, tons_per_unit
+                )
+                arc_meta[mkey] = {
+                    "label": o["label"],
+                    "leadDays": o["leadDays"],
+                    "co2KgPerUnit": co2,
+                    "capacity": o["capacity"],
+                    "fixedCostM": o["fixedCostM"],
+                    "laneId": o["laneId"],
+                    "carbonM": (co2 / 1000.0) * carbon_price / 1000.0
+                    if carbon_price > 0
+                    else 0.0,
+                    "miles": miles,
+                }
+        return opts, miles
 
     dem_nodes = {d["id"]: d for d in demands}
 
@@ -548,25 +950,20 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             dnode = dem_nodes.get(cust_id)
             if not dnode:
                 continue
-            cost, miles = _transport_unit_cost(dc, dnode, lane_costs)
-            if not _arc_allowed(
-                dc, dnode, miles, radius, lane_costs, lane_leads, max_lead, 1.0
-            ):
-                continue
-            arcs_dc_cust.append((dc["id"], cust_id, prod, cost, miles))
-            reachable[(cust_id, prod)].add(dc["id"])
+            opts, miles = _options_for(dc, dnode, 1.0)
+            for o in opts:
+                arcs_dc_cust.append((dc["id"], cust_id, prod, o["cost"], miles, o["key"]))
+            if opts:
+                reachable[(cust_id, prod)].add(dc["id"])
 
     for p in plants:
         for dc in dcs:
             for prod in product_ids:
                 if not _can_serve(p["id"], prod) or not _can_serve(dc["id"], prod):
                     continue
-                cost, miles = _transport_unit_cost(p, dc, lane_costs)
-                if not _arc_allowed(
-                    p, dc, miles, radius, lane_costs, lane_leads, max_lead, 2.0
-                ):
-                    continue
-                arcs_plant_dc.append((p["id"], dc["id"], prod, cost, miles))
+                opts, miles = _options_for(p, dc, 2.0)
+                for o in opts:
+                    arcs_plant_dc.append((p["id"], dc["id"], prod, o["cost"], miles, o["key"]))
 
     for p in plants:
         for cust_id, prod in list(dem_map.keys()):
@@ -575,13 +972,17 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             dnode = dem_nodes.get(cust_id)
             if not dnode:
                 continue
-            cost, miles = _transport_unit_cost(p, dnode, lane_costs)
-            if not _arc_allowed(
-                p, dnode, miles, radius, lane_costs, lane_leads, max_lead, 1.0
-            ):
-                continue
-            arcs_plant_cust.append((p["id"], cust_id, prod, cost, miles))
-            reachable[(cust_id, prod)].add(p["id"])
+            opts, miles = _options_for(p, dnode, 1.0)
+            for o in opts:
+                arcs_plant_cust.append((p["id"], cust_id, prod, o["cost"], miles, o["key"]))
+            if opts:
+                reachable[(cust_id, prod)].add(p["id"])
+
+    if lead_filtered_modes and max_lead is not None:
+        log.append(
+            f"Service filter: {lead_filtered_modes} arc-mode option(s) exceed "
+            f"maxLeadTimeDays={max_lead} and were excluded."
+        )
 
     single_echelon = len(plants) == 0
     if single_echelon and not arcs_dc_cust:
@@ -589,13 +990,20 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         log.append("Warning: no reachable DC→customer arcs within service limits.")
 
     # dem_loads for BOM (aggregate volumes by customer)
+    cust_total: dict[str, float] = {}
+    for (c, _p), v in dem_map.items():
+        cust_total[c] = cust_total.get(c, 0.0) + v
     dem_loads = [
-        (dem_nodes[cid], sum(v for (c, _), v in dem_map.items() if c == cid))
+        (dem_nodes[cid], cust_total.get(cid, 0.0))
         for cid in cust_ids
         if cid in dem_nodes
     ]
     bom_arcs = _build_bom_edges(payload, suppliers, plants, dem_loads, log)
 
+    n_mode_arcs = sum(
+        1 for arcs in (arcs_dc_cust, arcs_plant_dc, arcs_plant_cust)
+        for arc in arcs if arc[5] != DEFAULT_MODE_KEY
+    )
     log.append(
         f"Model: {len(plants)} plants · {len(dcs)} DCs/candidates · "
         f"{len(suppliers)} suppliers · {len(cust_ids)} demand · "
@@ -603,7 +1011,102 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         f"{len(arcs_plant_dc)} plant→DC · {len(arcs_dc_cust)} DC→cust · "
         f"{len(arcs_plant_cust)} plant→cust · {len(bom_arcs)} BOM arcs · "
         f"radius {radius} mi · budget ${budget}M · max {max_fac}."
+        + (f" Mode-expanded arcs: {n_mode_arcs}." if n_mode_arcs else "")
     )
+
+    # --- Lane capacity bookkeeping (structural) ---
+    # lane (a,b) → set of active mode keys (any echelon / product)
+    lane_active_modes: dict[tuple[str, str], set[str]] = {}
+    for arcs in (arcs_dc_cust, arcs_plant_dc, arcs_plant_cust):
+        for a, b, _p, _c, _m, mk in arcs:
+            lane_active_modes.setdefault((a, b), set()).add(mk)
+
+    def _lane_effective_cap(a: str, b: str) -> float:
+        entry = lane_opts.get((a, b))
+        if entry is None:
+            return math.inf
+        mks = lane_active_modes.get((a, b), set())
+        mode_sum = 0.0
+        for mk in mks:
+            cap = arc_meta.get((a, b, mk), {}).get("capacity")
+            if cap is None:
+                mode_sum = math.inf
+                break
+            mode_sum += float(cap)
+        lane_cap = entry.get("capacity")
+        return min(mode_sum, float(lane_cap) if lane_cap is not None else math.inf)
+
+    def _lane_shortfalls() -> dict[str, Any]:
+        inbound_cap: dict[str, float] = {}
+        inbound_lanes: dict[str, list[str]] = {}
+        unbounded: set[str] = set()
+        filtered_by_cust: dict[str, int] = {}
+        for (a, b), _mks in lane_active_modes.items():
+            if b not in cust_total:
+                continue
+            eff = _lane_effective_cap(a, b)
+            entry = lane_opts.get((a, b))
+            if entry is not None:
+                n_opts = len(entry["options"])
+                n_act = len(lane_active_modes.get((a, b), set()))
+                if n_opts > n_act:
+                    filtered_by_cust[b] = filtered_by_cust.get(b, 0) + (n_opts - n_act)
+            if math.isinf(eff):
+                unbounded.add(b)
+                continue
+            inbound_cap[b] = inbound_cap.get(b, 0.0) + eff
+            inbound_lanes.setdefault(b, []).append(
+                (entry or {}).get("laneId") or f"{a}->{b}"
+            )
+        rows: list[dict[str, Any]] = []
+        for cid in cust_ids:
+            if cid in unbounded or cid not in inbound_lanes:
+                continue
+            dem_c = cust_total.get(cid, 0.0)
+            cap_c = inbound_cap.get(cid, 0.0)
+            if cap_c + 1e-6 < dem_c:
+                rows.append(
+                    {
+                        "customerId": cid,
+                        "demand": round(dem_c, 2),
+                        "inboundLaneCapacity": round(cap_c, 2),
+                        "shortfall": round(dem_c - cap_c, 2),
+                        "laneIds": inbound_lanes[cid][:6],
+                        "serviceFilteredModes": filtered_by_cust.get(cid, 0),
+                    }
+                )
+        rows.sort(key=lambda r: -r["shortfall"])
+        # Plant outbound echelon: every customer unit leaves a plant on a lane
+        plant_out_cap = 0.0
+        plant_out_unbounded = single_echelon
+        plant_lanes: list[str] = []
+        if not single_echelon:
+            plant_ids = {p["id"] for p in plants}
+            for (a, b), _mks in lane_active_modes.items():
+                if a not in plant_ids:
+                    continue
+                eff = _lane_effective_cap(a, b)
+                if math.isinf(eff):
+                    plant_out_unbounded = True
+                    break
+                plant_out_cap += eff
+                entry = lane_opts.get((a, b))
+                plant_lanes.append((entry or {}).get("laneId") or f"{a}->{b}")
+        plant_short = None
+        if not plant_out_unbounded and plant_out_cap + 1e-6 < sum(cust_total.values()):
+            plant_short = {
+                "outboundLaneCapacity": round(plant_out_cap, 2),
+                "demand": round(sum(cust_total.values()), 2),
+                "shortfall": round(sum(cust_total.values()) - plant_out_cap, 2),
+                "laneIds": plant_lanes[:8],
+            }
+        return {
+            "customers": rows,
+            "plantOutbound": plant_short,
+            "maxLeadTimeDays": max_lead,
+        }
+
+    lane_short = _lane_shortfalls()
 
     solver, solver_name = _pick_solver(log)
 
@@ -626,13 +1129,16 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             hard_service=hard_service,
             capex_of=_capex_of,
             parse_volume=_parse_volume,
+            lane_shortfalls=lane_short,
         )
 
-    # Pre-check: if hard service and everything unreachable → skip solve
-    if hard_service and arcs_dc_cust == [] and arcs_plant_cust == []:
+    def _infeasible(solve_seconds: float = 0.0, pre: bool = True) -> dict[str, Any]:
         report = _build_report()
-        log.append(f"Infeasible pre-check: {report['summary']}")
-        return _infeasible_result(
+        log.append(
+            ("Infeasible pre-check: " if pre else "Infeasibility: ")
+            + report["summary"]
+        )
+        res = _infeasible_result(
             solver_name=solver_name,
             log=log,
             report=report,
@@ -642,7 +1148,42 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             commodity_mode=commodity_mode,
             hard_service=hard_service,
             target_pct=target_pct,
+            solve_seconds=solve_seconds,
+            status_name="Infeasible",
         )
+        res["laneCapacityShortfalls"] = lane_short
+        return res
+
+    # Pre-check: hard service with any demand row unreachable → infeasible
+    if hard_service and (
+        (arcs_dc_cust == [] and arcs_plant_cust == [])
+        or any(not reachable.get(k) for k in dem_map)
+    ):
+        return _infeasible()
+
+    # --- Index arcs once (same iteration order as legacy comprehensions) ---
+    dem_in: dict[tuple[str, str], list[tuple[str, tuple]]] = {}
+    dc_out_p: dict[tuple[str, str], list[tuple]] = {}
+    dc_in_p: dict[tuple[str, str], list[tuple]] = {}
+    fac_out: dict[str, list[tuple[str, tuple]]] = {}
+    fac_out_p: dict[tuple[str, str], list[tuple[str, tuple]]] = {}
+    for a, b, p, _c, _m, mk in arcs_dc_cust:
+        k = _vk(a, b, p, mk)
+        dem_in.setdefault((b, p), []).append(("dc", k))
+        dc_out_p.setdefault((a, p), []).append(k)
+        fac_out.setdefault(a, []).append(("dc", k))
+        fac_out_p.setdefault((a, p), []).append(("dc", k))
+    for a, b, p, _c, _m, mk in arcs_plant_cust:
+        dem_in.setdefault((b, p), []).append(("pc", _vk(a, b, p, mk)))
+    for a, b, p, _c, _m, mk in arcs_plant_dc:
+        k = _vk(a, b, p, mk)
+        dc_in_p.setdefault((b, p), []).append(k)
+        fac_out.setdefault(a, []).append(("pdc", k))
+        fac_out_p.setdefault((a, p), []).append(("pdc", k))
+    for a, b, p, _c, _m, mk in arcs_plant_cust:
+        k = _vk(a, b, p, mk)
+        fac_out.setdefault(a, []).append(("pc", k))
+        fac_out_p.setdefault((a, p), []).append(("pc", k))
 
     prob = pulp.LpProblem("flowform_multi_echelon", pulp.LpMinimize)
 
@@ -664,19 +1205,19 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
 
     x_dc_c = pulp.LpVariable.dicts(
         "x_dc_c",
-        [(a, b, p) for a, b, p, _, _ in arcs_dc_cust],
+        [_vk(a, b, p, mk) for a, b, p, _, _, mk in arcs_dc_cust],
         lowBound=0,
         cat="Continuous",
     )
     x_p_dc = pulp.LpVariable.dicts(
         "x_p_dc",
-        [(a, b, p) for a, b, p, _, _ in arcs_plant_dc],
+        [_vk(a, b, p, mk) for a, b, p, _, _, mk in arcs_plant_dc],
         lowBound=0,
         cat="Continuous",
     )
     x_p_c = pulp.LpVariable.dicts(
         "x_p_c",
-        [(a, b, p) for a, b, p, _, _ in arcs_plant_cust],
+        [_vk(a, b, p, mk) for a, b, p, _, _, mk in arcs_plant_cust],
         lowBound=0,
         cat="Continuous",
     )
@@ -686,6 +1227,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         lowBound=0,
         cat="Continuous",
     )
+    xv = {"dc": x_dc_c, "pdc": x_p_dc, "pc": x_p_c}
 
     dem_keys = list(dem_map.keys())
     if hard_service:
@@ -701,22 +1243,10 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     # Demand satisfaction per (customer, product)
     for key, vol in dem_map.items():
         cust_id, prod = key
-        inbound = [
-            x_dc_c[(a, b, p)]
-            for a, b, p, _, _ in arcs_dc_cust
-            if b == cust_id and p == prod
-        ]
-        inbound += [
-            x_p_c[(a, b, p)]
-            for a, b, p, _, _ in arcs_plant_cust
-            if b == cust_id and p == prod
-        ]
+        inbound = [xv[kind][k] for kind, k in dem_in.get(key, [])]
         if hard_service:
-            if inbound:
-                prob += pulp.lpSum(inbound) == vol, _safe_name("dem", cust_id, prod)
-            else:
-                # Impossible — add contradictory constraint
-                prob += 0 == 1, _safe_name("dem_isol", cust_id, prod)
+            # (unreachable rows were caught by the pre-check above)
+            prob += pulp.lpSum(inbound) == vol, _safe_name("dem", cust_id, prod)
         else:
             assert uncovered is not None
             if inbound:
@@ -731,59 +1261,53 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     for dc in dcs:
         did = dc["id"]
         for prod in product_ids:
-            outflow = [
-                x_dc_c[(a, b, p)]
-                for a, b, p, _, _ in arcs_dc_cust
-                if a == did and p == prod
-            ]
-            inflow = [
-                x_p_dc[(a, b, p)]
-                for a, b, p, _, _ in arcs_plant_dc
-                if b == did and p == prod
-            ]
-            if not outflow:
+            out_keys = dc_out_p.get((did, prod), [])
+            in_keys = dc_in_p.get((did, prod), [])
+            if not out_keys:
                 continue
             if single_echelon or not plants:
                 pass
-            elif inflow:
+            elif in_keys:
                 prob += (
-                    pulp.lpSum(inflow) == pulp.lpSum(outflow),
+                    pulp.lpSum(x_p_dc[k] for k in in_keys)
+                    == pulp.lpSum(x_dc_c[k] for k in out_keys),
                     _safe_name("bal_dc", did, prod),
                 )
             else:
-                for a, b, p, _, _ in arcs_dc_cust:
-                    if a == did and p == prod:
-                        prob += (
-                            x_dc_c[(a, b, p)] == 0,
-                            _safe_name("block_dc", did, b, p),
-                        )
+                for k in out_keys:
+                    prob += (
+                        x_dc_c[k] == 0,
+                        _safe_name("block_dc", did, *k[1:]),
+                    )
 
     # Link flows to open + capability already filtered in arc build
-    for a, b, p, _, _ in arcs_dc_cust:
+    for a, b, p, _, _, mk in arcs_dc_cust:
         if a in y:
             dem_b = dem_map[(b, p)]
             prob += (
-                x_dc_c[(a, b, p)] <= dem_b * y[a],
-                _safe_name("link_dc", a, b, p),
+                x_dc_c[_vk(a, b, p, mk)] <= dem_b * y[a],
+                _safe_name("link_dc", a, b, p, mk) if mk else _safe_name("link_dc", a, b, p),
             )
 
-    for a, b, p, _, _ in arcs_plant_dc:
+    for a, b, p, _, _, mk in arcs_plant_dc:
+        k = _vk(a, b, p, mk)
         if a in y:
             prob += (
-                x_p_dc[(a, b, p)] <= total_demand * y[a],
-                _safe_name("link_pdc", a, b, p),
+                x_p_dc[k] <= total_demand * y[a],
+                _safe_name("link_pdc", *k),
             )
         if b in y:
             prob += (
-                x_p_dc[(a, b, p)] <= total_demand * y[b],
-                _safe_name("link_pdc_in", a, b, p),
+                x_p_dc[k] <= total_demand * y[b],
+                _safe_name("link_pdc_in", *k),
             )
 
-    for a, b, p, _, _ in arcs_plant_cust:
+    for a, b, p, _, _, mk in arcs_plant_cust:
+        k = _vk(a, b, p, mk)
         if a in y:
             prob += (
-                x_p_c[(a, b, p)] <= dem_map[(b, p)] * y[a],
-                _safe_name("link_pc", a, b, p),
+                x_p_c[k] <= dem_map[(b, p)] * y[a],
+                _safe_name("link_pc", *k),
             )
 
     for a, b, _, _ in bom_arcs:
@@ -795,10 +1319,10 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
 
     if bom_arcs:
         plant_out: dict[str, list] = {p["id"]: [] for p in plants}
-        for a, b, p, _, _ in arcs_plant_dc:
-            plant_out.setdefault(a, []).append(x_p_dc[(a, b, p)])
-        for a, b, p, _, _ in arcs_plant_cust:
-            plant_out.setdefault(a, []).append(x_p_c[(a, b, p)])
+        for a, b, p, _, _, mk in arcs_plant_dc:
+            plant_out.setdefault(a, []).append(x_p_dc[_vk(a, b, p, mk)])
+        for a, b, p, _, _, mk in arcs_plant_cust:
+            plant_out.setdefault(a, []).append(x_p_c[_vk(a, b, p, mk)])
 
         by_plant: dict[str, list[tuple[str, float]]] = {}
         for sid, pid, _cost, qty in bom_arcs:
@@ -825,21 +1349,10 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         cap_min = float(c.get("capacityMin") or 0.0)
         outbound: list = []
         if f.get("kind") in ("dc", "candidate"):
-            outbound = [
-                x_dc_c[(a, b, p)]
-                for a, b, p, _, _ in arcs_dc_cust
-                if a == fid
-            ]
+            outbound = [xv[kind][k] for kind, k in fac_out.get(fid, []) if kind == "dc"]
         elif f.get("kind") == "plant":
             outbound = [
-                x_p_dc[(a, b, p)]
-                for a, b, p, _, _ in arcs_plant_dc
-                if a == fid
-            ]
-            outbound += [
-                x_p_c[(a, b, p)]
-                for a, b, p, _, _ in arcs_plant_cust
-                if a == fid
+                xv[kind][k] for kind, k in fac_out.get(fid, []) if kind in ("pdc", "pc")
             ]
         if not outbound:
             continue
@@ -858,26 +1371,105 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             pout: list = []
             if f.get("kind") in ("dc", "candidate"):
                 pout = [
-                    x_dc_c[(a, b, p)]
-                    for a, b, p, _, _ in arcs_dc_cust
-                    if a == fid and p == prod
+                    xv[kind][k]
+                    for kind, k in fac_out_p.get((fid, prod), [])
+                    if kind == "dc"
                 ]
             elif f.get("kind") == "plant":
                 pout = [
-                    x_p_dc[(a, b, p)]
-                    for a, b, p, _, _ in arcs_plant_dc
-                    if a == fid and p == prod
-                ]
-                pout += [
-                    x_p_c[(a, b, p)]
-                    for a, b, p, _, _ in arcs_plant_cust
-                    if a == fid and p == prod
+                    xv[kind][k]
+                    for kind, k in fac_out_p.get((fid, prod), [])
+                    if kind in ("pdc", "pc")
                 ]
             if pout:
                 prob += (
                     pulp.lpSum(pout) <= float(pcap) * y[fid],
                     _safe_name("cap_prod", fid, prod),
                 )
+
+    # --- Depth 7: lane / lane-mode capacity + fixed activation charges ---
+    lane_vars: dict[tuple[str, str], list] = {}
+    lane_mode_vars: dict[tuple[str, str, str], list] = {}
+    for kind, arcs, xd in (
+        ("dc", arcs_dc_cust, x_dc_c),
+        ("pdc", arcs_plant_dc, x_p_dc),
+        ("pc", arcs_plant_cust, x_p_c),
+    ):
+        for a, b, p, _c, _m, mk in arcs:
+            var = xd[_vk(a, b, p, mk)]
+            lane_vars.setdefault((a, b), []).append(var)
+            lane_mode_vars.setdefault((a, b, mk), []).append(var)
+
+    lane_cap_rows: list[dict[str, Any]] = []  # meta per capacity constraint
+    lane_ix = 0
+    for (a, b), vars_ in lane_vars.items():
+        entry = lane_opts.get((a, b))
+        if entry is None or entry.get("capacity") is None:
+            continue
+        cname = f"lanecap_{lane_ix}"
+        lane_ix += 1
+        cap = float(entry["capacity"])
+        prob += pulp.lpSum(vars_) <= cap, cname
+        lane_cap_rows.append(
+            {
+                "name": cname,
+                "scope": "lane",
+                "from": a,
+                "to": b,
+                "mk": None,
+                "laneId": entry["laneId"],
+                "capacity": cap,
+            }
+        )
+    z: dict[tuple[str, str, str], Any] = {}
+    lane_fixed_cost: dict[tuple[str, str, str], float] = {}
+    for (a, b, mk), vars_ in lane_mode_vars.items():
+        meta = arc_meta.get((a, b, mk)) or {}
+        cap = meta.get("capacity")
+        fixed = float(meta.get("fixedCostM") or 0.0)
+        if fixed > 0:
+            zv = pulp.LpVariable(_safe_name("lm_on", lane_ix, mk or "default"), cat="Binary")
+            entry = lane_opts.get((a, b)) or {}
+            big_m = total_demand if b not in cust_total else cust_total[b]
+            if cap is not None:
+                big_m = min(big_m, float(cap))
+            if entry.get("capacity") is not None:
+                big_m = min(big_m, float(entry["capacity"]))
+            z[(a, b, mk)] = zv
+            lane_fixed_cost[(a, b, mk)] = fixed
+            cname = f"lanemode_{lane_ix}"
+            lane_ix += 1
+            prob += pulp.lpSum(vars_) <= big_m * zv, cname
+            if cap is not None and big_m >= float(cap) - 1e-9:
+                # Activation link doubles as the mode capacity row
+                lane_cap_rows.append(
+                    {
+                        "name": cname,
+                        "scope": "lane-mode",
+                        "from": a,
+                        "to": b,
+                        "mk": mk,
+                        "laneId": meta.get("laneId"),
+                        "capacity": float(cap),
+                        "fixedCharge": True,
+                    }
+                )
+                continue
+        if cap is not None:
+            cname = f"lanemode_{lane_ix}"
+            lane_ix += 1
+            prob += pulp.lpSum(vars_) <= float(cap), cname
+            lane_cap_rows.append(
+                {
+                    "name": cname,
+                    "scope": "lane-mode",
+                    "from": a,
+                    "to": b,
+                    "mk": mk,
+                    "laneId": meta.get("laneId"),
+                    "capacity": float(cap),
+                }
+            )
 
     capex_cost = {f["id"]: _open_capex(f["id"], fac_by_id, cmap) for f in decidable}
     opex_cost = {f["id"]: _open_opex(f["id"], fac_by_id, cmap) for f in decidable}
@@ -895,12 +1487,14 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         prob += pulp.lpSum(y[fid] for fid in count_ids) <= max_fac, "max_facilities"
 
     transport_terms = []
-    for a, b, p, cost, _miles in arcs_dc_cust:
-        transport_terms.append(cost * x_dc_c[(a, b, p)])
-    for a, b, p, cost, _miles in arcs_plant_dc:
-        transport_terms.append(cost * x_p_dc[(a, b, p)])
-    for a, b, p, cost, _miles in arcs_plant_cust:
-        transport_terms.append(cost * x_p_c[(a, b, p)])
+    for arcs, xd in (
+        (arcs_dc_cust, x_dc_c),
+        (arcs_plant_dc, x_p_dc),
+        (arcs_plant_cust, x_p_c),
+    ):
+        for a, b, p, cost, _miles, mk in arcs:
+            carbon = arc_meta[(a, b, mk)]["carbonM"] if carbon_price > 0 else 0.0
+            transport_terms.append((cost + carbon) * xd[_vk(a, b, p, mk)])
     for a, b, cost, _qty in bom_arcs:
         transport_terms.append(cost * x_s_p[(a, b)])
 
@@ -921,7 +1515,14 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         if _facility_status(f, cmap) == "open" and f["id"] in y
     )
 
-    prob += transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
+    if z:
+        lane_fixed_expr = pulp.lpSum(lane_fixed_cost[k] * z[k] for k in z)
+        prob += (
+            transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
+            + lane_fixed_expr
+        )
+    else:
+        prob += transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
 
     t_solve0 = time.perf_counter()
     status_code = prob.solve(solver)
@@ -935,21 +1536,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         infeasible = True
 
     if infeasible:
-        report = _build_report()
-        log.append(f"Infeasibility: {report['summary']}")
-        return _infeasible_result(
-            solver_name=solver_name,
-            log=log,
-            report=report,
-            product_ids=product_ids,
-            product_labels=product_labels,
-            dem_map=dem_map,
-            commodity_mode=commodity_mode,
-            hard_service=hard_service,
-            target_pct=target_pct,
-            solve_seconds=solve_seconds,
-            status_name="Infeasible",
-        )
+        return _infeasible(solve_seconds, pre=False)
 
     def _val(var: Any) -> float:
         v = pulp.value(var)
@@ -962,8 +1549,13 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     opened_ids = [i for i in open_ids if i not in seed_open]
     closed_ids = [i for i in seed_open if i not in open_ids]
     kept_open = [i for i in open_ids if i in seed_open]
+    z_on = {k: _val(v) > 0.5 for k, v in z.items()}
 
     flows: list[dict[str, Any]] = []
+    lane_vol: dict[tuple[str, str], float] = {}
+    lane_mode_vol: dict[tuple[str, str, str], float] = {}
+    lane_mode_cost: dict[tuple[str, str, str], float] = {}
+    lane_mode_echelon: dict[tuple[str, str, str], str] = {}
 
     def _add_flow(
         fr: str,
@@ -973,6 +1565,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         echelon: str,
         unit_cost: float,
         prod: str | None = None,
+        mk: str | None = None,
     ) -> None:
         if vol <= 1e-4:
             return
@@ -988,14 +1581,29 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         if prod is not None and multi:
             row["productId"] = prod
             row["productLabel"] = product_labels.get(prod, prod)
+        if mk is not None:
+            meta = arc_meta.get((fr, to, mk)) or {}
+            row["mode"] = meta.get("label", DEFAULT_MODE_LABEL)
+            if mk != DEFAULT_MODE_KEY:
+                row["modeKey"] = mk
+            if meta.get("laneId"):
+                row["laneId"] = meta["laneId"]
+            if meta.get("leadDays") is not None:
+                row["leadDays"] = round(float(meta["leadDays"]), 2)
+            row["co2Kg"] = round(float(meta.get("co2KgPerUnit") or 0.0) * vol, 1)
+            lk = (fr, to, mk)
+            lane_vol[(fr, to)] = lane_vol.get((fr, to), 0.0) + vol
+            lane_mode_vol[lk] = lane_mode_vol.get(lk, 0.0) + vol
+            lane_mode_cost[lk] = lane_mode_cost.get(lk, 0.0) + unit_cost * vol
+            lane_mode_echelon[lk] = echelon
         flows.append(row)
 
-    for a, b, p, cost, miles in arcs_dc_cust:
-        _add_flow(a, b, _val(x_dc_c[(a, b, p)]), miles, "dc→customer", cost, p)
-    for a, b, p, cost, miles in arcs_plant_dc:
-        _add_flow(a, b, _val(x_p_dc[(a, b, p)]), miles, "plant→dc", cost, p)
-    for a, b, p, cost, miles in arcs_plant_cust:
-        _add_flow(a, b, _val(x_p_c[(a, b, p)]), miles, "plant→customer", cost, p)
+    for a, b, p, cost, miles, mk in arcs_dc_cust:
+        _add_flow(a, b, _val(x_dc_c[_vk(a, b, p, mk)]), miles, "dc→customer", cost, p, mk)
+    for a, b, p, cost, miles, mk in arcs_plant_dc:
+        _add_flow(a, b, _val(x_p_dc[_vk(a, b, p, mk)]), miles, "plant→dc", cost, p, mk)
+    for a, b, p, cost, miles, mk in arcs_plant_cust:
+        _add_flow(a, b, _val(x_p_c[_vk(a, b, p, mk)]), miles, "plant→customer", cost, p, mk)
     for a, b, cost, qty in bom_arcs:
         snode = next((s for s in suppliers if s["id"] == a), {"id": a})
         pnode = next((p for p in plants if p["id"] == b), {"id": b})
@@ -1024,7 +1632,18 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     capex_used = sum(capex_cost[i] for i in open_ids)
     opex_used = sum(opex_cost[i] for i in open_ids)
     uncovered_pen = UNCOVERED_PENALTY * uncovered_total
-    objective_total = transport_cost + capex_used + opex_used + uncovered_pen
+    lane_fixed_used = sum(lane_fixed_cost[k] for k, on in z_on.items() if on)
+    carbon_cost = (
+        sum(
+            arc_meta[k]["carbonM"] * v for k, v in lane_mode_vol.items()
+        )
+        if carbon_price > 0
+        else 0.0
+    )
+    objective_total = (
+        transport_cost + capex_used + opex_used + uncovered_pen
+        + lane_fixed_used + carbon_cost
+    )
 
     # Product / SKU breakdown
     transport_by_prod: dict[str, float] = {pid: 0.0 for pid in product_ids}
@@ -1085,6 +1704,82 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                 ),
             }
         )
+
+    # --- Lane flows / mode mix (computed before any dual re-solve) ---
+    lane_flows: list[dict[str, Any]] = []
+    for (a, b, mk), vol in lane_mode_vol.items():
+        if vol <= 1e-4:
+            continue
+        meta = arc_meta.get((a, b, mk)) or {}
+        entry = lane_opts.get((a, b)) or {}
+        mcap = meta.get("capacity")
+        lcap = entry.get("capacity")
+        ref_cap = mcap if mcap is not None else lcap
+        lane_flows.append(
+            {
+                "laneId": meta.get("laneId"),
+                "from": a,
+                "to": b,
+                "mode": meta.get("label", DEFAULT_MODE_LABEL),
+                "echelon": lane_mode_echelon.get((a, b, mk)),
+                "volume": round(vol, 2),
+                "transportCostM": round(lane_mode_cost.get((a, b, mk), 0.0), 4),
+                "co2Kg": round(float(meta.get("co2KgPerUnit") or 0.0) * vol, 1),
+                "leadDays": None
+                if meta.get("leadDays") is None
+                else round(float(meta["leadDays"]), 2),
+                "modeCapacity": mcap,
+                "laneCapacity": lcap,
+                "utilizationPct": round(min(100.0, vol / ref_cap * 100), 1)
+                if ref_cap
+                else None,
+                "fixedCostM": round(lane_fixed_cost.get((a, b, mk), 0.0), 4),
+            }
+        )
+    lane_flows.sort(key=lambda r: (-(r["utilizationPct"] or 0.0), -r["volume"]))
+
+    mix: dict[str, dict[str, Any]] = {}
+    for (a, b, mk), vol in lane_mode_vol.items():
+        if vol <= 1e-4:
+            continue
+        meta = arc_meta.get((a, b, mk)) or {}
+        label = meta.get("label", DEFAULT_MODE_LABEL)
+        m = mix.setdefault(
+            label,
+            {
+                "mode": label,
+                "volume": 0.0,
+                "transportM": 0.0,
+                "co2Kg": 0.0,
+                "lanes": set(),
+                "leadWeighted": 0.0,
+                "fixedM": 0.0,
+            },
+        )
+        m["volume"] += vol
+        m["transportM"] += lane_mode_cost.get((a, b, mk), 0.0)
+        m["co2Kg"] += float(meta.get("co2KgPerUnit") or 0.0) * vol
+        m["lanes"].add((a, b))
+        m["leadWeighted"] += float(meta.get("leadDays") or 0.0) * vol
+        if z_on.get((a, b, mk)):
+            m["fixedM"] += lane_fixed_cost.get((a, b, mk), 0.0)
+    mix_total = sum(m["volume"] for m in mix.values()) or 1.0
+    mode_mix = [
+        {
+            "mode": m["mode"],
+            "volume": round(m["volume"], 2),
+            "sharePct": round(m["volume"] / mix_total * 100, 1),
+            "transportM": round(m["transportM"], 4),
+            "laneFixedM": round(m["fixedM"], 4),
+            "co2Kg": round(m["co2Kg"], 1),
+            "laneCount": len(m["lanes"]),
+            "avgLeadDays": round(m["leadWeighted"] / m["volume"], 2)
+            if m["volume"] > 0
+            else None,
+        }
+        for m in sorted(mix.values(), key=lambda m: -m["volume"])
+    ]
+    transport_co2_kg = sum(m["co2Kg"] for m in mode_mix)
 
     # Sensitivity duals
     shadow_prices: list[dict[str, Any]] = []
@@ -1163,6 +1858,138 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                 }
             )
 
+    # --- Lane capacity duals: pure LP with every binary fixed at its MIP value ---
+    lane_capacity: list[dict[str, Any]] = []
+    lane_dual_method = "none"
+    if lane_cap_rows:
+        lane_duals: dict[str, float | None] = {}
+        bins = [(v, 1.0 if fid in open_ids else 0.0) for fid, v in y.items()]
+        bins += [(v, 1.0 if z_on.get(k) else 0.0) for k, v in z.items()]
+        saved_vals = {v.name: v.varValue for v in prob.variables()}
+        saved_bins = [(v, v.cat, v.lowBound, v.upBound) for v, _ in bins]
+        try:
+            for v, fixed in bins:
+                v.cat = pulp.LpContinuous
+                v.lowBound = fixed
+                v.upBound = fixed
+            lp_solver, _ = _pick_solver([])
+            lp_status = prob.solve(lp_solver)
+            if pulp.LpStatus.get(lp_status) == "Optimal":
+                row_duals = _highs_row_duals(prob)
+                for row in lane_cap_rows:
+                    if row_duals is not None and row["name"] in row_duals:
+                        lane_duals[row["name"]] = row_duals[row["name"]]
+                    else:
+                        c = prob.constraints.get(row["name"])
+                        lane_duals[row["name"]] = _safe_dual(c) if c is not None else None
+                lane_dual_method = (
+                    "lp-dual"
+                    if any(v is not None for v in lane_duals.values())
+                    else "lp-no-duals"
+                )
+            else:
+                lane_dual_method = "lp-not-optimal"
+        except Exception as exc:  # noqa: BLE001
+            log.append(f"Lane-capacity dual pass skipped: {exc}")
+            lane_dual_method = "failed"
+        finally:
+            for v, cat, lo, up in saved_bins:
+                v.cat = cat
+                v.lowBound = lo
+                v.upBound = up
+            for v in prob.variables():
+                if v.name in saved_vals:
+                    v.varValue = saved_vals[v.name]
+
+        for row in lane_cap_rows:
+            a, b, mk = row["from"], row["to"], row["mk"]
+            vol = lane_vol.get((a, b), 0.0) if mk is None else lane_mode_vol.get((a, b, mk), 0.0)
+            cap = row["capacity"]
+            slack = max(0.0, cap - vol)
+            pi = lane_duals.get(row["name"])
+            inactive = bool(row.get("fixedCharge")) and not z_on.get((a, b, mk))
+            if inactive:
+                # Fixed-charge lane-mode left off: its row is "flow ≤ 0", not a
+                # capacity limit — no binding chip, no capacity dual.
+                pi = None
+                binding = False
+            else:
+                binding = slack <= max(1e-6, 1e-4 * cap) or (
+                    pi is not None and abs(pi) > 1e-7
+                )
+            meta = arc_meta.get((a, b, mk)) if mk is not None else None
+            lane_capacity.append(
+                {
+                    "laneId": row["laneId"],
+                    "from": a,
+                    "to": b,
+                    "scope": row["scope"],
+                    "mode": None if meta is None else meta.get("label"),
+                    "capacity": round(cap, 2),
+                    "volume": round(vol, 2),
+                    "utilizationPct": round(min(100.0, vol / cap * 100), 1)
+                    if cap > 0
+                    else 0.0,
+                    "slack": round(slack, 2),
+                    "binding": bool(binding),
+                    "shadowPrice": None if pi is None else round(pi, 6),
+                    "unit": "$M per unit lane capacity",
+                    "method": "inactive-mode"
+                    if inactive
+                    else ("lp-dual" if pi is not None else "slack-only"),
+                    **(
+                        {"fixedCharge": True, "active": not inactive}
+                        if row.get("fixedCharge")
+                        else {}
+                    ),
+                }
+            )
+        lane_capacity.sort(key=lambda r: (-r["utilizationPct"], r["laneId"] or ""))
+    binding_lanes = [r for r in lane_capacity if r["binding"]]
+
+    # Lane utilization rollup (one row per used capacitated / multi-mode lane)
+    lane_util: list[dict[str, Any]] = []
+    for (a, b), vol in lane_vol.items():
+        entry = lane_opts.get((a, b))
+        if entry is None or vol <= 1e-4:
+            continue
+        eff = _lane_effective_cap(a, b)
+        if math.isinf(eff) and not entry["explicitModes"]:
+            continue
+        modes_rows = []
+        for mk in sorted(lane_active_modes.get((a, b), set())):
+            meta = arc_meta.get((a, b, mk)) or {}
+            mv = lane_mode_vol.get((a, b, mk), 0.0)
+            mcap = meta.get("capacity")
+            modes_rows.append(
+                {
+                    "mode": meta.get("label", DEFAULT_MODE_LABEL),
+                    "volume": round(mv, 2),
+                    "capacity": mcap,
+                    "utilizationPct": round(min(100.0, mv / mcap * 100), 1)
+                    if mcap
+                    else None,
+                }
+            )
+        lane_util.append(
+            {
+                "laneId": entry["laneId"],
+                "from": a,
+                "to": b,
+                "volume": round(vol, 2),
+                "capacity": None if math.isinf(eff) else round(eff, 2),
+                "utilizationPct": None
+                if math.isinf(eff) or eff <= 0
+                else round(min(100.0, vol / eff * 100), 1),
+                "binding": any(
+                    r["binding"] and r["from"] == a and r["to"] == b
+                    for r in binding_lanes
+                ),
+                "modes": modes_rows,
+            }
+        )
+    lane_util.sort(key=lambda r: (-(r["utilizationPct"] or 0.0), -r["volume"]))
+
     ref = payload.get("reference") or {}
     ref_kpis = ref.get("kpis") or {}
     ref_cost = _parse_money((ref_kpis.get("cost") or {}).get("value"), 48.2)
@@ -1187,19 +2014,41 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         "fixedCapexM": round(capex_used, 4),
         "fixedOpexM": round(opex_used, 4),
         "uncoveredPenaltyM": round(uncovered_pen, 4),
+        "laneFixedM": round(lane_fixed_used, 4),
+        "carbonM": round(carbon_cost, 4),
+        "modeMix": mode_mix,
         "currency": "model-$M",
     }
 
+    mode_choice_on = lane_stats["lanesWithModes"] > 0
     log.append(
         f"Done: {len(open_ids)} open · CapEx ${capex_used:.1f}M + OpEx ${opex_used:.1f}M "
         f"/ budget ${budget}M · transport ${transport_cost:.3f}M · "
         f"service {service_pct:.1f}% (target {target_pct}%) · "
         f"flows {len(flows)} · commodities={commodity_mode} · duals={dual_method}."
     )
+    if mode_choice_on or lane_cap_rows:
+        log.append(
+            "Lanes: mode mix "
+            + (
+                ", ".join(f"{m['mode']} {m['sharePct']:.0f}%" for m in mode_mix)
+                or "—"
+            )
+            + f" · {len(binding_lanes)} binding lane cap(s) of {len(lane_cap_rows)}"
+            + (f" · lane fixed ${lane_fixed_used:.3f}M" if z else "")
+            + f" · lane duals={lane_dual_method}."
+        )
     if service_pct + 0.05 < target_pct:
         log.append(
             f"Note: service {service_pct:.1f}% below target {target_pct}% "
             "(radius / budget / capacity / max facilities binding)."
+        )
+    if lane_short["customers"] or lane_short["plantOutbound"]:
+        log.append(
+            f"Lane capacity shortfall: {len(lane_short['customers'])} customer(s) "
+            "with inbound lane capacity < demand"
+            + (" + plant outbound lanes short" if lane_short["plantOutbound"] else "")
+            + "."
         )
 
     return {
@@ -1218,14 +2067,29 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         "shadowPrices": shadow_prices,
         "sensitivity": {
             "method": dual_method,
+            "laneMethod": lane_dual_method,
             "note": (
                 "Capacity shadow prices from LP with open/close binaries fixed; "
-                "fallback reduced-cost proxy when solver duals unavailable."
+                "fallback reduced-cost proxy when solver duals unavailable. "
+                "Lane capacity duals from a pure LP with all binaries fixed."
             ),
         },
         "commodityMode": commodity_mode,
         "hardServiceConstraints": hard_service,
         "productBreakdown": product_breakdown if multi else product_breakdown,
+        "modeChoice": {
+            "enabled": mode_choice_on,
+            **{k: v for k, v in lane_stats.items()},
+            "laneModeBinaries": len(z),
+            "serviceFilteredModes": lead_filtered_modes,
+            "carbonPricePerTonne": carbon_price,
+            "tonsPerUnit": tons_per_unit,
+        },
+        "laneFlows": lane_flows,
+        "laneUtilization": lane_util,
+        "laneCapacity": lane_capacity,
+        "bindingLaneCapacities": binding_lanes,
+        "laneCapacityShortfalls": lane_short,
         "kpis": {
             "servicePct": round(service_pct, 1),
             "capexUsedM": round(capex_used, 1),
@@ -1237,6 +2101,8 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             "targetPct": target_pct,
             "objectiveTotalM": round(objective_total, 4),
             "productCount": len(product_ids),
+            "transportCo2Kt": round(transport_co2_kg / 1e6, 3),
+            "bindingLaneCount": len(binding_lanes),
         },
         "log": log,
     }
@@ -1291,9 +2157,16 @@ def _infeasible_result(
             "fixedCapexM": 0.0,
             "fixedOpexM": 0.0,
             "uncoveredPenaltyM": 0.0,
+            "laneFixedM": 0.0,
+            "carbonM": 0.0,
+            "modeMix": [],
             "currency": "model-$M",
         },
         "shadowPrices": [],
+        "laneFlows": [],
+        "laneUtilization": [],
+        "laneCapacity": [],
+        "bindingLaneCapacities": [],
         "sensitivity": {"method": "none", "note": "Skipped — infeasible."},
         "commodityMode": commodity_mode,
         "hardServiceConstraints": hard_service,

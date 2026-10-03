@@ -5,7 +5,14 @@
 
 import type { BomState } from './bom'
 import type { UploadedNetwork } from './csvParsers'
-import type { NetworkConstraints, Scenario } from './sampleNetwork'
+import type {
+  NetworkConstraints,
+  OptimizeLaneCapacityRow,
+  OptimizeLaneUtilizationRow,
+  OptimizeModeChoiceSummary,
+  OptimizeModeMixRow,
+  Scenario,
+} from './sampleNetwork'
 
 export const DEFAULT_API_BASE =
   (typeof import.meta !== 'undefined' &&
@@ -23,6 +30,11 @@ export type ApiFlow = {
   transportCostM?: number
   productId?: string
   productLabel?: string
+  mode?: string
+  modeKey?: string
+  laneId?: string
+  leadDays?: number
+  co2Kg?: number
 }
 
 export type ApiObjectiveBreakdown = {
@@ -31,7 +43,26 @@ export type ApiObjectiveBreakdown = {
   fixedCapexM: number
   fixedOpexM: number
   uncoveredPenaltyM: number
+  laneFixedM?: number
+  carbonM?: number
+  modeMix?: OptimizeModeMixRow[]
   currency?: string
+}
+
+export type ApiLaneFlow = {
+  laneId: string | null
+  from: string
+  to: string
+  mode: string
+  echelon?: string
+  volume: number
+  transportCostM: number
+  co2Kg: number
+  leadDays: number | null
+  modeCapacity: number | null
+  laneCapacity: number | null
+  utilizationPct: number | null
+  fixedCostM?: number
 }
 
 export type ApiOpenFacility = {
@@ -102,6 +133,29 @@ export type ApiOptimizeResponse = {
   hardServiceConstraints?: boolean
   productBreakdown?: ApiProductBreakdown[]
   infeasibilityReport?: ApiInfeasibilityReport
+  /** Depth 7 — lane capacity + mode choice outputs. */
+  modeChoice?: OptimizeModeChoiceSummary
+  laneFlows?: ApiLaneFlow[]
+  laneUtilization?: OptimizeLaneUtilizationRow[]
+  laneCapacity?: OptimizeLaneCapacityRow[]
+  bindingLaneCapacities?: OptimizeLaneCapacityRow[]
+  laneCapacityShortfalls?: {
+    customers: {
+      customerId: string
+      demand: number
+      inboundLaneCapacity: number
+      shortfall: number
+      laneIds: string[]
+      serviceFilteredModes: number
+    }[]
+    plantOutbound: {
+      outboundLaneCapacity: number
+      demand: number
+      shortfall: number
+      laneIds: string[]
+    } | null
+    maxLeadTimeDays: number | null
+  }
   kpis: {
     servicePct: number
     capexUsedM: number
@@ -113,6 +167,8 @@ export type ApiOptimizeResponse = {
     targetPct?: number
     objectiveTotalM?: number
     productCount?: number
+    transportCo2Kt?: number
+    bindingLaneCount?: number
   }
   log: string[]
 }
