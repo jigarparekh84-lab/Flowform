@@ -65,6 +65,7 @@ l5,n3,n6,Intermodal,0.97,4,11
 l6,n1,n5,Truck,0.35,1,5
 l7,n8,n2,Rail,0.72,6,8
 l8,n3,n5,Truck,0.79,2,12
+l9,n2,n6,Truck,1.38,2,10
 `
 
 const SITES_REQUIRED = ['id', 'name', 'kind'] as const

@@ -24,6 +24,9 @@ from typing import Any, Callable
 DEFAULT_MAX_COUNTERFACTUALS = 12
 DEFAULT_BUDGET_SEC = 60.0
 DEFAULT_TOP_DECISIONS = 6
+# Relative MIP gap for counterfactual re-solves; flip deltas within
+# CF_MIP_GAP_REL × |base| are reported as solver-gap noise (gapToleranceM).
+CF_MIP_GAP_REL = 5e-4
 OUT_ECHELONS = ("dc→customer", "plant→dc", "plant→customer")
 
 
@@ -69,6 +72,32 @@ def fmt_money_m(v: float) -> str:
     if a >= 0.001:
         return f"{sign}${a * 1000:,.0f}k" if a >= 0.01 else f"{sign}${a * 1000:,.1f}k"
     return f"{sign}${a * 1e6:,.0f}"
+
+
+# One model volume unit = 1,000 physical units (lane costPerUnit is $/unit and
+# the MIP converts it with /1000 into $M per model unit) — see solver.py.
+VOLUME_UNIT_SCALE = 1000.0
+
+
+def fmt_units(model_vol: float) -> str:
+    """Format a model volume (k units) as physical units: 37.5M · 920k · 450."""
+    p = abs(model_vol) * VOLUME_UNIT_SCALE
+    if p >= 1e6:
+        return f"{p / 1e6:,.1f}M units"
+    if p >= 1e3:
+        return f"{p / 1e3:,.0f}k units"
+    return f"{p:,.0f} units"
+
+
+def fmt_per_unit(m_per_model_unit: float) -> str:
+    """$M per model unit → $ per physical unit: $1.25/unit · $0.065/unit."""
+    d = abs(m_per_model_unit) * 1e6 / VOLUME_UNIT_SCALE
+    sign = "-" if m_per_model_unit < 0 else ""
+    if d >= 100:
+        return f"{sign}${d:,.0f}/unit"
+    if d >= 0.1:
+        return f"{sign}${d:,.2f}/unit"
+    return f"{sign}${d:,.3f}/unit"
 
 
 def _tier(kind: str | None) -> str:
@@ -127,7 +156,7 @@ def facility_reasons(fx: dict[str, Any], base_total: float, tol: float,
                 # operating-cost change (the soft unmet-demand penalty would
                 # otherwise dwarf every real cost).
                 txt = (
-                    f"{verb} it strands {du:,.0f} units of demand (service drops to "
+                    f"{verb} it strands {fmt_units(du)} of demand (service drops to "
                     f"{svc:.1f}%)"
                 )
                 if op > tol:
@@ -203,12 +232,12 @@ def facility_reasons(fx: dict[str, Any], base_total: float, tol: float,
         if pi is not None and pi < -1e-9:
             out.append(_reason(
                 f"Capacity binding ({fx['utilizationPct']:.0f}% utilized): each extra "
-                f"unit saves {fmt_money_m(-pi)}",
+                f"unit of capacity saves {fmt_per_unit(-pi)}",
                 "capacity", "info", 0.55 + min(0.4, -pi * 50)))
         elif fx["utilizationPct"] < 40 and fx["capacityMax"] < 1e8 and fx["throughput"] > 0:
             out.append(_reason(
                 f"Only {fx['utilizationPct']:.0f}% utilized — "
-                f"{fx['capacityMax'] - fx['throughput']:,.0f} units of headroom",
+                f"{fmt_units(fx['capacityMax'] - fx['throughput'])} of headroom",
                 "utilization", "risk", 0.4))
         elif fx["utilizationPct"] >= 95:
             out.append(_reason(
@@ -278,7 +307,7 @@ def build_explain(
     open_set = set(open_ids)
     seed_set = set(seed_open)
     base_total = float(base_parts["totalM"])
-    tol = max(1e-6, 2e-4 * abs(base_total))  # ~MIP gap noise
+    tol = max(1e-6, CF_MIP_GAP_REL * abs(base_total))  # ~MIP gap noise
     sp_by = {sp["facilityId"]: sp for sp in shadow_prices}
     of_by = {of["id"]: of for of in open_facilities}
     names = {fid: str(fac_by_id.get(fid, {}).get("name") or fid) for fid in y_ids}
@@ -512,7 +541,7 @@ def build_explain(
         if (bcf.get("unservedDeltaUnits") or 0) > 0.5:
             headline += (
                 f" Costliest flip: {verb} {best['name']} strands "
-                f"{bcf['unservedDeltaUnits']:,.0f} units (service {bcf['servicePct']:.1f}%)."
+                f"{fmt_units(bcf['unservedDeltaUnits'])} (service {bcf['servicePct']:.1f}%)."
             )
         elif bcf["deltaM"] > tol:
             headline += (
@@ -543,11 +572,22 @@ def build_explain(
         "note": (
             "Flip cost = MIP objective with the facility forced to the opposite "
             "state (all other sites re-optimized, scenario lock lifted) minus the "
-            "base objective, in model-$M. Deltas within gapToleranceM are solver-"
+            "base objective, in $M (includes the unmet-demand penalty; "
+            "operatingDeltaM excludes it). Volumes are model units of 1,000 "
+            "physical units. Deltas within gapToleranceM are solver-"
             "gap noise. Cost-to-serve assigns each transport arc once (DC owns "
             "plant→DC and DC→customer; plant owns supplier→plant and direct)."
         ),
     }
 
 
-__all__ = ["build_explain", "explain_options", "facility_reasons", "fmt_money_m", "math"]
+__all__ = [
+    "CF_MIP_GAP_REL",
+    "build_explain",
+    "explain_options",
+    "facility_reasons",
+    "fmt_money_m",
+    "fmt_per_unit",
+    "fmt_units",
+    "math",
+]

@@ -38,12 +38,38 @@ export type ApiFlow = {
   co2Kg?: number
 }
 
+/** Off-lane rate + unmet-demand penalty knobs (see apps/api resolve_cost_scale). */
+export type OptimizeCostFactors = {
+  offLanePremium?: number
+  offLaneRatePerUnitMile?: number
+  uncoveredPenaltyPerUnit?: number
+  [k: string]: unknown
+}
+
+/** Echo of the cost scale the MIP actually used. */
+export type ApiCostScale = {
+  currency: string
+  volumeUnitScale: number
+  volumeUnit: string
+  medianLaneRatePerUnitMile: number | null
+  medianLaneCostPerUnit: number | null
+  offLanePremium: number
+  offLaneRatePerUnitMile: number
+  offLaneRateSource: string
+  uncoveredPenaltyPerUnit: number
+  uncoveredPenaltySource: string
+}
+
 export type ApiObjectiveBreakdown = {
   totalM: number
   transportM: number
   fixedCapexM: number
   fixedOpexM: number
   uncoveredPenaltyM: number
+  /** $ per unit actually charged for unmet demand. */
+  uncoveredPenaltyPerUnit?: number
+  /** $ per unit-mile used for arcs without a lane rate. */
+  offLaneRatePerUnitMile?: number
   laneFixedM?: number
   carbonM?: number
   modeMix?: OptimizeModeMixRow[]
@@ -132,6 +158,7 @@ export type ApiOptimizeResponse = {
   sensitivity?: { method?: string; laneMethod?: string; note?: string; dualSeconds?: number }
   /** Depth 8 — present when the request set explain=true. */
   explain?: OptimizeExplain
+  costScale?: ApiCostScale
   commodityMode?: string
   hardServiceConstraints?: boolean
   productBreakdown?: ApiProductBreakdown[]
@@ -216,6 +243,7 @@ export async function postOptimize(args: {
     }[]
     skus?: { id: string; name?: string; code?: string; groupId?: string }[]
     productGroups?: { id: string; name?: string; code?: string }[]
+    costFactors?: OptimizeCostFactors
   }
   constraints: NetworkConstraints
   reference: Scenario
@@ -252,6 +280,7 @@ export async function postOptimize(args: {
     }[]
     skus?: { id: string; name?: string; code?: string; groupId?: string }[]
     productGroups?: { id: string; name?: string; code?: string }[]
+    costFactors?: OptimizeCostFactors
   }
   const res = await fetch(`${base}/optimize`, {
     method: 'POST',
@@ -265,6 +294,7 @@ export async function postOptimize(args: {
         demandByProduct: net.demandByProduct,
         skus: net.skus,
         productGroups: net.productGroups,
+        costFactors: net.costFactors,
       },
       constraints: args.constraints,
       reference: {

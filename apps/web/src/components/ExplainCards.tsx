@@ -22,6 +22,31 @@ export function fmtM(v: number | null | undefined, signed = false): string {
   return `${sign}$${(a * 1e6).toFixed(0)}`
 }
 
+/**
+ * One model volume unit = 1,000 physical units (lane costPerUnit is $/unit;
+ * the MIP divides by 1,000 to get $M per model unit). Mirrors apps/api.
+ */
+export const VOLUME_UNIT_SCALE = 1000
+
+/** Model volume → physical units label: 37.5M · 920k · 450. */
+export function fmtUnits(modelVol: number | null | undefined): string {
+  if (modelVol == null || !Number.isFinite(modelVol)) return '—'
+  const p = Math.abs(modelVol) * VOLUME_UNIT_SCALE
+  if (p >= 1e6) return `${(p / 1e6).toFixed(1)}M`
+  if (p >= 1e3) return `${(p / 1e3).toFixed(0)}k`
+  return p.toFixed(0)
+}
+
+/** $M per model unit → $ per physical unit: $1.25/unit · $0.065/unit. */
+export function fmtPerUnit(mPerModelUnit: number | null | undefined): string {
+  if (mPerModelUnit == null || !Number.isFinite(mPerModelUnit)) return '—'
+  const d = (Math.abs(mPerModelUnit) * 1e6) / VOLUME_UNIT_SCALE
+  const sign = mPerModelUnit < 0 ? '−' : ''
+  if (d >= 100) return `${sign}$${d.toFixed(0)}/unit`
+  if (d >= 0.1) return `${sign}$${d.toFixed(2)}/unit`
+  return `${sign}$${d.toFixed(3)}/unit`
+}
+
 const DECISION_LABEL: Record<OptimizeExplainFacility['decision'], string> = {
   opened: 'Opened',
   'kept-open': 'Kept open',
@@ -81,7 +106,7 @@ export function FlipChip({ fx }: { fx: OptimizeExplainFacility }) {
     du > 0.5 || (cf.deltaM ?? 0) > 0 ? (cf.withinGap ? 'flip-soft' : 'flip-hard') : 'flip-soft'
   return (
     <span className={`explain-flip ${tone}`} title={title}>
-      {verb}: {du > 0.5 ? `strands ${Math.round(du).toLocaleString()} u · ` : ''}
+      {verb}: {du > 0.5 ? `strands ${fmtUnits(du)} u · ` : ''}
       {fmtM(op, true)} op. cost{svc}
     </span>
   )
@@ -144,8 +169,8 @@ export function FacilityExplainCard({
                 {fx.utilizationPct.toFixed(0)}%
                 <span className="muted tiny">
                   {' '}
-                  {Math.round(fx.throughput).toLocaleString()} /{' '}
-                  {fx.capacityMax >= 1e8 ? '∞' : Math.round(fx.capacityMax).toLocaleString()}
+                  {fmtUnits(fx.throughput)} /{' '}
+                  {fx.capacityMax >= 1e8 ? '∞' : fmtUnits(fx.capacityMax)} units
                 </span>
               </dd>
             </div>
@@ -182,7 +207,7 @@ export function FacilityExplainCard({
               ? '—'
               : fx.capacityDual === 0
                 ? '0 (slack)'
-                : `${fmtM(-fx.capacityDual)} / unit`}
+                : `${fmtPerUnit(-fx.capacityDual)} saved`}
             {fx.capacityBinding && <span className="explain-pill">binding</span>}
           </dd>
         </div>

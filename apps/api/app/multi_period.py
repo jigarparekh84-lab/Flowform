@@ -21,7 +21,6 @@ from typing import Any
 import pulp
 
 from .solver import (
-    UNCOVERED_PENALTY,
     _facility_status,
     _open_opex,
     _parse_volume,
@@ -29,6 +28,7 @@ from .solver import (
     _safe_name,
     _transport_unit_cost,
     _lane_cost_map,
+    resolve_cost_scale,
 )
 
 
@@ -153,6 +153,9 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
         str(k): float(v) for k, v in dict(network.get("demandVolume") or {}).items()
     }
     lane_costs = _lane_cost_map(lanes)
+    cost_scale = resolve_cost_scale({**payload, "network": {**network, "nodes": nodes}})
+    off_lane_m = cost_scale["offLaneRateM"]
+    uncovered_penalty = cost_scale["uncoveredPenaltyM"]
 
     # Optional demand growth / scale by year
     scale_raw = roadmap.get("demandScaleByYear") or constraints.get("demandScaleByYear")
@@ -223,7 +226,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
     for fid, f in fac_by_id.items():
         for cid in cust_ids:
             dnode = dem_nodes[cid]
-            cost, miles = _transport_unit_cost(f, dnode, lane_costs)
+            cost, miles = _transport_unit_cost(f, dnode, lane_costs, off_lane_m)
             key = (fid, cid)
             within = miles <= radius + 1e-6 or key in lane_costs
             if within:
@@ -235,7 +238,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
         for fid, f in fac_by_id.items():
             for cid in cust_ids:
                 dnode = dem_nodes[cid]
-                cost, miles = _transport_unit_cost(f, dnode, lane_costs)
+                cost, miles = _transport_unit_cost(f, dnode, lane_costs, off_lane_m)
                 arcs.append((fid, cid, cost, miles))
 
     arc_keys = [(a[0], a[1]) for a in arcs]
@@ -462,7 +465,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
             unit_cost[(fid, cid)] * x[(fid, cid, t)] for (fid, cid) in arc_keys
         )
         if uncovered is not None:
-            uncov_t = UNCOVERED_PENALTY * pulp.lpSum(
+            uncov_t = uncovered_penalty * pulp.lpSum(
                 uncovered[(cid, t)] for cid in cust_ids
             )
         else:
@@ -607,7 +610,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
             uncov_vol = sum(_val(uncovered[(cid, t)]) for cid in cust_ids)
         else:
             uncov_vol = 0.0
-        uncov_pen = UNCOVERED_PENALTY * uncov_vol
+        uncov_pen = uncovered_penalty * uncov_vol
         covered = max(0.0, dem_t - uncov_vol)
         service_pct = (covered / dem_t * 100.0) if dem_t > 0 else 100.0
         end_service = service_pct

@@ -167,6 +167,8 @@ def pack_to_optimize_payload(pack: dict[str, Any]) -> dict[str, Any]:
             "skus": skus or None,
             "productGroups": product_groups or None,
             "bomDemand": bom_demand or None,
+            # Off-lane premium / unmet-demand $/unit (see resolve_cost_scale)
+            "costFactors": dict(pack.get("costFactors") or {}) or None,
         },
         "constraints": constraints,
         "bom": {"rows": bom_rows} if bom_rows else {},

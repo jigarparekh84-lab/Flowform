@@ -81,10 +81,34 @@ Response includes:
 | `openIds` / `openedIds` / `closedIds` / `keptOpenIds` | Facility decisions |
 | `openFacilities` | Throughput, util %, CapEx/OpEx per open site |
 | `flows` | Multi-echelon arcs (`echelon`: plant→dc, dc→customer, supplier→plant, …) |
-| `objectiveBreakdown` | transportM, fixedCapexM, fixedOpexM, uncoveredPenaltyM, totalM |
+| `objectiveBreakdown` | transportM, fixedCapexM, fixedOpexM, uncoveredPenaltyM, totalM (+ uncoveredPenaltyPerUnit, offLaneRatePerUnitMile echo) |
+| `costScale` | Off-lane rate + unmet-demand penalty actually used (see *Cost units*) |
 | `shadowPrices` | Capacity duals (LP with binaries fixed) or reduced-cost proxy |
 | `kpis` | servicePct, capexUsedM, opexUsedM, transportCostM, costM, … |
 | `solver` / `model` / `log` | `pulp-highs` / `fixed-charge-multi-echelon-v1` |
+
+### Cost units
+
+One convention for every objective term:
+
+- Money (objective, breakdown, explain flip costs) is **$M**.
+- Lane `costPerUnit` is **$ per unit**; the MIP divides by 1,000, so one model
+  volume unit = **1,000 physical units** (demand `9200` ≈ 9.2M units). Explain
+  reasons print physical units (`strands 2.3M units`) and capacity duals as
+  `$/unit`.
+- Facility `fixedCapexM` / `fixedOpexM` are already $M.
+- **Off-lane arcs** (no lane rate, within radius) cost the network's median lane
+  $/unit-mile × `offLanePremium` (default **1.35**). `offLaneRatePerUnitMile`
+  overrides; with no rated lanes the fallback is $0.0015/unit-mile.
+- **Unmet demand** costs `uncoveredPenaltyPerUnit` $/unit (default
+  max($15, 10 × median lane $/unit)) — well above landed cost, reported
+  separately as `uncoveredPenaltyM` / explain `penaltyDeltaM`.
+- Knobs are read from `constraints`, then `network.costFactors` (enterprise
+  packs' `costFactors`). Legacy `costFactors.uncoveredPenaltyM` (80 "$M/unit")
+  is ignored. Before this fix the off-lane rate was a hard-coded 0.002 $M per
+  model unit-mile (≈ $2/unit-mile, ~1,500× stress-200 lane rates) and the
+  penalty 80 $M per model unit ($80k/unit); set `offLaneRatePerUnitMile: 2` and
+  `uncoveredPenaltyPerUnit: 80000` to reproduce old objectives.
 
 ## Tests
 

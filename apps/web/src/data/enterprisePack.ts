@@ -9,7 +9,16 @@ import type { UploadedNetwork } from './csvParsers'
 import { buildValidation, latLngToXY } from './csvParsers'
 import type { EmissionFactor } from './emissions'
 import { DEFAULT_EMISSION_FACTORS } from './emissions'
-import type { ProductMixState } from './productGroups'
+import type {
+  ProductGroup,
+  ProductHandling,
+  ProductMixState,
+} from './productGroups'
+import {
+  MFG_STAGE_GROUPS,
+  TEMP_HANDLING_GROUPS,
+  mergeProductMix,
+} from './productGroups'
 import type {
   FacilityConstraint,
   FacilityStatus,
@@ -116,11 +125,29 @@ export type EnterpriseBomRow = {
   supplierId?: string | null
 }
 
+/**
+ * Cost scaling read by the MIP (apps/api resolve_cost_scale). Money is $M;
+ * lane costPerUnit is $/unit and one model volume unit = 1,000 units.
+ */
 export type EnterpriseCostFactors = {
   emissionKgPerTonMileByMode: Record<string, number>
   transportCostScale?: number
+  /** Off-lane (no lane rate) $/unit-mile = median lane $/unit-mile × this (default 1.35). */
+  offLanePremium?: number
+  /** Explicit off-lane $/unit-mile — overrides the median-lane derivation. */
+  offLaneRatePerUnitMile?: number
+  /** Unmet-demand penalty, $ per unit (default max($15, 10 × median lane $/unit)). */
+  uncoveredPenaltyPerUnit?: number
+  /** @deprecated legacy "$M per unit" penalty (80) — ignored by the solver. */
   uncoveredPenaltyM?: number
 }
+
+/** Default cost factors written into generated / exported packs. */
+export const DEFAULT_COST_SCALING = {
+  transportCostScale: 1,
+  offLanePremium: 1.35,
+  uncoveredPenaltyPerUnit: 15,
+} as const
 
 export type EnterprisePack = {
   format: typeof ENTERPRISE_PACK_FORMAT
@@ -1022,8 +1049,7 @@ export function buildEnterprisePack(args: {
     bom: bomRows,
     costFactors: {
       emissionKgPerTonMileByMode,
-      transportCostScale: 1,
-      uncoveredPenaltyM: 80,
+      ...DEFAULT_COST_SCALING,
     },
     globals: {
       serviceTargetPct: constraints.serviceTargetPct,
@@ -1211,6 +1237,9 @@ export type OptimizePayloadFromPack = {
     }[]
     skus?: EnterpriseSku[]
     productGroups?: EnterpriseProductGroup[]
+    costFactors?: Omit<EnterpriseCostFactors, 'emissionKgPerTonMileByMode'> & {
+      emissionKgPerTonMileByMode?: Record<string, number>
+    }
   }
   constraints: NetworkConstraints
   bom: { rows: BomRow[] }
@@ -1266,12 +1295,101 @@ export function packToOptimizePayload(
       ...(pack.productGroups.length
         ? { productGroups: pack.productGroups }
         : {}),
+      ...(pack.costFactors ? { costFactors: pack.costFactors } : {}),
     },
     constraints,
     bom: { rows: bomRows },
     enterpriseSchemaVersion: ENTERPRISE_SCHEMA_VERSION,
     validationOk: card.ok,
     validationScore: card.score,
+  }
+}
+
+/**
+ * Product mix for an imported pack, taken from the pack itself (its groups,
+ * per-customer SKU demand and site capability) instead of re-seeding the
+ * studio's default temp-handling catalog. Re-seeding invented a hazmat share
+ * the pack never had and made half the DCs hazmat-incapable, so a plain Run
+ * on stress-200 stranded ~7M units. Packs without groups fall back to merge.
+ */
+export function productMixFromPack(
+  pack: EnterprisePack,
+  network: UploadedNetwork,
+  prev?: ProductMixState | null,
+): ProductMixState {
+  if (!pack.productGroups.length) return mergeProductMix(prev, network)
+  const known = [...TEMP_HANDLING_GROUPS, ...MFG_STAGE_GROUPS]
+  const handlings: ProductHandling[] = ['ambient', 'chilled', 'frozen', 'hazmat', 'standard']
+  const groups: ProductGroup[] = pack.productGroups.map((g, i) => {
+    const k = known.find((x) => x.id === g.id)
+    return {
+      id: g.id,
+      name: g.name,
+      code: g.code,
+      color: g.color ?? k?.color ?? ['#34d399', '#38bdf8', '#fbbf24', '#a78bfa'][i % 4],
+      description: g.description ?? k?.description ?? '',
+      handling:
+        k?.handling ??
+        (handlings.includes(g.id as ProductHandling) ? (g.id as ProductHandling) : 'standard'),
+    }
+  })
+  const groupIds = groups.map((g) => g.id)
+  const skuGroup = new Map(pack.skus.map((s) => [s.id, s.groupId]))
+  const toGroup = (id: string) =>
+    groupIds.includes(id) ? id : (skuGroup.get(id) ?? groupIds[0])
+
+  const byCustomer = new Map<string, Record<string, number>>()
+  for (const d of pack.demand) {
+    const g = toGroup(d.skuId)
+    if (!g || !(d.volume > 0)) continue
+    const row = byCustomer.get(d.customerId) ?? {}
+    row[g] = (row[g] ?? 0) + d.volume
+    byCustomer.set(d.customerId, row)
+  }
+  const demandMix = network.nodes
+    .filter((n) => n.kind === 'demand')
+    .map((n) => {
+      const vols = byCustomer.get(n.id) ?? {}
+      const tot = Object.values(vols).reduce((a, b) => a + b, 0)
+      const shares: Record<string, number> = {}
+      for (const id of groupIds) {
+        shares[id] = tot > 0 ? Math.round(((vols[id] ?? 0) / tot) * 1000) / 10 : 100 / groupIds.length
+      }
+      return { nodeId: n.id, shares }
+    })
+
+  const siteById = new Map(pack.sites.map((s) => [s.id, s]))
+  const facilityCaps = network.nodes
+    .filter((n) => FACILITY_KINDS.includes(n.kind))
+    .map((n) => {
+      const site = siteById.get(n.id)
+      const raw = site?.capableProductIds ?? []
+      const capable = raw.length
+        ? Array.from(new Set(raw.map(toGroup).filter((g): g is string => !!g)))
+        : [...groupIds]
+      const total = site?.capacityMax ?? 0
+      const capacityByGroup: Record<string, number> = {}
+      for (const id of groupIds) {
+        capacityByGroup[id] = capable.includes(id)
+          ? Math.round(total / Math.max(1, capable.length))
+          : 0
+      }
+      return { nodeId: n.id, capableGroupIds: capable, capacityByGroup }
+    })
+
+  const catalog =
+    groupIds.every((id) => TEMP_HANDLING_GROUPS.some((g) => g.id === id))
+      ? 'temp-handling'
+      : groupIds.every((id) => MFG_STAGE_GROUPS.some((g) => g.id === id))
+        ? 'mfg-stage'
+        : (prev?.catalog ?? 'temp-handling')
+  return {
+    catalog,
+    groups,
+    demandMix,
+    laneTags: network.lanes.map((l) => ({ laneId: l.id, groupIds: [...groupIds] })),
+    facilityCaps,
+    filterGroupId: null,
   }
 }
 
@@ -1583,8 +1701,7 @@ export function generateStressSamplePack(opts?: {
       emissionKgPerTonMileByMode: Object.fromEntries(
         DEFAULT_EMISSION_FACTORS.map((f) => [f.mode, f.kgPerTonMile]),
       ),
-      transportCostScale: 1,
-      uncoveredPenaltyM: 80,
+      ...DEFAULT_COST_SCALING,
     },
     globals: {
       serviceTargetPct: 92,

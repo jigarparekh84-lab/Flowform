@@ -560,7 +560,19 @@ function MatrixView({
         <section className="library-card" aria-label="MIP objective breakdown" style={{ marginBottom: '1rem' }}>
           <h2>Optimize objective breakdown</h2>
           <p className="muted tiny">
-            Fixed-charge multi-echelon MIP cost stack (transport + CapEx + OpEx + uncovered penalty).
+            Fixed-charge multi-echelon MIP cost stack (transport + CapEx + OpEx + uncovered penalty), all in $M.
+            {(() => {
+              const bd0 = withBreakdown[0]?.optimizeMeta?.objectiveBreakdown
+              if (bd0?.uncoveredPenaltyPerUnit == null) return null
+              return (
+                <>
+                  {' '}
+                  Unmet demand is charged ${bd0.uncoveredPenaltyPerUnit.toFixed(2)}/unit; arcs without a
+                  lane rate cost ${(bd0.offLaneRatePerUnitMile ?? 0).toFixed(4)}/unit-mile (median lane
+                  rate × premium).
+                </>
+              )
+            })()}
           </p>
           <table className="compare-matrix modes-table">
             <thead>

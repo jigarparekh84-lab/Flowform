@@ -35,6 +35,7 @@ import {
 import {
   buildEnterprisePack,
   downloadEnterprisePack,
+  productMixFromPack,
   emissionFactorsFromPack,
   packToBomRows,
   packToConstraints,
@@ -1071,7 +1072,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         }
       })
       setInventoryPolicies((prev) => mergeInventoryPolicies(prev, net))
-      setProductMix((prev) => mergeProductMix(prev, net))
+      setProductMix((prev) => productMixFromPack(pack, net, prev))
       setLaneRates((prev) => mergeLaneRates(prev, net))
       setCapexRoadmap((prev) => mergeCapexRoadmap(prev, net))
       setSelection({ ids: [], kind: null })

@@ -37,11 +37,37 @@ from typing import Any
 import pulp
 
 from .diagnostics import diagnose_network_conflicts
-from .explain import build_explain, explain_options
+from .explain import CF_MIP_GAP_REL, build_explain, explain_options
 
 MILES_PER_UNIT = 12.0
-DEFAULT_TRANSPORT_PER_MILE = 0.002  # $M proxy per unit-mile when no lane rate
-UNCOVERED_PENALTY = 80.0  # $M-scale penalty per unit uncovered
+
+# ---------------------------------------------------------------------------
+# Cost units (one convention for every objective term)
+#
+#   * money in the objective / breakdown / explain is $M ("model-$M")
+#   * lane ``costPerUnit`` is $ per physical unit; the model converts it with
+#     ``costPerUnit / VOLUME_UNIT_SCALE`` → $M per model volume unit, i.e. one
+#     model volume unit = 1,000 physical units ("k units")
+#   * facility ``fixedCapexM`` / ``fixedOpexM`` are already $M
+#   * off-lane (no lane rate) transport and the unmet-demand penalty are
+#     configured in $ per physical unit(-mile) and converted the same way
+# ---------------------------------------------------------------------------
+VOLUME_UNIT_SCALE = 1000.0  # physical units per model volume unit
+# $/unit-mile fallback when the network has no rated lanes to derive from
+# (~$1.50 per unit per 1,000 mi, mid-range TL/LTL planning rate).
+DEFAULT_RATE_PER_UNIT_MILE = 0.0015
+# Off-lane arcs are priced at median lane $/unit-mile × this premium
+# (spot / un-contracted freight premium). Configurable: offLanePremium.
+DEFAULT_OFF_LANE_PREMIUM = 1.35
+# Unmet demand: $/unit lost-margin + expedite proxy. Default is the larger of
+# this floor and UNCOVERED_PENALTY_LANE_MULTIPLE × median lane $/unit, so it
+# always sits well above any landed cost. Configurable: uncoveredPenaltyPerUnit.
+DEFAULT_UNCOVERED_PENALTY_PER_UNIT = 15.0
+UNCOVERED_PENALTY_LANE_MULTIPLE = 10.0
+# Legacy-named module defaults in model units ($M per model unit[-mile]).
+# Callers that know the network should use resolve_cost_scale() instead.
+DEFAULT_TRANSPORT_PER_MILE = DEFAULT_RATE_PER_UNIT_MILE / VOLUME_UNIT_SCALE
+UNCOVERED_PENALTY = DEFAULT_UNCOVERED_PENALTY_PER_UNIT / VOLUME_UNIT_SCALE
 DEFAULT_MAX_COMMODITIES = 8
 AGG_PRODUCT_ID = "__total__"
 
@@ -187,17 +213,118 @@ def _lane_lead_map(lanes: list[dict[str, Any]]) -> dict[tuple[str, str], float]:
     return out
 
 
+def _cfg_num(sources: list[dict[str, Any]], *keys: str) -> float | None:
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        for k in keys:
+            v = _num(src.get(k))
+            if v is not None:
+                return v
+    return None
+
+
+def resolve_cost_scale(payload: dict[str, Any]) -> dict[str, Any]:
+    """
+    Network-consistent off-lane rate + unmet-demand penalty.
+
+    Off-lane arcs (no lane rate) are priced at the network's median lane
+    $/unit-mile × ``offLanePremium`` (default 1.35), so a distance-proxy arc
+    costs about what a contracted lane of the same length would, plus a spot
+    premium. ``offLaneRatePerUnitMile`` ($/unit-mile) overrides the derivation.
+
+    Unmet demand costs ``uncoveredPenaltyPerUnit`` $/unit (default
+    max($15, 10 × median lane $/unit)). Both are read from ``constraints``,
+    then ``network.costFactors`` / ``costFactors``. Returned ``*M`` values are
+    in model units ($M per model volume unit[-mile]).
+    """
+    network = payload.get("network") or {}
+    constraints = payload.get("constraints") or {}
+    sources = [constraints, network.get("costFactors") or {}, payload.get("costFactors") or {}]
+    by_id = {str(n.get("id")): n for n in (network.get("nodes") or []) if n.get("id")}
+
+    per_mile: list[float] = []
+    per_unit: list[float] = []
+    for lane in network.get("lanes") or []:
+        a, b = by_id.get(str(lane.get("from"))), by_id.get(str(lane.get("to")))
+        cpu = _num(lane.get("costPerUnit"))
+        if cpu is None:
+            mode_costs = [
+                c for c in (_num(m.get("costPerUnit")) for m in _lane_modes_raw(lane))
+                if c is not None
+            ]
+            cpu = min(mode_costs) if mode_costs else None
+        if cpu is None or cpu <= 0:
+            continue
+        per_unit.append(cpu)
+        if a is None or b is None:
+            continue
+        miles = _dist_miles(a, b)
+        if miles >= 25.0:  # very short lanes are dominated by handling, not miles
+            per_mile.append(cpu / miles)
+
+    def _median(xs: list[float]) -> float | None:
+        if not xs:
+            return None
+        ys = sorted(xs)
+        m = len(ys) // 2
+        return ys[m] if len(ys) % 2 else (ys[m - 1] + ys[m]) / 2
+
+    med_mile = _median(per_mile)
+    med_unit = _median(per_unit)
+    premium = _cfg_num(sources, "offLanePremium")
+    if premium is None or premium <= 0:
+        premium = DEFAULT_OFF_LANE_PREMIUM
+    explicit_rate = _cfg_num(sources, "offLaneRatePerUnitMile")
+    if explicit_rate is not None and explicit_rate > 0:
+        rate, rate_src = explicit_rate, "configured"
+    elif med_mile is not None:
+        rate, rate_src = med_mile * premium, "median-lane×premium"
+    else:
+        rate, rate_src = DEFAULT_RATE_PER_UNIT_MILE, "default (no rated lanes)"
+
+    explicit_pen = _cfg_num(sources, "uncoveredPenaltyPerUnit")
+    if explicit_pen is not None and explicit_pen > 0:
+        pen, pen_src = explicit_pen, "configured"
+    else:
+        pen = max(
+            DEFAULT_UNCOVERED_PENALTY_PER_UNIT,
+            UNCOVERED_PENALTY_LANE_MULTIPLE * (med_unit or 0.0),
+        )
+        pen_src = "default"
+    legacy_pen = _cfg_num(sources, "uncoveredPenaltyM")
+    return {
+        "currency": "$M",
+        "volumeUnitScale": VOLUME_UNIT_SCALE,
+        "volumeUnit": "model unit = 1,000 physical units (lane costPerUnit is $/unit)",
+        "medianLaneRatePerUnitMile": None if med_mile is None else round(med_mile, 6),
+        "medianLaneCostPerUnit": None if med_unit is None else round(med_unit, 4),
+        "ratedLaneCount": len(per_mile),
+        "offLanePremium": round(premium, 4),
+        "offLaneRatePerUnitMile": round(rate, 6),
+        "offLaneRateSource": rate_src,
+        "uncoveredPenaltyPerUnit": round(pen, 4),
+        "uncoveredPenaltySource": pen_src,
+        "legacyUncoveredPenaltyMIgnored": legacy_pen,
+        # model units
+        "offLaneRateM": rate / VOLUME_UNIT_SCALE,
+        "uncoveredPenaltyM": pen / VOLUME_UNIT_SCALE,
+    }
+
+
 def _transport_unit_cost(
     fr: dict[str, Any],
     to: dict[str, Any],
     lane_costs: dict[tuple[str, str], float],
+    per_mile_m: float | None = None,
 ) -> tuple[float, float]:
-    """Return (unit_cost_$M_per_unit, miles)."""
+    """Return (unit_cost_$M_per_model_unit, miles)."""
     miles = _dist_miles(fr, to)
     key = (fr["id"], to["id"])
     if key in lane_costs:
         return lane_costs[key], miles
-    return miles * DEFAULT_TRANSPORT_PER_MILE, miles
+    rate = DEFAULT_TRANSPORT_PER_MILE if per_mile_m is None else per_mile_m
+    return miles * rate, miles
 
 
 def _lead_days_for(
@@ -493,6 +620,7 @@ def _arc_mode_options(
     radius: float,
     radius_scale: float,
     max_lead: float | None,
+    per_mile_m: float | None = None,
 ) -> tuple[list[dict[str, Any]], float, int]:
     """
     Allowed mode options for an arc → (options, miles, n_filtered_by_lead).
@@ -500,6 +628,7 @@ def _arc_mode_options(
     Mirrors legacy ``_arc_allowed`` / ``_transport_unit_cost`` exactly for
     single-mode lanes and distance-proxy arcs.
     """
+    rate = DEFAULT_TRANSPORT_PER_MILE if per_mile_m is None else per_mile_m
     miles = _dist_miles(fr, to)
     entry = lane_opts.get((fr["id"], to["id"]))
     if entry is None:
@@ -513,7 +642,7 @@ def _arc_mode_options(
                 {
                     "key": DEFAULT_MODE_KEY,
                     "label": DEFAULT_MODE_LABEL,
-                    "cost": miles * DEFAULT_TRANSPORT_PER_MILE,
+                    "cost": miles * rate,
                     "leadDays": lead,
                     "co2KgPerUnit": None,
                     "capacity": None,
@@ -531,7 +660,7 @@ def _arc_mode_options(
         if max_lead is not None and lead > max_lead + 1e-9:
             filtered += 1
             continue
-        cost = o["costM"] if o["costM"] is not None else miles * DEFAULT_TRANSPORT_PER_MILE
+        cost = o["costM"] if o["costM"] is not None else miles * rate
         res.append({**o, "cost": cost, "leadDays": lead})
     return res, miles, filtered
 
@@ -589,6 +718,7 @@ def _build_bom_edges(
     plants: list[dict[str, Any]],
     dem_loads: list[tuple[dict[str, Any], float]],
     log: list[str],
+    per_mile_m: float | None = None,
 ) -> list[tuple[str, str, float, float]]:
     network = payload.get("network") or {}
     bom = payload.get("bom") or network.get("bom") or {}
@@ -608,7 +738,7 @@ def _build_bom_edges(
         if key in seen:
             return
         seen.add(key)
-        cost, _miles = _transport_unit_cost(by_id[sid], by_id[pid], lane_costs)
+        cost, _miles = _transport_unit_cost(by_id[sid], by_id[pid], lane_costs, per_mile_m)
         edges.append((sid, pid, cost, max(0.0, float(qty))))
 
     for row in explicit:
@@ -825,6 +955,27 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     lanes = list(network.get("lanes") or [])
     demand_volume = dict(network.get("demandVolume") or {})
     lane_opts, lane_stats = _build_lane_options(lanes, constraints, log)
+    cost_scale = resolve_cost_scale(payload)
+    off_lane_m = cost_scale["offLaneRateM"]
+    uncovered_penalty = cost_scale["uncoveredPenaltyM"]
+    log.append(
+        f"Cost scale: off-lane ${cost_scale['offLaneRatePerUnitMile']:.4f}/unit-mile "
+        f"({cost_scale['offLaneRateSource']}"
+        + (
+            f", median lane ${cost_scale['medianLaneRatePerUnitMile']:.4f}/unit-mile"
+            f" × {cost_scale['offLanePremium']}"
+            if cost_scale["offLaneRateSource"] == "median-lane×premium"
+            else ""
+        )
+        + f") · unmet demand ${cost_scale['uncoveredPenaltyPerUnit']:.2f}/unit "
+        f"({cost_scale['uncoveredPenaltySource']}) · money in $M, "
+        "volume unit = 1,000 units."
+    )
+    if cost_scale["legacyUncoveredPenaltyMIgnored"] is not None:
+        log.append(
+            "Note: legacy costFactors.uncoveredPenaltyM ignored — use "
+            "uncoveredPenaltyPerUnit ($/unit)."
+        )
 
     carbon_price = _num(constraints.get("carbonPricePerTonne")) or 0.0
     tons_per_unit = _num(constraints.get("tonsPerUnit"))
@@ -945,7 +1096,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     ) -> tuple[list[dict[str, Any]], float]:
         nonlocal lead_filtered_modes
         opts, miles, filtered = _arc_mode_options(
-            fr, to, lane_opts, radius, scale, max_lead
+            fr, to, lane_opts, radius, scale, max_lead, off_lane_m
         )
         lead_filtered_modes += filtered
         for o in opts:
@@ -1025,7 +1176,9 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         for cid in cust_ids
         if cid in dem_nodes
     ]
-    bom_arcs = _build_bom_edges(payload, suppliers, plants, dem_loads, log)
+    bom_arcs = _build_bom_edges(
+        payload, suppliers, plants, dem_loads, log, cost_scale["offLaneRateM"]
+    )
 
     n_mode_arcs = sum(
         1 for arcs in (arcs_dc_cust, arcs_plant_dc, arcs_plant_cust)
@@ -1533,7 +1686,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         assert uncovered is not None
         uncov_expr = pulp.lpSum(
-            UNCOVERED_PENALTY * uncovered[k] for k in uncovered
+            uncovered_penalty * uncovered[k] for k in uncovered
         )
 
     keep_bonus = pulp.lpSum(
@@ -1581,7 +1734,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         cx = _ev(capex_expr)
         ox = _ev(opex_expr)
         un = 0.0 if uncovered is None else sum(_val(uncovered[k]) for k in uncovered)
-        pen = UNCOVERED_PENALTY * un
+        pen = uncovered_penalty * un
         lf = _ev(lane_fixed_expr)
         return {
             "totalM": tr + cx + ox + pen + lf,
@@ -1685,7 +1838,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     transport_cost = sum(float(f["transportCostM"]) for f in flows)
     capex_used = sum(capex_cost[i] for i in open_ids)
     opex_used = sum(opex_cost[i] for i in open_ids)
-    uncovered_pen = UNCOVERED_PENALTY * uncovered_total
+    uncovered_pen = uncovered_penalty * uncovered_total
     lane_fixed_used = sum(lane_fixed_cost[k] for k, on in z_on.items() if on)
     carbon_cost = (
         sum(
@@ -1896,7 +2049,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                     "facilityId": fid,
                     "constraint": "capacity",
                     "shadowPrice": round(
-                        (-UNCOVERED_PENALTY * 0.001) if tight else 0.0, 6
+                        (-uncovered_penalty * 0.01) if tight else 0.0, 6
                     ),
                     "unit": "$M per unit capacity",
                     "binding": tight,
@@ -2067,6 +2220,8 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         "carbonM": round(carbon_cost, 4),
         "modeMix": mode_mix,
         "currency": "model-$M",
+        "uncoveredPenaltyPerUnit": cost_scale["uncoveredPenaltyPerUnit"],
+        "offLaneRatePerUnitMile": cost_scale["offLaneRatePerUnitMile"],
     }
 
     mode_choice_on = lane_stats["lanesWithModes"] > 0
@@ -2142,6 +2297,9 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         "laneCapacity": lane_capacity,
         "bindingLaneCapacities": binding_lanes,
         "laneCapacityShortfalls": lane_short,
+        "costScale": {
+            k: v for k, v in cost_scale.items() if k not in ("offLaneRateM", "uncoveredPenaltyM")
+        },
         "kpis": {
             "servicePct": round(service_pct, 1),
             "capexUsedM": round(capex_used, 1),
@@ -2177,10 +2335,17 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             prob.addConstraint(y[fid] == flip_to, "cf_flip")
             t0 = time.perf_counter()
             try:
+                # Counterfactuals only need flip deltas to ~0.05% of the
+                # objective (explain gapToleranceM); a 5e-4 relative MIP gap
+                # cuts stress-200 re-solves ~5× vs the 1e-4 default.
                 if solver_name == "pulp-highs":
-                    cf_solver = pulp.HiGHS(msg=False, timeLimit=time_limit)
+                    cf_solver = pulp.HiGHS(
+                        msg=False, timeLimit=time_limit, gapRel=CF_MIP_GAP_REL
+                    )
                 else:
-                    cf_solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit)
+                    cf_solver = pulp.PULP_CBC_CMD(
+                        msg=False, timeLimit=time_limit, gapRel=CF_MIP_GAP_REL
+                    )
                 st = prob.solve(cf_solver)
                 secs = time.perf_counter() - t0
                 st_name = pulp.LpStatus.get(st, str(st))

@@ -124,7 +124,9 @@ def test_counterfactual_close_delta_sign_and_magnitude():
     assert fx["capacityDual"] == pytest.approx(-0.002, abs=1e-6)
     texts = [r["text"] for r in fx["reasons"]]
     assert any("Closing it raises cost by $700k" in t for t in texts), texts
-    assert any("Capacity binding" in t and "$2.0k" in t for t in texts), texts
+    # Dual is $M per model unit (1,000 units): −0.002 → $2.00 per physical unit
+    # (= $3 − $1 lane rates), no longer mislabelled "$2.0k per unit".
+    assert any("Capacity binding" in t and "$2.00/unit" in t for t in texts), texts
     assert any("lowest landed cost" in t for t in texts), texts
 
 
@@ -162,7 +164,10 @@ def test_counterfactual_service_impact_soft_and_infeasible_hard():
     assert cf["unservedDeltaUnits"] == pytest.approx(1000.0)
     assert cf["serviceDeltaPct"] == pytest.approx(-100.0)
     assert cf["penaltyDeltaM"] > 0 and cf["deltaM"] > 0
-    assert "strands 1,000 units" in _fx(soft, "dc1")["headline"]
+    # 1,000 model units = 1.0M physical units (volume unit = 1,000 units)
+    assert "strands 1.0M units" in _fx(soft, "dc1")["headline"]
+    # $15/unit default penalty: 1,000 model units × 0.015 $M = $15M
+    assert cf["penaltyDeltaM"] == pytest.approx(15.0, abs=1e-6)
 
     hard = solve_optimize({**_two_dc(single=True, dc1_cap=5000, hard=True), "explain": True})
     fx = _fx(hard, "dc1")

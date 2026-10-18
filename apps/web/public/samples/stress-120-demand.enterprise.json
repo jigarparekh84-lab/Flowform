@@ -6354,7 +6354,8 @@
       "Air": 0.98
     },
     "transportCostScale": 1,
-    "uncoveredPenaltyM": 80
+    "offLanePremium": 1.35,
+    "uncoveredPenaltyPerUnit": 15
   },
   "globals": {
     "serviceTargetPct": 92,

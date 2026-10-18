@@ -76,6 +76,10 @@ export type OptimizeObjectiveBreakdown = {
   fixedCapexM: number
   fixedOpexM: number
   uncoveredPenaltyM: number
+  /** $ per unit the MIP charged for unmet demand (cost-scale echo). */
+  uncoveredPenaltyPerUnit?: number
+  /** $ per unit-mile used for arcs without a lane rate (median lane × premium). */
+  offLaneRatePerUnitMile?: number
   /** Depth 7: fixed activation charges on chosen lane-modes. */
   laneFixedM?: number
   /** Depth 7: carbon cost when carbonPricePerTonne is set. */
@@ -518,7 +522,14 @@ export const LANES: NetworkLane[] = [
   { id: 'l6', from: 'n1', to: 'n5', mode: 'Truck', costPerUnit: 0.35, leadDays: 1, co2Kg: 5 },
   { id: 'l7', from: 'n8', to: 'n2', mode: 'Rail', costPerUnit: 0.72, leadDays: 6, co2Kg: 8 },
   { id: 'l8', from: 'n3', to: 'n5', mode: 'Truck', costPerUnit: 0.79, leadDays: 2, co2Kg: 12 },
+  // Hazmat-certified carrier Columbus → NYC (premium rate). Atlanta DC is not
+  // hazmat-capable and NYC is > 250 mi from every DC, so without this lane the
+  // NYC hazmat demand had no capable server and the sample solved Infeasible.
+  { id: 'l9', from: 'n2', to: 'n6', mode: 'Truck', costPerUnit: 1.38, leadDays: 2, co2Kg: 10 },
 ]
+
+/** Sample lanes added after the first release (patched into saved sample projects). */
+export const SAMPLE_LANE_PATCHES: NetworkLane[] = LANES.filter((l) => l.id === 'l9')
 
 export const BASELINE_KPIS: KpiSnapshot = {
   cost: { value: '$48.2M', delta: '—', better: true },

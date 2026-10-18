@@ -20,6 +20,7 @@ import type {
   Scenario,
 } from './sampleNetwork'
 import type { ThemeMode } from '../state/theme'
+import { SAMPLE_LANE_PATCHES } from './sampleNetwork'
 
 export const PROJECTS_INDEX_KEY = 'flowform-projects-index'
 export const ACTIVE_PROJECT_KEY = 'flowform-active-project-id'
@@ -102,10 +103,48 @@ export function setActiveProjectId(id: string) {
   localStorage.setItem(ACTIVE_PROJECT_KEY, id)
 }
 
+/**
+ * Saved copies of the built-in sample predate lane l9 (Columbus → NYC hazmat
+ * carrier); without it NYC hazmat demand has no capable server and Run solves
+ * Infeasible. Patch it in (and tag it for every product group) on load.
+ */
+export function migrateSampleSnapshot(state: ProjectSnapshot): ProjectSnapshot {
+  const net = state?.network
+  if (!net || net.source !== 'sample' || !Array.isArray(net.lanes)) return state
+  const nodeIds = new Set(net.nodes.map((n) => n.id))
+  const missing = SAMPLE_LANE_PATCHES.filter(
+    (p) =>
+      nodeIds.has(p.from) &&
+      nodeIds.has(p.to) &&
+      !net.lanes.some((l) => l.id === p.id || (l.from === p.from && l.to === p.to)),
+  )
+  if (!missing.length) return state
+  const pm = state.productMix
+  return {
+    ...state,
+    network: { ...net, lanes: [...net.lanes, ...missing] },
+    ...(pm?.laneTags
+      ? {
+          productMix: {
+            ...pm,
+            laneTags: [
+              ...pm.laneTags,
+              ...missing.map((l) => ({
+                laneId: l.id,
+                groupIds: pm.groups.map((g) => g.id),
+              })),
+            ],
+          },
+        }
+      : {}),
+  }
+}
+
 export function loadProjectState(id: string): ProjectSnapshot | null {
-  return safeParse<ProjectSnapshot>(
+  const snap = safeParse<ProjectSnapshot>(
     localStorage.getItem(`${PROJECT_STATE_PREFIX}${id}`),
   )
+  return snap ? migrateSampleSnapshot(snap) : null
 }
 
 export function saveProjectState(id: string, state: ProjectSnapshot) {

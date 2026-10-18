@@ -188,24 +188,49 @@ def test_carbon_price_shifts_mode_choice():
     assert priced["objectiveBreakdown"]["carbonM"] > 0
 
 
-def test_backward_compat_no_mode_data_matches_legacy_model():
-    """No modes / no lane capacity → identical pre-slice-7 objective + flows."""
+def _stress_200_no_modes(**cost_overrides):
     pack = load_enterprise_pack("stress-200-demand.enterprise.json")
     payload = pack_to_optimize_payload(pack)
     for lane in payload["network"]["lanes"]:
         lane.pop("modes", None)
         lane.pop("capacityUnits", None)
-    body = solve_optimize(payload)
+    payload["constraints"].update(cost_overrides)
+    return solve_optimize(payload)
+
+
+def test_backward_compat_no_mode_data_matches_legacy_model():
+    """No modes / no lane capacity → identical pre-slice-7 objective + flows.
+
+    The model structure is pinned with the *legacy* cost scale made explicit:
+    the old hard-coded off-lane rate 0.002 $M per model unit-mile is
+    $2/unit-mile, and the old penalty 80 $M per model unit is $80,000/unit.
+    With those knobs the pre-depth-7 anchors from master @ 650098f still
+    reproduce to 1e-3, so the depth-7 mode/capacity code paths stay inert.
+    """
+    body = _stress_200_no_modes(offLaneRatePerUnitMile=2.0, uncoveredPenaltyPerUnit=80000)
     assert body["status"] == "Optimal"
-    # Anchors recorded from master @ 650098f (pre depth-7)
     assert body["objectiveBreakdown"]["totalM"] == pytest.approx(423.6946, abs=1e-3)
     assert body["objectiveBreakdown"]["transportM"] == pytest.approx(402.4946, abs=1e-3)
     assert len(body["openIds"]) == 11
+    assert body["costScale"]["offLaneRateSource"] == "configured"
     assert body["modeChoice"]["enabled"] is False
     assert body["modeChoice"]["laneModeBinaries"] == 0
     assert body["laneCapacity"] == [] and body["bindingLaneCapacities"] == []
     assert not any("modeKey" in f for f in body["flows"])
     assert body["objectiveBreakdown"]["laneFixedM"] == 0.0
+
+    # Default (fixed) cost scale: off-lane = median lane $/unit-mile × 1.35 and
+    # $15/unit unmet penalty. Objective drops 423.69 → 192.85 because off-lane
+    # arcs used to cost ~1,500× a lane rate per unit-mile (the old 0.002 was a
+    # $/unit-mile figure applied as $M per model unit-mile); the two candidate
+    # DCs the MIP opened to dodge those arcs now stay closed (11 → 9 open).
+    scaled = _stress_200_no_modes()
+    assert scaled["status"] == "Optimal"
+    assert scaled["objectiveBreakdown"]["totalM"] == pytest.approx(192.8539, abs=1e-3)
+    assert scaled["objectiveBreakdown"]["transportM"] == pytest.approx(185.0539, abs=1e-3)
+    assert len(scaled["openIds"]) == 9
+    assert scaled["kpis"]["servicePct"] == pytest.approx(100.0)
+    assert not any("modeKey" in f for f in scaled["flows"])
 
     legacy_single = solve_optimize(_net(None))
     assert _vol_by_mode(legacy_single) == {"Truck": 1000.0}

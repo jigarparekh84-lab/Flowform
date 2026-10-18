@@ -30,6 +30,7 @@ from .solver import (
     _safe_name,
     _transport_unit_cost,
     _lane_cost_map,
+    resolve_cost_scale,
 )
 
 
@@ -95,12 +96,13 @@ def _build_arcs(
     lane_costs: dict[tuple[str, str], float],
     radius: float,
     log: list[str],
+    per_mile_m: float | None = None,
 ) -> tuple[list[tuple[str, str]], dict[tuple[str, str], float], dict[tuple[str, str], float]]:
     arcs: list[tuple[str, str, float, float]] = []
     for fid, f in fac_by_id.items():
         for cid in cust_ids:
             dnode = dem_nodes[cid]
-            cost, miles = _transport_unit_cost(f, dnode, lane_costs)
+            cost, miles = _transport_unit_cost(f, dnode, lane_costs, per_mile_m)
             key = (fid, cid)
             within = miles <= radius + 1e-6 or key in lane_costs
             if within:
@@ -110,7 +112,7 @@ def _build_arcs(
         for fid, f in fac_by_id.items():
             for cid in cust_ids:
                 dnode = dem_nodes[cid]
-                cost, miles = _transport_unit_cost(f, dnode, lane_costs)
+                cost, miles = _transport_unit_cost(f, dnode, lane_costs, per_mile_m)
                 arcs.append((fid, cid, cost, miles))
     arc_keys = [(a[0], a[1]) for a in arcs]
     unit_cost = {(a[0], a[1]): a[2] for a in arcs}
@@ -135,6 +137,7 @@ def _solve_wait_and_see_one(
     max_fac: int,
     hard_service: bool,
     solver: Any,
+    uncovered_penalty: float = UNCOVERED_PENALTY,
 ) -> dict[str, Any]:
     """Deterministic optimize for one scenario (perfect information)."""
     dem = scenario["demandVolume"]
@@ -203,7 +206,7 @@ def _solve_wait_and_see_one(
         cscale * unit_cost[(fid, cid)] * x[(fid, cid)] for (fid, cid) in arc_keys
     )
     if uncovered is not None:
-        uncov = UNCOVERED_PENALTY * pulp.lpSum(uncovered[cid] for cid in cust_ids)
+        uncov = uncovered_penalty * pulp.lpSum(uncovered[cid] for cid in cust_ids)
     else:
         uncov = 0
     prob += fixed + transport + uncov
@@ -241,7 +244,7 @@ def _solve_wait_and_see_one(
     uncov_pen = 0.0
     if uncovered is not None:
         uncov_dem = sum(_val(uncovered[cid]) for cid in cust_ids)
-        uncov_pen = UNCOVERED_PENALTY * uncov_dem
+        uncov_pen = uncovered_penalty * uncov_dem
     total_dem = sum(dem.values()) or 1.0
     served = total_dem - uncov_dem
     return {
@@ -283,6 +286,9 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
         str(k): float(v) for k, v in dict(network.get("demandVolume") or {}).items()
     }
     lane_costs = _lane_cost_map(lanes)
+    cost_scale = resolve_cost_scale(payload)
+    off_lane_m = cost_scale["offLaneRateM"]
+    uncovered_penalty = cost_scale["uncoveredPenaltyM"]
     cmap = {f["nodeId"]: f for f in (constraints.get("facilities") or []) if f.get("nodeId")}
 
     demands = [n for n in nodes if n.get("kind") == "demand"]
@@ -334,7 +340,7 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
             decidable_ids.append(fid)
 
     arc_keys, unit_cost, miles_map = _build_arcs(
-        fac_by_id, dem_nodes, cust_ids, lane_costs, radius, log
+        fac_by_id, dem_nodes, cust_ids, lane_costs, radius, log, off_lane_m
     )
 
     log.append(
@@ -427,7 +433,7 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
             for (fid, cid) in arc_keys
         )
         if uncovered is not None:
-            uncov_by_s[sid] = UNCOVERED_PENALTY * pulp.lpSum(
+            uncov_by_s[sid] = uncovered_penalty * pulp.lpSum(
                 uncovered[(cid, sid)] for cid in cust_ids
             )
         else:
@@ -537,7 +543,7 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
         uncov_pen = 0.0
         if uncovered is not None:
             uncov_dem = sum(_val(uncovered[(cid, sid)]) for cid in cust_ids)
-            uncov_pen = UNCOVERED_PENALTY * uncov_dem
+            uncov_pen = uncovered_penalty * uncov_dem
         total_dem = sum(s["demandVolume"].values()) or 1.0
         served = total_dem - uncov_dem
         total_cost = fixed_m + transport_m + uncov_pen
@@ -601,6 +607,7 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
                 max_fac=max_fac,
                 hard_service=hard_service,
                 solver=solver,
+                uncovered_penalty=uncovered_penalty,
             )
             ws_rows.append(
                 {

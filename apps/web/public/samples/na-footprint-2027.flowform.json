@@ -5,7 +5,7 @@
     "id": "proj-sample-na-footprint-2027",
     "name": "NA Footprint 2027 (sample)",
     "createdAt": "2026-09-28T17:54:44.207Z",
-    "updatedAt": "2026-09-28T17:54:44.207Z"
+    "updatedAt": "2026-10-18T01:21:25.985Z"
   },
   "state": {
     "version": 1,
@@ -308,6 +308,15 @@
           "costPerUnit": 0.79,
           "leadDays": 2,
           "co2Kg": 12
+        },
+        {
+          "id": "l9",
+          "from": "n2",
+          "to": "n6",
+          "mode": "Truck",
+          "costPerUnit": 1.38,
+          "leadDays": 2,
+          "co2Kg": 10
         }
       ],
       "demandVolume": {
@@ -330,7 +339,7 @@
         "rowCounts": {
           "sites": 5,
           "demand": 3,
-          "lanes": 8
+          "lanes": 9
         }
       }
     },
@@ -596,6 +605,14 @@
           "laneId": "l8",
           "groupIds": [
             "ambient",
+            "hazmat"
+          ]
+        },
+        {
+          "laneId": "l9",
+          "groupIds": [
+            "ambient",
+            "chilled",
             "hazmat"
           ]
         }
@@ -948,6 +965,43 @@
               "rateUnit": "per_mile",
               "transitDays": 1,
               "capacityUnits": 7000,
+              "notes": "$/mile quote"
+            }
+          ],
+          "selectedBidId": null
+        },
+        {
+          "laneId": "l9",
+          "corridorLabel": "Columbus DC → NYC Corridor",
+          "bids": [
+            {
+              "id": "bid-44dhzu",
+              "carrier": "BlueOcean Lines",
+              "mode": "Road",
+              "rate": 1.38,
+              "rateUnit": "per_unit",
+              "transitDays": 2,
+              "capacityUnits": 8000,
+              "notes": "Incumbent contract"
+            },
+            {
+              "id": "bid-e94d6p",
+              "carrier": "AeroCargo Express",
+              "mode": "Road",
+              "rate": 1.21,
+              "rateUnit": "per_unit",
+              "transitDays": 3,
+              "capacityUnits": 6500,
+              "notes": "Spot / secondary"
+            },
+            {
+              "id": "bid-js5a3d",
+              "carrier": "RailLink NA",
+              "mode": "Rail",
+              "rate": 0.003,
+              "rateUnit": "per_mile",
+              "transitDays": 2,
+              "capacityUnits": 3000,
               "notes": "$/mile quote"
             }
           ],
