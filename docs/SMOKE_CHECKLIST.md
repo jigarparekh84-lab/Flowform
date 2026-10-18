@@ -39,6 +39,7 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
 - [ ] Room tip / empty guidance visible when appropriate; **Restore sample network** reloads built-in nodes/lanes.
 - [ ] Download sites / demand / lanes CSV templates; re-upload at least one without hard errors.
 - [ ] Validation summary shows counts; CO₂ factors editable.
+- [ ] **Unit weights (CO₂ basis)** panel: Ambient 2 / Chilled 1.5 / Hazmat 3.5 kg, default 20 kg; editing a weight changes CO₂ after Run *(→ DAT-08)*. KPI, Compare, Brief and mode mix all show 5.5 kt *(→ DAT-09)*.
 - [ ] Product / commodity groups present; lane rate tables & bids list corridors; BOM table has sample FG←RM rows.
 - [ ] **Lanes** card lists 9 lanes; **Delete** removes one after confirm (count → 8). Inspector on a lane also has **Delete lane**.
 - [ ] Constraints snapshot reads *max N DCs (plants not counted)*; Inspector label **Max DCs (open)** (D-07).
@@ -79,7 +80,7 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
 ## 7. Roadmap
 
 - [ ] CapEx events (Y0–Y5) show on Gantt-lite; cumulative CapEx / capacity KPIs update (Y5 cumulative $29.2M).
-- [ ] **Optimize timing** on the default roadmap (fresh sample) is **Optimal** in both modes: Choose timing **NPV $119.79M**, Force timeline **NPV $128.36M** (D-01 fixed in a6d3fae) *(→ RMP-03, RMP-04)*.
+- [ ] **Optimize timing** on the default roadmap (fresh sample) is **Optimal** in both modes: Choose timing **NPV $489.89M**, Force timeline **NPV $496.32M** on the Run model basis; basis line shows `Y0 $98.27M vs Run $98.27M — match` and a per-year breakdown table *(→ RMP-03, RMP-04)*.
 - [ ] Apply a year slice as scenario; **Export to Brief** / reset sample works.
 
 ---
@@ -144,7 +145,7 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 - [ ] **Theme toggle** (Dark / Light) in top chrome flips `data-theme` and persists.
 - [ ] **?** opens Keyboard shortcuts help; **Esc** closes help and clears map/table selection.
 - [ ] Help button in chrome also opens the same dialog.
-- [ ] **Run** optimize: with API up → MIP path (sample: **Optimal $98.27M**, Reno DC closed, 100% service; KPI **$98.3M −0.7 %** vs computed Baseline **$99.0M**, CO₂ 2,703.5 kt *(→ RUN-02)*); with API down → `Heuristic v1 · service 58.8% (API offline or fallback)` (no hard hang).
+- [ ] **Run** optimize: with API up → MIP path (sample: **Optimal $98.27M**, Reno DC closed, 100% service; KPI **$98.3M −0.7 %** vs computed Baseline **$99.0M**, CO₂ **5.5 kt** *(→ RUN-02/RUN-03)*); with API down → `Heuristic v1 · service 58.8% (API offline or fallback)` (no hard hang).
 - [ ] **Share** copies deep-link stub and downloads `.share.json`.
 
 ---
@@ -175,7 +176,7 @@ Expect Optimal, open = 9, `solveSeconds` ≪ 60s on stress-120 (objective 89.120
 ### Defect regression (a6d3fae)
 
 ```bash
-cd apps/api && .venv/bin/pytest -q            # 65 passed (54 + 11 in tests/test_defect_fixes.py)
+cd apps/api && .venv/bin/pytest -q            # 79 passed (54 + 11 defect + 8 test_unit_weights_co2 + 6 test_roadmap_run_basis)
 cd apps/web && npm run test:data && npm run build   # enterprise 12/12, CTS 2/2, defectFixes ok
 ```
 

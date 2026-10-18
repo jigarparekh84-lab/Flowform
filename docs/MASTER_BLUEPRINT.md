@@ -188,7 +188,7 @@ Defined in `apps/web/src/data/enterprisePack.ts`. The pack is the canonical impo
 
 **Constraints** (`NetworkConstraints`): globals (`serviceTargetPct 95, serviceRadiusMiles 250, capexBudgetM 30, maxFacilities = clamp(#facilities, 3, 8)`, optional `hardServiceConstraints, maxLeadTimeDays, aggregateProductsByGroup, maxProductCommodities`) plus `facilities[] {nodeId, status, capacityMin, capacityMax, fixedCapexM}`. Defaults from `defaultConstraintsFromNetwork`: **min = 60 % and max = 125 % of nominal capacity**, CapEx 8 (plant), 4 (DC), or 6 (candidate) $M.
 
-**Scenario.** `{id, name, tag, kpis {cost, service, capex, co2, risk, inventory?, invUnits?}, optimizeMeta?, desLite?, costSensitivity?, resilience?, …}`. Optimize results arrive as new scenarios. Baseline KPIs start from a seed (**$48.2M · 94.1 % · $0 · 12.4 kt · Med**) and are **replaced on the first API Run** by the as-is costing of the current network (`computeBaseline` → `response.baseline`; sample: **$99.0M · 100.0 % · $0 · 2,703.5 kt · Low**).
+**Scenario.** `{id, name, tag, kpis {cost, service, capex, co2, risk, inventory?, invUnits?}, optimizeMeta?, desLite?, costSensitivity?, resilience?, …}`. Optimize results arrive as new scenarios. Baseline KPIs start from a seed (**$48.2M · 94.1 % · $0 · 12.4 kt · Med**) and are **replaced on the first API Run** by the as-is costing of the current network (`computeBaseline` → `response.baseline`; sample: **$99.0M · 100.0 % · $0 · ≈5.5 kt · Low**).
 
 ### 4.3 Units
 
@@ -452,7 +452,7 @@ Lanes: l1 n7→n1 Truck $1.12 · l2 n1→n2 Rail $0.64 · l3 n1→n3 Truck $0.88
 - **Optimal**, objective **$98.2706M** = transport $95.6706M + CapEx $0 + OpEx $2.6M; unmet $0.
 - **Service 100 %** (all 3 SKUs). Open n1, n2, n3; **closed n8 (Reno)**. Solve 0.003–0.008 s.
 - Supplier→plant BOM inbound is $62.048M of transport (55,400 model units × $1.12).
-- KPI card: cost **$98.3M (−0.7 % vs the computed Baseline $99.0M**, i.e. Reno's $0.7M OpEx), service 100.0 % (+0.0 pp), CapEx $0M, CO₂ **2,703.5 kt** (modelled transport CO₂, −0 %), Risk Low.
+- KPI card: cost **$98.3M (−0.7 % vs the computed Baseline $99.0M**, i.e. Reno's $0.7M OpEx), service 100.0 % (+0.0 pp), CapEx $0M, CO₂ **5.5 kt** (modelled transport CO₂ from unit weights, −0 %; $100/t carbon → $0.5495M, total $98.8201M), Risk Low.
 
 ### 8.2 Sample project pack
 
@@ -509,7 +509,7 @@ cd /Users/jigar/Projects/Flowform && docker compose up --build
 ### 11.1 Known gaps (confirmed in code, refreshed after `a6d3fae`)
 
 1. ~~Baseline is hard-coded.~~ **Fixed (`a6d3fae`).** The first API Run also costs the as-is network (existing sites open, candidates closed, no decisions; `capacityMin` relaxed only if the as-is network is infeasible) and writes it onto the Baseline scenario. Sample: Run **$98.3M** vs Baseline **$99.0M** → **−0.7 %**. Before the first API Run (or with the API offline) the seed $48.2M is still shown.
-2. **Multi-period still uses a single lane rate with no mode choice and the raw network** (no `demandByProduct`, no BOM), so Roadmap NPVs are not on the Run basis. Robust **is** on the Run basis now (D-04): base-scenario cost = Run objective ($98.27M).
+2. ~~Multi-period not on the Run basis.~~ **Fixed (`6821f58`).** `/optimize/multi-period` now builds every period with the Run model (SKUs, BOM, lane modes, carbon, lane fixed) and links periods with event binaries; Y0 forced-at-current equals Run (sample $98.2706M, Δ 0; stress-200 +0.02% at default gap 2e-3). Gap 1e-4 (2e-3 above 2,000 vars), 120 s limit. Stress-200 5-period roadmap (7,740 vars) solves in ~3 s (8.5–11 s at gap 1e-4). `roadmap.basis: "legacy-aggregate"` keeps the old model. Remaining: per-period CapEx budget only enforced at Y0; demand growth is uniform; larger packs may stop at the time limit with a non-zero gap.
 3. **Supplier lanes have no mode choice.** BOM supplier→plant arcs carry no `laneId` or `mode` in flows.
 4. ~~Per-product-group capacity is ignored with per-SKU products.~~ **Fixed (`a6d3fae`):** a group-keyed `capacityByProduct` cap is shared by every SKU commodity in that group. Default group caps are now the full site capacity (so they only bind when a planner lowers them); the sample's saved caps were updated the same way.
 5. **Headless map worker warning** in non-GUI runs (MapLibre); cosmetic.
@@ -517,7 +517,7 @@ cd /Users/jigar/Projects/Flowform && docker compose up --build
 7. **Basemap.** OpenFreeMap today; move to **self-hosted Protomaps** before commercial launch.
 8. **Greenfield and composed scenarios are mock heuristics**, not MIP-driven (`generateCandidates` uses static `NODES`; `kpisForComposedScenario` is a formula).
 9. **Persistence is browser-only** (`localStorage`); there is no server store.
-10. **CO₂ magnitude.** Lane `co2KgPerUnit` and emission factors are per *physical* unit (default 1 t/unit), and one model unit = 1,000 physical units, so the sample reports **2,703.5 kt** transport CO₂. That is unit-consistent with carbon pricing (D-05) but large; set `tonsPerUnit` for real unit weights. Before any Run, the CO₂ tile still shows the lane-factor estimate.
+10. **CO₂ basis (fixed `dcd1196`).** CO₂ = tonne-distance × mode factor (Truck 0.161, Rail 0.022, Intermodal 0.065 kg/tonne-mile); carbon cost uses the same tonnes. Weight per unit: SKU `unitWeightKg` → group `unitWeightKg` → project `defaultUnitWeightKg` → legacy `tonsPerUnit` → 20 kg. Sample weights (Ambient 2 kg, Chilled 1.5, Hazmat 3.5 — case-pick consumer goods, ~2 kg average per shipped unit) give **5.5 kt** (5,494.6 t, 106.19M tonne-km, 51.7 g/tkm); stress packs (FG-A 4 kg, FG-B 2.5, RM 1; regenerated by `scripts/generate-stress-packs.mts`) give stress-200 **51.0 kt**, stress-120 **32.0 kt**. `co2WeightBasis: "legacy-1t"` restores the old 2,703.5 kt. Limitations: weights are planning assumptions, not measured; seed (unsolved) scenarios in Brief/Scenarios still show seed CO₂ (e.g. 11.1 / 10.2 kt) until Run; an explicit lane-mode `co2KgPerUnit` overrides weight; empty-backhaul and load factor are not modelled.
 11. **Robust is design enumeration**, not one monolithic two-stage MIP: candidate designs = each scenario's wait-and-see optimum + the legacy two-stage design + their union, each re-solved on the full model in every scenario. Minimum throughput scales down with a demand shock (flagged per scenario if relaxed).
 12. **Infeasibility root-cause probes** re-solve up to 3 times (minimums off / lane caps off / both), so an infeasible Run takes a little longer.
 
@@ -541,12 +541,12 @@ cd /Users/jigar/Projects/Flowform && docker compose up --build
 **Done (`a6d3fae`):** D-01…D-08, computed Baseline KPIs, per-group capacity for SKU commodities, delete-lane (Data + Inspector), CORS confirmed (5180 + 5181 preview only).
 
 **Now (stabilize the demo):**
-1. Put `/optimize/multi-period` on the Run basis (SKUs, BOM, lane modes) so Roadmap NPVs match Run.
+1. ~~Roadmap on the Run basis~~ — done (`6821f58`): choose $489.89M / force $496.32M, Y0 = Run.
 2. Surface `MIN_THROUGHPUT_CONFLICT` / `LANE_CAPACITY_CONFLICT` shortfall tables in the Run results panel (today: summary text).
-3. Add a unit-weight (`tonsPerUnit`) control in Data so CO₂ tonnes reflect real shipment weights.
+3. ~~Unit-weight control in Data~~ — done (`dcd1196`): per-SKU/group weights + project default, validation codes.
 
 **Next (depth):**
-4. Mode choice in multi-period (robust already uses the Run model).
+4. ~~Mode choice in multi-period~~ — done via the Run basis; next: per-period budgets and per-SKU growth.
 5. Supplier-lane mode choice.
 6. MIP-backed Greenfield (candidate generation + open decision in the MIP).
 7. Map: self-hosted Protomaps; fix the headless worker warning.
