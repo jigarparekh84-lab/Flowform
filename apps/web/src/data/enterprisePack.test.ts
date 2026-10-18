@@ -6,13 +6,15 @@ import assert from 'node:assert/strict'
 import {
   buildEnterprisePack,
   generateStressSamplePack,
+  packToConstraints,
   packToOptimizePayload,
+  productMixFromPack,
   validateEnterprisePack,
   type EnterprisePack,
 } from './enterprisePack'
 import { sampleUploadedNetwork } from './csvParsers'
 import { defaultConstraintsFromNetwork } from './optimize'
-import { defaultProductMix } from './productGroups'
+import { DEFAULT_UNIT_WEIGHT_KG, defaultProductMix, groupUnitWeightKg } from './productGroups'
 import { defaultBom } from './bom'
 import { DEFAULT_EMISSION_FACTORS } from './emissions'
 
@@ -209,6 +211,69 @@ function testDuplicateRouteWarn() {
   assert.ok(card.issues.some((i) => i.code === 'LANE_ROUTE_DUPLICATE'))
 }
 
+function testUnitWeightsInPackAndPayload() {
+  const pack = basePack()
+  const amb = pack.productGroups.find((g) => g.id === 'ambient')!
+  assert.equal(amb.unitWeightKg, 2)
+  assert.equal(pack.skus.find((s) => s.id === 'sku-hazmat')!.unitWeightKg, 3.5)
+  const card = validateEnterprisePack(pack)
+  assert.ok(!card.issues.some((i) => i.code.includes('WEIGHT') && i.level !== 'info'))
+  const payload = packToOptimizePayload(pack)
+  assert.equal(payload.network.skus!.find((s) => s.id === 'sku-chilled')!.unitWeightKg, 1.5)
+  // project default round-trips through pack → constraints
+  const net = sampleUploadedNetwork()
+  const p2 = buildEnterprisePack({
+    network: net,
+    constraints: { ...defaultConstraintsFromNetwork(net), defaultUnitWeightKg: 12 },
+    productMix: defaultProductMix(net),
+    bom: defaultBom(net),
+    emissionFactors: DEFAULT_EMISSION_FACTORS,
+  })
+  assert.equal(p2.costFactors.defaultUnitWeightKg, 12)
+  assert.equal(packToConstraints(p2).defaultUnitWeightKg, 12)
+  // saved projects without weights fall back to the catalog default
+  assert.equal(groupUnitWeightKg({ id: 'chilled' }), 1.5)
+  assert.equal(groupUnitWeightKg({ id: 'custom' }), undefined)
+  assert.equal(DEFAULT_UNIT_WEIGHT_KG, 20)
+}
+
+function testUnitWeightValidationCodes() {
+  const pack = basePack()
+  pack.skus[0]!.unitWeightKg = -2
+  pack.skus[1]!.unitWeightKg = 4000
+  pack.productGroups[0]!.unitWeightKg = 0
+  pack.productGroups[1]!.unitWeightKg = 0.001
+  pack.costFactors.defaultUnitWeightKg = Number.NaN
+  const codes = new Set(validateEnterprisePack(pack).issues.map((i) => i.code))
+  for (const c of [
+    'SKU_WEIGHT_INVALID',
+    'SKU_WEIGHT_IMPLAUSIBLE',
+    'GROUP_WEIGHT_INVALID',
+    'GROUP_WEIGHT_IMPLAUSIBLE',
+    'DEFAULT_WEIGHT_INVALID',
+  ]) {
+    assert.ok(codes.has(c as never), c)
+  }
+  const card = validateEnterprisePack(pack)
+  assert.equal(card.ok, false)
+  // demanded SKU with no SKU / group weight → info
+  const p2 = basePack()
+  for (const g of p2.productGroups) delete g.unitWeightKg
+  for (const s of p2.skus) delete s.unitWeightKg
+  const miss = validateEnterprisePack(p2).issues.find((i) => i.code === 'SKU_WEIGHT_MISSING')
+  assert.ok(miss && miss.level === 'info')
+}
+
+function testStressPackWeights() {
+  const pack = generateStressSamplePack({ demandCount: 200 })
+  assert.equal(pack.skus.find((s) => s.id === 'sku-fg-a')!.unitWeightKg, 4)
+  assert.equal(pack.skus.find((s) => s.id === 'sku-fg-b')!.unitWeightKg, 2.5)
+  // CO2 comes from distance × factor × weight — no flat per-unit overrides
+  assert.ok(pack.lanes.every((l) => (l.modes ?? []).every((m) => m.co2KgPerUnit == null)))
+  const mix = productMixFromPack(pack, packToOptimizePayload(pack).network as never)
+  assert.equal(mix.groups.find((g) => g.id === 'chilled')!.unitWeightKg, 2.5)
+}
+
 const tests: [string, () => void][] = [
   ['valid sample pack', testValidSamplePack],
   ['duplicate site id', testDuplicateSiteId],
@@ -222,6 +287,9 @@ const tests: [string, () => void][] = [
   ['lane modes validation codes', testLaneModesValidation],
   ['lane modes wired to MIP payload', testLaneModesWiredToPayload],
   ['duplicate lane route warn', testDuplicateRouteWarn],
+  ['unit weights in pack + payload', testUnitWeightsInPackAndPayload],
+  ['unit weight validation codes', testUnitWeightValidationCodes],
+  ['stress pack unit weights', testStressPackWeights],
 ]
 
 let failed = 0

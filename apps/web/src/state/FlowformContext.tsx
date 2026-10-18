@@ -340,6 +340,8 @@ type FlowformContextValue = {
         | 'maxLeadTimeDays'
         | 'aggregateProductsByGroup'
         | 'maxProductCommodities'
+        | 'defaultUnitWeightKg'
+        | 'carbonPricePerTonne'
       >
     >,
   ) => void
@@ -455,6 +457,8 @@ type FlowformContextValue = {
     patch: Partial<FacilityProductCap>,
   ) => void
   resetProductMix: () => void
+  /** Unit weight (kg / physical unit) for a product group; undefined clears it. */
+  updateProductGroupWeight: (groupId: ProductGroupId, kg: number | undefined) => void
 
   /** Lane rate tables + carrier bid comparison. */
   laneRates: LaneRatesState
@@ -1109,6 +1113,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           | 'maxLeadTimeDays'
           | 'aggregateProductsByGroup'
           | 'maxProductCommodities'
+          | 'defaultUnitWeightKg'
+          | 'carbonPricePerTonne'
         >
       >,
     ) => {
@@ -1251,6 +1257,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       laneCapacity?: ApiOptimizeResponse['laneCapacity']
       bindingLaneCapacities?: ApiOptimizeResponse['bindingLaneCapacities']
       modeChoice?: ApiOptimizeResponse['modeChoice']
+      co2Basis?: ApiOptimizeResponse['co2Basis']
+      co2Kt?: number
       explain?: ApiOptimizeResponse['explain']
       log: string[]
       name: string
@@ -1289,6 +1297,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           laneCapacity: args.laneCapacity,
           bindingLaneCapacities: args.bindingLaneCapacities,
           modeChoice: args.modeChoice,
+          co2Basis: args.co2Basis,
+          co2Kt: args.co2Kt,
           explain: args.explain,
           solvedAt: new Date().toISOString(),
           marks: [
@@ -1480,6 +1490,8 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             laneCapacity: api.laneCapacity,
             bindingLaneCapacities: api.bindingLaneCapacities,
             modeChoice: api.modeChoice,
+            co2Basis: api.co2Basis,
+            co2Kt: api.kpis.transportCo2Kt ?? api.kpis.co2Kt,
             explain: api.explain,
             log: api.log,
             name: infeas
@@ -1927,6 +1939,22 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateProductGroupWeight = useCallback(
+    (groupId: ProductGroupId, kg: number | undefined) => {
+      setProductMix((prev) => ({
+        ...prev,
+        groups: prev.groups.map((g) => {
+          if (g.id !== groupId) return g
+          const next = { ...g }
+          if (kg == null || !Number.isFinite(kg)) delete next.unitWeightKg
+          else next.unitWeightKg = kg
+          return next
+        }),
+      }))
+    },
+    [],
+  )
+
   const resetProductMix = useCallback(() => {
     setProductMix(defaultProductMix(network, productMix.catalog))
   }, [network, productMix.catalog])
@@ -2220,11 +2248,27 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           })
           return null
         }
-        const api = await postMultiPeriodOptimize({
+        // Run basis: send the exact Run payload (pack → SKUs / groups / BOM /
+        // lane modes / capacities / weights) so every period is the Run MIP.
+        const pack = buildEnterprisePack({
           network,
           constraints,
+          productMix,
+          bom,
+          emissionFactors,
+          name: projectMeta?.name,
+        })
+        const mipPayload = packToOptimizePayload(pack, validateEnterprisePack(pack))
+        const api = await postMultiPeriodOptimize({
+          network: mipPayload.network,
+          constraints: mipPayload.constraints,
+          bom: mipPayload.bom,
+          bomDemand: mipPayload.network.bomDemand,
+          enterpriseSchemaVersion: mipPayload.enterpriseSchemaVersion,
           reference: activeScenario,
           roadmap: {
+            basis: 'run',
+            compareRun: true,
             baseYearLabel: capexRoadmap.baseYearLabel,
             yearCount: capexRoadmap.yearCount,
             discountRate,
@@ -2258,8 +2302,16 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           baseYearLabel: api.baseYearLabel,
           solveSeconds: api.solveSeconds,
           npv: api.npv,
+          basis: api.basis,
+          runCheck: api.runCheck ?? null,
           eventTiming: api.eventTiming,
           years: api.years.map((y) => ({
+            carbonM: y.carbonM,
+            laneFixedM: y.laneFixedM,
+            uncoveredPenaltyM: y.uncoveredPenaltyM,
+            co2Kt: y.co2Kt,
+            eventCapexM: y.eventCapexM,
+            candidateCapexM: y.candidateCapexM,
             year: y.year,
             label: y.label,
             yearLabel: y.yearLabel,
@@ -2314,7 +2366,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         return null
       }
     },
-    [network, constraints, capexRoadmap, activeScenario],
+    [network, constraints, capexRoadmap, activeScenario, productMix, bom, emissionFactors, projectMeta],
   )
 
   const exportMultiPeriodToBrief = useCallback(() => {
@@ -2551,6 +2603,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateLaneProductGroups,
       updateFacilityProductCap,
       resetProductMix,
+      updateProductGroupWeight,
       laneRates,
       setLaneRatesStrategy,
       updateRateBid,
@@ -2658,6 +2711,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       updateLaneProductGroups,
       updateFacilityProductCap,
       resetProductMix,
+      updateProductGroupWeight,
       laneRates,
       setLaneRatesStrategy,
       updateRateBid,

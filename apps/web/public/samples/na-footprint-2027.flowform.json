@@ -4,8 +4,8 @@
   "meta": {
     "id": "proj-sample-na-footprint-2027",
     "name": "NA Footprint 2027 (sample)",
-    "createdAt": "2026-09-28T17:54:44.207Z",
-    "updatedAt": "2026-10-18T01:21:25.985Z"
+    "createdAt": "2026-10-18T18:52:07.253Z",
+    "updatedAt": "2026-10-18T18:52:07.253Z"
   },
   "state": {
     "version": 1,
@@ -502,7 +502,8 @@
           "code": "AMB",
           "color": "#34d399",
           "description": "Dry / ambient finished goods — no cold chain.",
-          "handling": "ambient"
+          "handling": "ambient",
+          "unitWeightKg": 2
         },
         {
           "id": "chilled",
@@ -510,7 +511,8 @@
           "code": "CHL",
           "color": "#38bdf8",
           "description": "Refrigerated SKUs requiring 2–8°C lanes & DCs.",
-          "handling": "chilled"
+          "handling": "chilled",
+          "unitWeightKg": 1.5
         },
         {
           "id": "hazmat",
@@ -518,7 +520,8 @@
           "code": "HAZ",
           "color": "#f87171",
           "description": "Regulated / hazardous commodities — limited lanes.",
-          "handling": "hazmat"
+          "handling": "hazmat",
+          "unitWeightKg": 3.5
         }
       ],
       "demandMix": [
@@ -679,7 +682,7 @@
           "corridorLabel": "Monterrey Sup → Austin Plant",
           "bids": [
             {
-              "id": "bid-vw8a5a",
+              "id": "bid-imj9di",
               "carrier": "NorthStar Freight",
               "mode": "Road",
               "rate": 1.12,
@@ -689,7 +692,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-8gqvw1",
+              "id": "bid-ngsbfp",
               "carrier": "RailLink NA",
               "mode": "Road",
               "rate": 0.99,
@@ -699,7 +702,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-tdxcwo",
+              "id": "bid-55qppa",
               "carrier": "SwiftLane",
               "mode": "Road",
               "rate": 0.003,
@@ -716,7 +719,7 @@
           "corridorLabel": "Austin Plant → Columbus DC",
           "bids": [
             {
-              "id": "bid-tj66ik",
+              "id": "bid-omzl76",
               "carrier": "RailLink NA",
               "mode": "Rail",
               "rate": 0.64,
@@ -726,7 +729,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-opf6s5",
+              "id": "bid-ifueyq",
               "carrier": "BlueOcean Lines",
               "mode": "Rail",
               "rate": 0.56,
@@ -736,7 +739,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-fo4xq6",
+              "id": "bid-z96uca",
               "carrier": "NorthStar Freight",
               "mode": "Rail",
               "rate": 0.001,
@@ -753,7 +756,7 @@
           "corridorLabel": "Austin Plant → Atlanta DC",
           "bids": [
             {
-              "id": "bid-fth9rg",
+              "id": "bid-css6jx",
               "carrier": "BlueOcean Lines",
               "mode": "Road",
               "rate": 0.88,
@@ -763,7 +766,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-o8qtgg",
+              "id": "bid-6vi0uv",
               "carrier": "AeroCargo Express",
               "mode": "Road",
               "rate": 0.77,
@@ -773,7 +776,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-v8675w",
+              "id": "bid-n6o4li",
               "carrier": "RailLink NA",
               "mode": "Rail",
               "rate": 0.001,
@@ -790,7 +793,7 @@
           "corridorLabel": "Columbus DC → Chicago Hub",
           "bids": [
             {
-              "id": "bid-viyjio",
+              "id": "bid-lvmzfz",
               "carrier": "AeroCargo Express",
               "mode": "Road",
               "rate": 0.41,
@@ -800,7 +803,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-84nm1f",
+              "id": "bid-ytb8zb",
               "carrier": "Intermodal Hub Co",
               "mode": "Road",
               "rate": 0.36,
@@ -810,7 +813,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-8d0p53",
+              "id": "bid-1mhryp",
               "carrier": "BlueOcean Lines",
               "mode": "Road",
               "rate": 0.001,
@@ -827,7 +830,7 @@
           "corridorLabel": "Atlanta DC → NYC Corridor",
           "bids": [
             {
-              "id": "bid-a9mij9",
+              "id": "bid-lts0gn",
               "carrier": "Intermodal Hub Co",
               "mode": "Intermodal",
               "rate": 0.97,
@@ -837,7 +840,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-xt9opf",
+              "id": "bid-gz6tr4",
               "carrier": "SwiftLane",
               "mode": "Intermodal",
               "rate": 0.85,
@@ -847,7 +850,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-9avv6k",
+              "id": "bid-q8mymk",
               "carrier": "AeroCargo Express",
               "mode": "Intermodal",
               "rate": 0.001,
@@ -864,7 +867,7 @@
           "corridorLabel": "Austin Plant → Dallas Metro",
           "bids": [
             {
-              "id": "bid-p6kz99",
+              "id": "bid-yl6oh6",
               "carrier": "SwiftLane",
               "mode": "Road",
               "rate": 0.35,
@@ -874,7 +877,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-sgu11v",
+              "id": "bid-vzaer4",
               "carrier": "NorthStar Freight",
               "mode": "Road",
               "rate": 0.31,
@@ -884,7 +887,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-gw0sse",
+              "id": "bid-n52jkt",
               "carrier": "Intermodal Hub Co",
               "mode": "Rail",
               "rate": 0.002,
@@ -901,7 +904,7 @@
           "corridorLabel": "Reno DC → Columbus DC",
           "bids": [
             {
-              "id": "bid-3sesvv",
+              "id": "bid-2vdyre",
               "carrier": "NorthStar Freight",
               "mode": "Rail",
               "rate": 0.72,
@@ -911,7 +914,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-unfr4e",
+              "id": "bid-xbl1y8",
               "carrier": "RailLink NA",
               "mode": "Rail",
               "rate": 0.63,
@@ -921,7 +924,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-7n6joo",
+              "id": "bid-49yt39",
               "carrier": "SwiftLane",
               "mode": "Rail",
               "rate": 0,
@@ -938,7 +941,7 @@
           "corridorLabel": "Atlanta DC → Dallas Metro",
           "bids": [
             {
-              "id": "bid-pou6mm",
+              "id": "bid-ytefs3",
               "carrier": "RailLink NA",
               "mode": "Road",
               "rate": 0.79,
@@ -948,7 +951,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-h4ep45",
+              "id": "bid-0fo1hc",
               "carrier": "BlueOcean Lines",
               "mode": "Road",
               "rate": 0.7,
@@ -958,7 +961,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-62q1e8",
+              "id": "bid-bt67fj",
               "carrier": "NorthStar Freight",
               "mode": "Road",
               "rate": 0.001,
@@ -975,7 +978,7 @@
           "corridorLabel": "Columbus DC → NYC Corridor",
           "bids": [
             {
-              "id": "bid-44dhzu",
+              "id": "bid-3l0zf5",
               "carrier": "BlueOcean Lines",
               "mode": "Road",
               "rate": 1.38,
@@ -985,7 +988,7 @@
               "notes": "Incumbent contract"
             },
             {
-              "id": "bid-e94d6p",
+              "id": "bid-7cyy6f",
               "carrier": "AeroCargo Express",
               "mode": "Road",
               "rate": 1.21,
@@ -995,7 +998,7 @@
               "notes": "Spot / secondary"
             },
             {
-              "id": "bid-js5a3d",
+              "id": "bid-hglvdn",
               "carrier": "RailLink NA",
               "mode": "Rail",
               "rate": 0.003,

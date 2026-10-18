@@ -2564,19 +2564,22 @@
       "id": "sku-fg-a",
       "name": "Finished Good A",
       "code": "FGA",
-      "groupId": "ambient"
+      "groupId": "ambient",
+      "unitWeightKg": 4
     },
     {
       "id": "sku-fg-b",
       "name": "Finished Good B",
       "code": "FGB",
-      "groupId": "chilled"
+      "groupId": "chilled",
+      "unitWeightKg": 2.5
     },
     {
       "id": "sku-rm-1",
       "name": "Resin RM",
       "code": "RM1",
-      "groupId": "ambient"
+      "groupId": "ambient",
+      "unitWeightKg": 1
     }
   ],
   "productGroups": [
@@ -2584,13 +2587,15 @@
       "id": "ambient",
       "name": "Ambient",
       "code": "AMB",
-      "color": "#34d399"
+      "color": "#34d399",
+      "unitWeightKg": 4
     },
     {
       "id": "chilled",
       "name": "Chilled",
       "code": "CHL",
-      "color": "#38bdf8"
+      "color": "#38bdf8",
+      "unitWeightKg": 2.5
     }
   ],
   "demand": [
@@ -5010,15 +5015,13 @@
           "mode": "Truck",
           "costPerUnit": 0.45,
           "leadDays": 3,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.369,
           "leadDays": 4,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5026,7 +5029,6 @@
           "costPerUnit": 0.315,
           "leadDays": 5,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5045,15 +5047,13 @@
           "mode": "Truck",
           "costPerUnit": 0.5,
           "leadDays": 4,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.41,
           "leadDays": 5,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5061,7 +5061,6 @@
           "costPerUnit": 0.35,
           "leadDays": 6,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5080,15 +5079,13 @@
           "mode": "Truck",
           "costPerUnit": 0.55,
           "leadDays": 5,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.451,
           "leadDays": 6,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5096,7 +5093,6 @@
           "costPerUnit": 0.385,
           "leadDays": 7,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5115,15 +5111,13 @@
           "mode": "Truck",
           "costPerUnit": 0.6,
           "leadDays": 6,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.492,
           "leadDays": 7,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5131,7 +5125,6 @@
           "costPerUnit": 0.42,
           "leadDays": 8,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5150,15 +5143,13 @@
           "mode": "Truck",
           "costPerUnit": 0.65,
           "leadDays": 2,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.533,
           "leadDays": 3,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5166,7 +5157,6 @@
           "costPerUnit": 0.455,
           "leadDays": 4,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5185,15 +5175,13 @@
           "mode": "Truck",
           "costPerUnit": 0.7,
           "leadDays": 3,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.574,
           "leadDays": 4,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5201,7 +5189,6 @@
           "costPerUnit": 0.49,
           "leadDays": 5,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5220,15 +5207,13 @@
           "mode": "Truck",
           "costPerUnit": 0.75,
           "leadDays": 4,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.615,
           "leadDays": 5,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5236,7 +5221,6 @@
           "costPerUnit": 0.525,
           "leadDays": 6,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5255,15 +5239,13 @@
           "mode": "Truck",
           "costPerUnit": 0.8,
           "leadDays": 5,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.656,
           "leadDays": 6,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5271,7 +5253,6 @@
           "costPerUnit": 0.56,
           "leadDays": 7,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5290,15 +5271,13 @@
           "mode": "Truck",
           "costPerUnit": 0.85,
           "leadDays": 6,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.697,
           "leadDays": 7,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5306,7 +5285,6 @@
           "costPerUnit": 0.595,
           "leadDays": 8,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5325,15 +5303,13 @@
           "mode": "Truck",
           "costPerUnit": 0.4,
           "leadDays": 2,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.328,
           "leadDays": 3,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5341,7 +5317,6 @@
           "costPerUnit": 0.28,
           "leadDays": 4,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5360,15 +5335,13 @@
           "mode": "Truck",
           "costPerUnit": 0.45,
           "leadDays": 3,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.369,
           "leadDays": 4,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5376,7 +5349,6 @@
           "costPerUnit": 0.315,
           "leadDays": 5,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5395,15 +5367,13 @@
           "mode": "Truck",
           "costPerUnit": 0.5,
           "leadDays": 4,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.41,
           "leadDays": 5,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5411,7 +5381,6 @@
           "costPerUnit": 0.35,
           "leadDays": 6,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5430,15 +5399,13 @@
           "mode": "Truck",
           "costPerUnit": 0.55,
           "leadDays": 5,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.451,
           "leadDays": 6,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5446,7 +5413,6 @@
           "costPerUnit": 0.385,
           "leadDays": 7,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5465,15 +5431,13 @@
           "mode": "Truck",
           "costPerUnit": 0.6,
           "leadDays": 6,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.492,
           "leadDays": 7,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5481,7 +5445,6 @@
           "costPerUnit": 0.42,
           "leadDays": 8,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5500,15 +5463,13 @@
           "mode": "Truck",
           "costPerUnit": 0.65,
           "leadDays": 2,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.533,
           "leadDays": 3,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5516,7 +5477,6 @@
           "costPerUnit": 0.455,
           "leadDays": 4,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5535,15 +5495,13 @@
           "mode": "Truck",
           "costPerUnit": 0.7,
           "leadDays": 3,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.574,
           "leadDays": 4,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5551,7 +5509,6 @@
           "costPerUnit": 0.49,
           "leadDays": 5,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5570,15 +5527,13 @@
           "mode": "Truck",
           "costPerUnit": 0.75,
           "leadDays": 4,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.615,
           "leadDays": 5,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5586,7 +5541,6 @@
           "costPerUnit": 0.525,
           "leadDays": 6,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5605,15 +5559,13 @@
           "mode": "Truck",
           "costPerUnit": 0.8,
           "leadDays": 5,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.656,
           "leadDays": 6,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5621,7 +5573,6 @@
           "costPerUnit": 0.56,
           "leadDays": 7,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5640,15 +5591,13 @@
           "mode": "Truck",
           "costPerUnit": 0.85,
           "leadDays": 6,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.697,
           "leadDays": 7,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5656,7 +5605,6 @@
           "costPerUnit": 0.595,
           "leadDays": 8,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5675,15 +5623,13 @@
           "mode": "Truck",
           "costPerUnit": 0.4,
           "leadDays": 2,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.328,
           "leadDays": 3,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5691,7 +5637,6 @@
           "costPerUnit": 0.28,
           "leadDays": 4,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5710,15 +5655,13 @@
           "mode": "Truck",
           "costPerUnit": 0.45,
           "leadDays": 3,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.369,
           "leadDays": 4,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5726,7 +5669,6 @@
           "costPerUnit": 0.315,
           "leadDays": 5,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5745,15 +5687,13 @@
           "mode": "Truck",
           "costPerUnit": 0.5,
           "leadDays": 4,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.41,
           "leadDays": 5,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5761,7 +5701,6 @@
           "costPerUnit": 0.35,
           "leadDays": 6,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5780,15 +5719,13 @@
           "mode": "Truck",
           "costPerUnit": 0.55,
           "leadDays": 5,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.451,
           "leadDays": 6,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5796,7 +5733,6 @@
           "costPerUnit": 0.385,
           "leadDays": 7,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]
@@ -5815,15 +5751,13 @@
           "mode": "Truck",
           "costPerUnit": 0.6,
           "leadDays": 6,
-          "capacity": 30000,
-          "co2KgPerUnit": 12
+          "capacity": 30000
         },
         {
           "mode": "Intermodal",
           "costPerUnit": 0.492,
           "leadDays": 7,
           "capacity": 20000,
-          "co2KgPerUnit": 5,
           "fixedCostM": 0.02
         },
         {
@@ -5831,7 +5765,6 @@
           "costPerUnit": 0.42,
           "leadDays": 8,
           "capacity": 15000,
-          "co2KgPerUnit": 2.5,
           "fixedCostM": 0.05
         }
       ]

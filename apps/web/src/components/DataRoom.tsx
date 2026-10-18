@@ -20,6 +20,8 @@ import {
   type RateUnit,
 } from '../data/laneRates'
 import {
+  DEFAULT_UNIT_WEIGHT_KG,
+  groupUnitWeightKg,
   catalogLabel,
   demandSharesForNode,
   formatGroupCodes,
@@ -64,6 +66,9 @@ export function DataRoom() {
     updateDemandProductShares,
     updateFacilityProductCap,
     resetProductMix,
+    updateProductGroupWeight,
+    updateConstraintGlobals,
+    activeScenario,
     laneRates,
     setLaneRatesStrategy,
     updateRateBid,
@@ -516,6 +521,72 @@ async function onEnterpriseFile(file: File | null) {
                 </div>
               ))}
             </div>
+
+            <h3 className="data-subhead">Unit weights (CO₂ basis)</h3>
+            <p className="muted tiny" style={{ marginTop: 0 }}>
+              Shipping weight per physical unit, incl. packaging. CO₂ = tonne-miles
+              × mode factor (kg/ton-mile below); tonnes = units × weight. The
+              carbon price uses the same tonnes. Groups without a weight use the
+              project default ({constraints.defaultUnitWeightKg ?? DEFAULT_UNIT_WEIGHT_KG}{' '}
+              kg = {((constraints.defaultUnitWeightKg ?? DEFAULT_UNIT_WEIGHT_KG) / 1000).toFixed(3)} t).
+            </p>
+            <div className="unit-weight-row" data-testid="unit-weights">
+              {productMix.groups.map((g) => {
+                const eff = groupUnitWeightKg(g)
+                return (
+                  <label key={g.id} className="field">
+                    <span>
+                      {g.code} kg/unit
+                      {g.unitWeightKg == null && eff != null ? ' (catalog)' : ''}
+                    </span>
+                    <input
+                      className="weight-input mono"
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={g.unitWeightKg ?? eff ?? ''}
+                      placeholder={String(constraints.defaultUnitWeightKg ?? DEFAULT_UNIT_WEIGHT_KG)}
+                      aria-label={`${g.name} unit weight kg`}
+                      onChange={(e) => {
+                        const v = e.target.value === '' ? undefined : parseFloat(e.target.value)
+                        updateProductGroupWeight(g.id, v != null && v > 0 ? v : undefined)
+                      }}
+                    />
+                  </label>
+                )
+              })}
+              <label className="field">
+                <span>Project default kg/unit</span>
+                <input
+                  className="weight-input mono"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={constraints.defaultUnitWeightKg ?? ''}
+                  placeholder={`${DEFAULT_UNIT_WEIGHT_KG} (0.02 t)`}
+                  aria-label="Project default unit weight kg"
+                  onChange={(e) => {
+                    const v = e.target.value === '' ? undefined : parseFloat(e.target.value)
+                    updateConstraintGlobals({
+                      defaultUnitWeightKg: v != null && v > 0 ? v : undefined,
+                    })
+                  }}
+                />
+              </label>
+            </div>
+            {activeScenario.optimizeMeta?.co2Basis && (
+              <p className="muted tiny" data-testid="co2-basis-last-run">
+                Last Run: demand-weighted{' '}
+                <strong>{activeScenario.optimizeMeta.co2Basis.demandWeightedUnitWeightKg?.toFixed(2)} kg/unit</strong>
+                {activeScenario.optimizeMeta.co2Basis.transportTonneKm != null
+                  ? ` · ${(activeScenario.optimizeMeta.co2Basis.transportTonneKm / 1e6).toFixed(1)}M tonne-km`
+                  : ''}
+                {activeScenario.optimizeMeta.co2Kt != null
+                  ? ` · ${activeScenario.optimizeMeta.co2Kt.toFixed(1)} kt CO₂`
+                  : ''}
+                .
+              </p>
+            )}
 
             <h3 className="data-subhead">Demand mix by node</h3>
             <div className="table-scroll data-table">
@@ -1274,10 +1345,11 @@ async function onEnterpriseFile(file: File | null) {
           <section className="library-card" aria-label="CO2 emission factors">
             <h2>CO₂ emission factors</h2>
             <p className="studio-sub" style={{ marginTop: 0 }}>
-              Planning factors (kg CO₂e / ton-mile). Network KPI CO₂ is computed
-              as lane distance × mode factor when sites have coordinates —
-              currently <strong>{computedCo2Kt.toFixed(1)} kt</strong> for the
-              active network.
+              Planning factors (kg CO₂e / ton-mile; ÷1.609 for tonne-km). After a
+              Run, KPI CO₂ is the modelled transport CO₂: flow tonne-miles (unit
+              weights above) × these factors. Before any Run the KPI shows a
+              lane-only estimate (1 t per lane, no volumes) —{' '}
+              <strong>{computedCo2Kt.toFixed(1)} kt</strong> for the active network.
             </p>
             <div className="table-scroll data-table">
               <table>

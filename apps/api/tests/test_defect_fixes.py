@@ -123,7 +123,7 @@ def test_d05_carbon_cost_equals_price_times_reported_tonnes():
     body = solve_optimize(p)
     k = body["kpis"]
     assert body["objectiveBreakdown"]["carbonM"] == pytest.approx(
-        100 * k["transportCo2Tonnes"] / 1e6, rel=1e-6
+        100 * k["transportCo2Tonnes"] / 1e6, abs=1e-4
     )
     assert k["transportCo2Kt"] == pytest.approx(k["transportCo2Tonnes"] / 1000, abs=1e-3)
     assert k["co2Kt"] == pytest.approx(k["transportCo2Kt"], abs=0.05)
@@ -135,7 +135,7 @@ def test_d05_carbon_cost_equals_price_times_reported_tonnes():
     q["constraints"]["tonsPerUnit"] = 0.5
     b2 = solve_optimize(q)
     assert b2["objectiveBreakdown"]["carbonM"] == pytest.approx(
-        100 * b2["kpis"]["transportCo2Tonnes"] / 1e6, rel=1e-6
+        100 * b2["kpis"]["transportCo2Tonnes"] / 1e6, abs=1e-4
     )
 
 

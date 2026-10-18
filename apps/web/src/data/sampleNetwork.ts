@@ -320,6 +320,16 @@ export type OptimizeMeta = {
   /** Depth 7: binding subset of laneCapacity. */
   bindingLaneCapacities?: OptimizeLaneCapacityRow[]
   modeChoice?: OptimizeModeChoiceSummary
+  /** CO₂ basis from the MIP (unit weights, tonne-km). */
+  co2Basis?: {
+    basis: string
+    defaultUnitWeightKg: number
+    byCommodity: Record<string, number>
+    demandWeightedUnitWeightKg?: number
+    transportTonneKm?: number
+  }
+  /** Modelled transport CO₂ (kt) — same tonnes as carbon cost. */
+  co2Kt?: number
   /** Depth 8: why-opened/closed explain block (API explain=true). */
   explain?: OptimizeExplain
   /** Positions for map-diff when nodes are not in the sample set. */
@@ -442,6 +452,11 @@ export type NetworkConstraints = {
   enforceLaneCapacity?: boolean
   /** Depth 7: $ per tonne CO2 added to lane-mode cost (mode choice). */
   carbonPricePerTonne?: number
+  /**
+   * Project default shipping weight per physical unit (kg) for SKUs / groups
+   * without their own weight. Unset → 20 kg (0.02 t). Drives CO₂ tonnes.
+   */
+  defaultUnitWeightKg?: number
   facilities: FacilityConstraint[]
 }
 

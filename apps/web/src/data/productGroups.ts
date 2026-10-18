@@ -24,6 +24,12 @@ export type ProductGroup = {
   color: string
   description: string
   handling: ProductHandling
+  /**
+   * Shipping weight per physical unit (kg, incl. packaging). Drives
+   * tonne-miles → CO₂ and carbon cost in the MIP. Missing → catalog default
+   * (see groupUnitWeightKg) → project default.
+   */
+  unitWeightKg?: number
 }
 
 export type DemandProductMix = {
@@ -80,6 +86,7 @@ export const TEMP_HANDLING_GROUPS: ProductGroup[] = [
     color: '#34d399',
     description: 'Dry / ambient finished goods — no cold chain.',
     handling: 'ambient',
+    unitWeightKg: 2.0,
   },
   {
     id: 'chilled',
@@ -88,6 +95,7 @@ export const TEMP_HANDLING_GROUPS: ProductGroup[] = [
     color: '#38bdf8',
     description: 'Refrigerated SKUs requiring 2–8°C lanes & DCs.',
     handling: 'chilled',
+    unitWeightKg: 1.5,
   },
   {
     id: 'hazmat',
@@ -96,6 +104,7 @@ export const TEMP_HANDLING_GROUPS: ProductGroup[] = [
     color: '#f87171',
     description: 'Regulated / hazardous commodities — limited lanes.',
     handling: 'hazmat',
+    unitWeightKg: 3.5,
   },
 ]
 
@@ -108,6 +117,7 @@ export const MFG_STAGE_GROUPS: ProductGroup[] = [
     color: '#34d399',
     description: 'Finished goods ready for customer demand.',
     handling: 'standard',
+    unitWeightKg: 2.0,
   },
   {
     id: 'wip',
@@ -116,6 +126,7 @@ export const MFG_STAGE_GROUPS: ProductGroup[] = [
     color: '#fbbf24',
     description: 'Work-in-process between plants and finishing DCs.',
     handling: 'standard',
+    unitWeightKg: 3.0,
   },
   {
     id: 'rm',
@@ -124,8 +135,25 @@ export const MFG_STAGE_GROUPS: ProductGroup[] = [
     color: '#a78bfa',
     description: 'Inbound raw materials from suppliers.',
     handling: 'standard',
+    unitWeightKg: 5.0,
   },
 ]
+
+/** Built-in project default unit weight (kg / physical unit) = 0.02 t. */
+export const DEFAULT_UNIT_WEIGHT_KG = 20
+
+/**
+ * Effective unit weight for a group: explicit → built-in catalog default for
+ * the same id (keeps pre-weights saved projects on realistic weights) →
+ * undefined (caller falls back to the project default).
+ */
+export function groupUnitWeightKg(g: Pick<ProductGroup, 'id' | 'unitWeightKg'>): number | undefined {
+  if (g.unitWeightKg != null && Number.isFinite(g.unitWeightKg) && g.unitWeightKg > 0) {
+    return g.unitWeightKg
+  }
+  const k = [...TEMP_HANDLING_GROUPS, ...MFG_STAGE_GROUPS].find((x) => x.id === g.id)
+  return k?.unitWeightKg
+}
 
 export function groupsForCatalog(catalog: ProductCatalogId): ProductGroup[] {
   return catalog === 'mfg-stage'
@@ -433,6 +461,15 @@ export function rollupByProductGroup(
   const costM = parseNum(kpis.cost.value)
   const co2Kt = parseNum(kpis.co2.value)
   const servicePct = parseNum(kpis.service.value)
+  // CO₂ follows tonnes, not units: allocate by demand × unit weight.
+  const tonnesByGroup = new Map(
+    state.groups.map((g) => [
+      g.id,
+      demandVolumeForGroup(state, network, g.id) *
+        (groupUnitWeightKg(g) ?? DEFAULT_UNIT_WEIGHT_KG),
+    ]),
+  )
+  const totalTonnes = [...tonnesByGroup.values()].reduce((a, b) => a + b, 0) || 1
 
   return state.groups.map((g) => {
     const demandVolume = demandVolumeForGroup(state, network, g.id)
@@ -461,7 +498,7 @@ export function rollupByProductGroup(
       taggedLanes,
       capacityUnits,
       costM: Math.round(costM * share * 10) / 10,
-      co2Kt: Math.round(co2Kt * share * 10) / 10,
+      co2Kt: Math.round(co2Kt * ((tonnesByGroup.get(g.id) ?? 0) / totalTonnes) * 10) / 10,
       servicePct: Math.round(servicePct * 10) / 10,
     }
   })

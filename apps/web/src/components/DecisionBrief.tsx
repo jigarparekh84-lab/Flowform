@@ -327,7 +327,15 @@ function ScenarioBriefCard({
         </div>
         <div>
           <dt>CO₂</dt>
-          <dd>{scenario.kpis.co2.value}</dd>
+          <dd
+            title={
+              scenario.optimizeMeta?.co2Basis
+                ? `Modelled transport CO₂: flow tonne-miles × kg/ton-mile; avg ${scenario.optimizeMeta.co2Basis.demandWeightedUnitWeightKg?.toFixed(2)} kg/unit`
+                : undefined
+            }
+          >
+            {scenario.kpis.co2.value}
+          </dd>
         </div>
       </dl>
       {!isRef && (

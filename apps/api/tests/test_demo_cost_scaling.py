@@ -79,10 +79,22 @@ def sample_payload() -> dict:
             "demandByProduct": dbp,
             "bomDemand": bom_demand,
             "skus": [
-                {"id": f"sku-{g['id']}", "name": g["name"], "groupId": g["id"]}
+                {
+                    "id": f"sku-{g['id']}",
+                    "name": g["name"],
+                    "groupId": g["id"],
+                    **({"unitWeightKg": g["unitWeightKg"]} if g.get("unitWeightKg") else {}),
+                }
                 for g in pm["groups"]
             ],
-            "productGroups": [{"id": g["id"], "name": g["name"]} for g in pm["groups"]],
+            "productGroups": [
+                {
+                    "id": g["id"],
+                    "name": g["name"],
+                    **({"unitWeightKg": g["unitWeightKg"]} if g.get("unitWeightKg") else {}),
+                }
+                for g in pm["groups"]
+            ],
         },
         "constraints": {**cons, "facilities": facilities},
     }

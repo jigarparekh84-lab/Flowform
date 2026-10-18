@@ -404,6 +404,12 @@ export function mergeConstraints(
     serviceRadiusMiles: prev.serviceRadiusMiles,
     capexBudgetM: prev.capexBudgetM,
     maxFacilities: prev.maxFacilities,
+    ...(prev.defaultUnitWeightKg != null
+      ? { defaultUnitWeightKg: prev.defaultUnitWeightKg }
+      : {}),
+    ...(prev.carbonPricePerTonne != null
+      ? { carbonPricePerTonne: prev.carbonPricePerTonne }
+      : {}),
     facilities: fresh.facilities.map((f) => {
       const old = prevMap.get(f.nodeId)
       return old ? { ...f, ...old, nodeId: f.nodeId } : f

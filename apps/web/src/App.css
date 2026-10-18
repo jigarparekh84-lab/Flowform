@@ -4422,3 +4422,10 @@ td.empty-cell .empty-state {
 .why-network-empty {
   margin: 0 0 1rem;
 }
+
+/* Roadmap basis line + Data unit weights */
+.roadmap-basis { margin: 0.5rem 0 0.75rem; line-height: 1.45; }
+.ok-text { color: var(--ff-good); font-weight: 600; }
+.warn-text { color: var(--ff-warn); font-weight: 600; }
+.weight-input { width: 6.5rem; }
+.unit-weight-row { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: flex-end; margin: 0.5rem 0 0.75rem; }

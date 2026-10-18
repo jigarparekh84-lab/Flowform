@@ -15,8 +15,10 @@ import type {
   ProductMixState,
 } from './productGroups'
 import {
+  DEFAULT_UNIT_WEIGHT_KG,
   MFG_STAGE_GROUPS,
   TEMP_HANDLING_GROUPS,
+  groupUnitWeightKg,
   mergeProductMix,
 } from './productGroups'
 import type {
@@ -60,6 +62,8 @@ export type EnterpriseSku = {
   code: string
   groupId?: string
   handling?: string
+  /** Shipping weight per physical unit, kg (incl. packaging). */
+  unitWeightKg?: number
 }
 
 export type EnterpriseProductGroup = {
@@ -68,6 +72,8 @@ export type EnterpriseProductGroup = {
   code: string
   color?: string
   description?: string
+  /** Group default unit weight, kg — used by SKUs without their own. */
+  unitWeightKg?: number
 }
 
 /** Demand by SKU + customer (customer = demand-kind site). */
@@ -140,6 +146,11 @@ export type EnterpriseCostFactors = {
   uncoveredPenaltyPerUnit?: number
   /** @deprecated legacy "$M per unit" penalty (80) — ignored by the solver. */
   uncoveredPenaltyM?: number
+  /**
+   * Project default unit weight (kg / physical unit) for SKUs and groups
+   * without a weight. Solver default 20 kg (0.02 t).
+   */
+  defaultUnitWeightKg?: number
 }
 
 /** Default cost factors written into generated / exported packs. */
@@ -172,6 +183,7 @@ export type EnterprisePack = {
     maxProductCommodities?: number
     enforceLaneCapacity?: boolean
     carbonPricePerTonne?: number
+    defaultUnitWeightKg?: number
   }
 }
 
@@ -214,6 +226,12 @@ export type ValidationErrorCode =
   | 'INVALID_SITE_STATUS'
   | 'ORPHAN_SKU_GROUP'
   | 'SCHEMA_MISMATCH'
+  | 'SKU_WEIGHT_INVALID'
+  | 'SKU_WEIGHT_IMPLAUSIBLE'
+  | 'SKU_WEIGHT_MISSING'
+  | 'GROUP_WEIGHT_INVALID'
+  | 'GROUP_WEIGHT_IMPLAUSIBLE'
+  | 'DEFAULT_WEIGHT_INVALID'
 
 export type EnterpriseValidationIssue = {
   level: 'error' | 'warn' | 'info'
@@ -296,6 +314,16 @@ function detectBomCycles(rows: EnterpriseBomRow[]): string[][] {
 
   for (const id of adj.keys()) dfs(id)
   return cycles
+}
+
+/** Plausible shipping weight per physical unit (kg). */
+export const MIN_PLAUSIBLE_UNIT_KG = 0.005
+export const MAX_PLAUSIBLE_UNIT_KG = 1500
+
+function weightIssue(w: unknown): 'invalid' | 'implausible' | null {
+  if (typeof w !== 'number' || !Number.isFinite(w) || w <= 0) return 'invalid'
+  if (w < MIN_PLAUSIBLE_UNIT_KG || w > MAX_PLAUSIBLE_UNIT_KG) return 'implausible'
+  return null
 }
 
 /** Strict validation with actionable error codes + fix-it hints. */
@@ -467,6 +495,82 @@ export function validateEnterprisePack(
         hint: 'Add the product group or clear groupId on the SKU.',
       })
     }
+  }
+
+  // Unit weights (CO₂ basis): kg per physical unit.
+  const groupWeight = new Map<string, number>()
+  for (const g of pack.productGroups) {
+    const w = g.unitWeightKg
+    if (w == null) continue
+    const issue = weightIssue(w)
+    if (issue === 'invalid') {
+      issues.push({
+        level: 'error',
+        code: 'GROUP_WEIGHT_INVALID',
+        message: `Product group "${g.id}" unitWeightKg ${String(w)} must be a positive number.`,
+        entityId: g.id,
+        hint: 'Set the shipping weight per unit in kg (e.g. 2.0) or clear it to use the project default.',
+      })
+      continue
+    }
+    if (issue === 'implausible') {
+      issues.push({
+        level: 'warn',
+        code: 'GROUP_WEIGHT_IMPLAUSIBLE',
+        message: `Product group "${g.id}" unitWeightKg ${w} kg is outside ${MIN_PLAUSIBLE_UNIT_KG}–${MAX_PLAUSIBLE_UNIT_KG} kg.`,
+        entityId: g.id,
+        hint: 'Check the unit: weights are kg per physical unit (not tonnes, not per 1,000 units).',
+      })
+    }
+    groupWeight.set(g.id, w)
+  }
+  const defaultW = pack.globals?.defaultUnitWeightKg ?? pack.costFactors?.defaultUnitWeightKg
+  if (defaultW != null && weightIssue(defaultW) === 'invalid') {
+    issues.push({
+      level: 'error',
+      code: 'DEFAULT_WEIGHT_INVALID',
+      message: `Project default unitWeightKg ${String(defaultW)} must be a positive number.`,
+      hint: `Set a positive kg/unit default or clear it (solver default ${DEFAULT_UNIT_WEIGHT_KG} kg).`,
+    })
+  }
+  const demandedSkus = new Set(pack.demand.map((d) => d.skuId))
+  const unweighted: string[] = []
+  for (const sku of pack.skus) {
+    const w = sku.unitWeightKg
+    if (w != null) {
+      const issue = weightIssue(w)
+      if (issue === 'invalid') {
+        issues.push({
+          level: 'error',
+          code: 'SKU_WEIGHT_INVALID',
+          message: `SKU "${sku.id}" unitWeightKg ${String(w)} must be a positive number.`,
+          entityId: sku.id,
+          hint: 'Set the shipping weight per unit in kg or clear it to inherit the group / project default.',
+        })
+        continue
+      }
+      if (issue === 'implausible') {
+        issues.push({
+          level: 'warn',
+          code: 'SKU_WEIGHT_IMPLAUSIBLE',
+          message: `SKU "${sku.id}" unitWeightKg ${w} kg is outside ${MIN_PLAUSIBLE_UNIT_KG}–${MAX_PLAUSIBLE_UNIT_KG} kg.`,
+          entityId: sku.id,
+          hint: 'Check the unit: weights are kg per physical unit (not tonnes, not per 1,000 units).',
+        })
+      }
+      continue
+    }
+    if (demandedSkus.has(sku.id) && !(sku.groupId && groupWeight.has(sku.groupId))) {
+      unweighted.push(sku.id)
+    }
+  }
+  if (unweighted.length) {
+    issues.push({
+      level: 'info',
+      code: 'SKU_WEIGHT_MISSING',
+      message: `${unweighted.length} demanded SKU(s) have no unit weight (${unweighted.slice(0, 4).join(', ')}${unweighted.length > 4 ? '…' : ''}) — CO₂ uses the project default ${defaultW ?? DEFAULT_UNIT_WEIGHT_KG} kg/unit.`,
+      hint: 'Add unitWeightKg on the SKU or its product group for realistic tonne-miles / CO₂.',
+    })
   }
 
   const demandIds = new Set<string>()
@@ -912,22 +1016,30 @@ export function buildEnterprisePack(args: {
   })
 
   const productGroups: EnterpriseProductGroup[] = productMix.groups.map(
-    (g) => ({
-      id: g.id,
-      name: g.name,
-      code: g.code,
-      color: g.color,
-      description: g.description,
-    }),
+    (g) => {
+      const w = groupUnitWeightKg(g)
+      return {
+        id: g.id,
+        name: g.name,
+        code: g.code,
+        color: g.color,
+        description: g.description,
+        ...(w != null ? { unitWeightKg: w } : {}),
+      }
+    },
   )
 
-  const skus: EnterpriseSku[] = productMix.groups.map((g) => ({
-    id: `sku-${g.id}`,
-    name: g.name,
-    code: g.code,
-    groupId: g.id,
-    handling: g.handling,
-  }))
+  const skus: EnterpriseSku[] = productMix.groups.map((g) => {
+    const w = groupUnitWeightKg(g)
+    return {
+      id: `sku-${g.id}`,
+      name: g.name,
+      code: g.code,
+      groupId: g.id,
+      handling: g.handling,
+      ...(w != null ? { unitWeightKg: w } : {}),
+    }
+  })
 
   const skuIdSet = new Set(skus.map((s) => s.id))
   for (const share of bom.fgShares) {
@@ -1050,8 +1162,14 @@ export function buildEnterprisePack(args: {
     costFactors: {
       emissionKgPerTonMileByMode,
       ...DEFAULT_COST_SCALING,
+      ...(constraints.defaultUnitWeightKg != null
+        ? { defaultUnitWeightKg: constraints.defaultUnitWeightKg }
+        : {}),
     },
     globals: {
+      ...(constraints.defaultUnitWeightKg != null
+        ? { defaultUnitWeightKg: constraints.defaultUnitWeightKg }
+        : {}),
       serviceTargetPct: constraints.serviceTargetPct,
       serviceRadiusMiles: constraints.serviceRadiusMiles,
       capexBudgetM: constraints.capexBudgetM,
@@ -1199,6 +1317,9 @@ export function packToConstraints(pack: EnterprisePack): NetworkConstraints {
     ...(g.carbonPricePerTonne != null
       ? { carbonPricePerTonne: g.carbonPricePerTonne }
       : {}),
+    ...((g.defaultUnitWeightKg ?? pack.costFactors?.defaultUnitWeightKg) != null
+      ? { defaultUnitWeightKg: g.defaultUnitWeightKg ?? pack.costFactors?.defaultUnitWeightKg }
+      : {}),
     facilities,
   }
 }
@@ -1322,7 +1443,22 @@ export function productMixFromPack(
   const handlings: ProductHandling[] = ['ambient', 'chilled', 'frozen', 'hazmat', 'standard']
   const groups: ProductGroup[] = pack.productGroups.map((g, i) => {
     const k = known.find((x) => x.id === g.id)
+    // Group weight: explicit → demand-weighted mean of its SKUs' weights.
+    let unitWeightKg = g.unitWeightKg
+    if (unitWeightKg == null) {
+      let wv = 0
+      let v = 0
+      for (const d of pack.demand) {
+        const sku = pack.skus.find((s) => s.id === d.skuId)
+        if (sku?.groupId === g.id && sku.unitWeightKg != null && d.volume > 0) {
+          wv += sku.unitWeightKg * d.volume
+          v += d.volume
+        }
+      }
+      if (v > 0) unitWeightKg = Math.round((wv / v) * 1000) / 1000
+    }
     return {
+      ...(unitWeightKg != null ? { unitWeightKg } : {}),
       id: g.id,
       name: g.name,
       code: g.code,
@@ -1463,13 +1599,12 @@ export function emissionFactorsFromPack(
 export function stressLaneModes(cost: number, lead: number): EnterpriseLaneMode[] {
   const cm = Math.round(cost * 1000)
   return [
-    { mode: 'Truck', costPerUnit: cm / 1000, leadDays: lead, capacity: 30000, co2KgPerUnit: 12 },
+    { mode: 'Truck', costPerUnit: cm / 1000, leadDays: lead, capacity: 30000 },
     {
       mode: 'Intermodal',
       costPerUnit: (cm * 82) / 100 / 1000,
       leadDays: lead + 1,
       capacity: 20000,
-      co2KgPerUnit: 5,
       fixedCostM: 0.02,
     },
     {
@@ -1477,7 +1612,6 @@ export function stressLaneModes(cost: number, lead: number): EnterpriseLaneMode[
       costPerUnit: (cm * 7) / 10 / 1000,
       leadDays: lead + 2,
       capacity: 15000,
-      co2KgPerUnit: 2.5,
       fixedCostM: 0.05,
     },
   ]
@@ -1669,13 +1803,15 @@ export function generateStressSamplePack(opts?: {
     name: opts?.name ?? `Stress ${demandCount} demand nodes`,
     sites,
     skus: [
-      { id: 'sku-fg-a', name: 'Finished Good A', code: 'FGA', groupId: 'ambient' },
-      { id: 'sku-fg-b', name: 'Finished Good B', code: 'FGB', groupId: 'chilled' },
-      { id: 'sku-rm-1', name: 'Resin RM', code: 'RM1', groupId: 'ambient' },
+      // Unit weights (kg / physical unit, incl. packaging): see
+      // docs/MASTER_BLUEPRINT.md §CO₂ basis for the derivation.
+      { id: 'sku-fg-a', name: 'Finished Good A', code: 'FGA', groupId: 'ambient', unitWeightKg: 4 },
+      { id: 'sku-fg-b', name: 'Finished Good B', code: 'FGB', groupId: 'chilled', unitWeightKg: 2.5 },
+      { id: 'sku-rm-1', name: 'Resin RM', code: 'RM1', groupId: 'ambient', unitWeightKg: 1 },
     ],
     productGroups: [
-      { id: 'ambient', name: 'Ambient', code: 'AMB', color: '#34d399' },
-      { id: 'chilled', name: 'Chilled', code: 'CHL', color: '#38bdf8' },
+      { id: 'ambient', name: 'Ambient', code: 'AMB', color: '#34d399', unitWeightKg: 4 },
+      { id: 'chilled', name: 'Chilled', code: 'CHL', color: '#38bdf8', unitWeightKg: 2.5 },
     ],
     demand,
     lanes,

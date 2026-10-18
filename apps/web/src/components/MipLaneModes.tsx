@@ -65,7 +65,10 @@ function ScenarioLaneBlock({ s }: { s: Scenario }) {
             : ''}
           {bd?.laneFixedM ? ` · lane fixed $${bd.laneFixedM.toFixed(2)}M` : ''}
           {bd?.carbonM ? ` · carbon $${bd.carbonM.toFixed(2)}M` : ''}
-          {mix.length ? ` · transport CO₂ ${totalCo2T.toLocaleString(undefined, { maximumFractionDigits: 0 })} t` : ''}
+          {mix.length ? ` · transport CO₂ ${totalCo2T.toLocaleString(undefined, { maximumFractionDigits: 0 })} t (${(totalCo2T / 1000).toFixed(1)} kt)` : ''}
+          {meta.co2Basis?.demandWeightedUnitWeightKg != null
+            ? ` · avg ${meta.co2Basis.demandWeightedUnitWeightKg.toFixed(2)} kg/unit`
+            : ''}
         </span>
       </div>
 

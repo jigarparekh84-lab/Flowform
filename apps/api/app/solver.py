@@ -618,6 +618,144 @@ def _co2_kg_per_unit(
     return miles * f * tons_per_unit
 
 
+# ---------------------------------------------------------------------------
+# Unit weights (CO2 basis)
+#
+# CO2 (kg) on an arc = miles × mode factor (kg / tonne-mile) × tonnes moved,
+# tonnes = physical units × unit weight. Weight resolves per commodity:
+#   SKU unitWeightKg → product-group unitWeightKg → project default
+#   (constraints.defaultUnitWeightKg → costFactors.defaultUnitWeightKg →
+#   legacy constraints.tonsPerUnit × 1000) → DEFAULT_UNIT_WEIGHT_KG.
+# constraints.co2WeightBasis = "legacy-1t" restores the pre-weights behaviour
+# (1 tonne per physical unit) for old payloads / regression comparisons.
+# Explicit lane-mode co2KgPerUnit stays per physical unit (weight-independent).
+# ---------------------------------------------------------------------------
+DEFAULT_UNIT_WEIGHT_KG = 20.0
+KM_PER_MILE = 1.609344
+
+
+MIN_PLAUSIBLE_UNIT_KG = 0.005
+MAX_PLAUSIBLE_UNIT_KG = 1500.0
+
+
+def _raw_weight(obj: dict[str, Any]) -> Any:
+    for k in ("unitWeightKg", "weightKg"):
+        if obj.get(k) is not None:
+            return obj.get(k)
+    if obj.get("unitWeightTonnes") is not None:
+        t = _num(obj.get("unitWeightTonnes"))
+        return t * 1000.0 if t is not None else obj.get("unitWeightTonnes")
+    return None
+
+
+def weight_issues(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Same codes as the web enterprise-pack validator (enterprisePack.ts)."""
+    network = payload.get("network") or {}
+    constraints = payload.get("constraints") or {}
+    out: list[dict[str, Any]] = []
+
+    def check(raw: Any, code_invalid: str, code_impl: str, entity: str | None) -> None:
+        if raw is None:
+            return
+        w = _num(raw)
+        if w is None or not math.isfinite(w) or w <= 0:
+            out.append({"level": "error", "code": code_invalid, "entityId": entity,
+                        "message": f"unit weight {raw!r} must be a positive number (kg/unit); ignored."})
+        elif w < MIN_PLAUSIBLE_UNIT_KG or w > MAX_PLAUSIBLE_UNIT_KG:
+            out.append({"level": "warn", "code": code_impl, "entityId": entity,
+                        "message": f"unit weight {w:g} kg outside {MIN_PLAUSIBLE_UNIT_KG}–{MAX_PLAUSIBLE_UNIT_KG:g} kg."})
+
+    for g in network.get("productGroups") or payload.get("productGroups") or []:
+        check(_raw_weight(g), "GROUP_WEIGHT_INVALID", "GROUP_WEIGHT_IMPLAUSIBLE", str(g.get("id")))
+    for s in network.get("skus") or payload.get("skus") or []:
+        check(_raw_weight(s), "SKU_WEIGHT_INVALID", "SKU_WEIGHT_IMPLAUSIBLE", str(s.get("id")))
+    for raw in (constraints.get("defaultUnitWeightKg"),
+                (network.get("costFactors") or {}).get("defaultUnitWeightKg")):
+        if raw is None:
+            continue
+        w = _num(raw)
+        if w is None or not math.isfinite(w) or w <= 0:
+            out.append({"level": "error", "code": "DEFAULT_WEIGHT_INVALID", "entityId": None,
+                        "message": f"project default unit weight {raw!r} must be positive; ignored."})
+    return out
+
+
+def _weight_kg(obj: dict[str, Any] | None) -> float | None:
+    if not obj:
+        return None
+    w = _num(obj.get("unitWeightKg"))
+    if w is None:
+        w = _num(obj.get("weightKg"))
+    if w is None:
+        t = _num(obj.get("unitWeightTonnes"))
+        if t is not None:
+            w = t * 1000.0
+    return w if w is not None and w > 0 else None
+
+
+def resolve_unit_weights(
+    payload: dict[str, Any],
+    product_ids: list[str],
+    sku_to_group: dict[str, str],
+) -> tuple[dict[str, float], dict[str, Any]]:
+    """Return (tonnes per physical unit by commodity id, info)."""
+    network = payload.get("network") or {}
+    constraints = payload.get("constraints") or {}
+    cf = network.get("costFactors") or {}
+    skus = list(network.get("skus") or payload.get("skus") or [])
+    groups = list(network.get("productGroups") or payload.get("productGroups") or [])
+    basis = str(constraints.get("co2WeightBasis") or "unit-weight")
+    if basis == "legacy-1t":
+        return {p: 1.0 for p in product_ids}, {
+            "basis": "legacy-1t", "defaultUnitWeightKg": 1000.0,
+            "defaultSource": "legacy-1t", "byCommodity": {p: 1000.0 for p in product_ids},
+            "issues": [],
+        }
+    default_kg = _num(constraints.get("defaultUnitWeightKg"))
+    src = "constraints.defaultUnitWeightKg"
+    if default_kg is None or default_kg <= 0:
+        default_kg, src = _num(cf.get("defaultUnitWeightKg")), "costFactors.defaultUnitWeightKg"
+    if default_kg is None or default_kg <= 0:
+        tpu = _num(constraints.get("tonsPerUnit"))
+        if tpu is not None and tpu > 0:
+            default_kg, src = tpu * 1000.0, "constraints.tonsPerUnit (legacy)"
+    if default_kg is None or default_kg <= 0:
+        default_kg, src = DEFAULT_UNIT_WEIGHT_KG, "built-in default"
+    sku_w = {str(s.get("id")): _weight_kg(s) for s in skus if s.get("id") is not None}
+    grp_w = {str(g.get("id")): _weight_kg(g) for g in groups if g.get("id") is not None}
+    out_kg: dict[str, float] = {}
+    sources: dict[str, str] = {}
+    issues = weight_issues(payload)
+    for p in product_ids:
+        w, how = None, "default"
+        if p in sku_w and sku_w[p] is not None:
+            w, how = sku_w[p], "sku"
+        elif p in sku_w and sku_to_group.get(p) in grp_w and grp_w[sku_to_group[p]] is not None:
+            w, how = grp_w[sku_to_group[p]], "group"
+        elif p in grp_w:
+            if grp_w[p] is not None:
+                w, how = grp_w[p], "group"
+            else:
+                members = [sku_w[s] for s, g in sku_to_group.items() if g == p and sku_w.get(s)]
+                if members:
+                    w, how = sum(members) / len(members), "group-mean-of-skus"
+        elif sku_to_group.get(p) in grp_w and grp_w[sku_to_group[p]] is not None:
+            w, how = grp_w[sku_to_group[p]], "group"
+        if w is None:
+            w = default_kg
+        out_kg[p] = float(w)
+        sources[p] = how
+    return {p: kg / 1000.0 for p, kg in out_kg.items()}, {
+        "basis": "unit-weight",
+        "defaultUnitWeightKg": round(default_kg, 4),
+        "defaultSource": src,
+        "byCommodity": {p: round(v, 4) for p, v in out_kg.items()},
+        "sourceByCommodity": sources,
+        "missingWeightCommodities": [p for p, h in sources.items() if h == "default"],
+        "issues": issues,
+    }
+
+
 def _arc_mode_options(
     fr: dict[str, Any],
     to: dict[str, Any],
@@ -1045,9 +1183,6 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     carbon_price = _num(constraints.get("carbonPricePerTonne")) or 0.0
-    tons_per_unit = _num(constraints.get("tonsPerUnit"))
-    if tons_per_unit is None or tons_per_unit <= 0:
-        tons_per_unit = 1.0
     ef_raw = (
         constraints.get("emissionKgPerTonMileByMode")
         or network.get("emissionKgPerTonMileByMode")
@@ -1132,6 +1267,27 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         if s.get("groupId"):
             sku_to_group[str(s["id"])] = str(s["groupId"])
 
+    unit_tonnes, weight_info = resolve_unit_weights(payload, product_ids, sku_to_group)
+    tons_per_unit = (
+        sum(unit_tonnes[p] * v for (_c, p), v in dem_map.items()) / total_demand
+        if dem_map
+        else weight_info["defaultUnitWeightKg"] / 1000.0
+    )
+    log.append(
+        "CO2 basis: "
+        + (
+            "legacy 1 t/unit."
+            if weight_info["basis"] == "legacy-1t"
+            else (
+                f"unit weights {', '.join(f'{p}={kg:g} kg' for p, kg in list(weight_info['byCommodity'].items())[:6])}"
+                f" (default {weight_info['defaultUnitWeightKg']:g} kg from {weight_info['defaultSource']}); "
+                f"demand-weighted {tons_per_unit * 1000:.2f} kg/unit."
+            )
+        )
+    )
+    for iss in weight_info.get("issues") or []:
+        log.append(f"Weight {iss['level']}: {iss['code']} {iss.get('entityId') or ''} — {iss['message']}")
+
     # Capability maps (group ids expand onto SKU commodities)
     capable: dict[str, set[str] | None] = {}
     for f in decidable:
@@ -1169,13 +1325,17 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         for o in opts:
             mkey = (fr["id"], to["id"], o["key"])
             if mkey not in arc_meta:
-                co2 = _co2_kg_per_unit(
-                    o["label"], o["co2KgPerUnit"], miles, emission_factors, tons_per_unit
+                explicit = o["co2KgPerUnit"]
+                per_tonne = None if explicit is not None else _co2_kg_per_unit(
+                    o["label"], None, miles, emission_factors, 1.0
                 )
+                co2 = explicit if explicit is not None else per_tonne * tons_per_unit
                 arc_meta[mkey] = {
                     "label": o["label"],
                     "leadDays": o["leadDays"],
                     "co2KgPerUnit": co2,
+                    "co2KgPerTonne": per_tonne,
+                    "co2Explicit": explicit,
                     "capacity": o["capacity"],
                     "fixedCostM": o["fixedCostM"],
                     "laneId": o["laneId"],
@@ -1189,6 +1349,20 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
                     "miles": miles,
                 }
         return opts, miles
+
+    def _unit_co2(a: str, b: str, mk: str, prod: str | None) -> float:
+        """kg CO2 per physical unit of commodity ``prod`` on (a, b, mk)."""
+        meta = arc_meta.get((a, b, mk)) or {}
+        if meta.get("co2Explicit") is not None:
+            return float(meta["co2Explicit"])
+        w = unit_tonnes.get(prod, tons_per_unit) if prod is not None else tons_per_unit
+        return float(meta.get("co2KgPerTonne") or 0.0) * w
+
+    def _unit_carbon_m(a: str, b: str, mk: str, prod: str | None) -> float:
+        # kg/unit × 1000 units per model unit / 1000 kg per t × $/t → $M
+        if carbon_price <= 0:
+            return 0.0
+        return _unit_co2(a, b, mk, prod) * PHYSICAL_UNITS_PER_MODEL_UNIT / 1000.0 * carbon_price / 1e6
 
     dem_nodes = {d["id"]: d for d in demands}
 
@@ -1761,18 +1935,21 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         log.append(f"Max plants {max_plants} (separate from max DCs {max_fac}).")
 
     transport_terms = []
+    carbon_terms = []
     for arcs, xd in (
         (arcs_dc_cust, x_dc_c),
         (arcs_plant_dc, x_p_dc),
         (arcs_plant_cust, x_p_c),
     ):
         for a, b, p, cost, _miles, mk in arcs:
-            carbon = arc_meta[(a, b, mk)]["carbonM"] if carbon_price > 0 else 0.0
-            transport_terms.append((cost + carbon) * xd[_vk(a, b, p, mk)])
+            transport_terms.append(cost * xd[_vk(a, b, p, mk)])
+            if carbon_price > 0:
+                carbon_terms.append(_unit_carbon_m(a, b, mk, p) * xd[_vk(a, b, p, mk)])
     for a, b, cost, _qty in bom_arcs:
         transport_terms.append(cost * x_s_p[(a, b)])
 
     transport_expr = pulp.lpSum(transport_terms) if transport_terms else 0
+    carbon_expr = pulp.lpSum(carbon_terms) if carbon_terms else 0
     capex_expr = pulp.lpSum(capex_cost[fid] * y[fid] for fid in y)
     opex_expr = pulp.lpSum(opex_cost[fid] * y[fid] for fid in y)
     if hard_service:
@@ -1794,11 +1971,14 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     )
     if z:
         prob += (
-            transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
-            + lane_fixed_expr
+            transport_expr + carbon_expr + capex_expr + opex_expr + uncov_expr
+            + keep_bonus + lane_fixed_expr
         )
     else:
-        prob += transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
+        prob += (
+            transport_expr + carbon_expr + capex_expr + opex_expr + uncov_expr
+            + keep_bonus
+        )
 
     t_solve0 = time.perf_counter()
     status_code = prob.solve(solver)
@@ -1824,7 +2004,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
 
     def _cost_parts() -> dict[str, float]:
         """True cost of the incumbent (objective minus the keep-open bonus)."""
-        tr = _ev(transport_expr)
+        tr = _ev(transport_expr) + _ev(carbon_expr)
         cx = _ev(capex_expr)
         ox = _ev(opex_expr)
         un = 0.0 if uncovered is None else sum(_val(uncovered[k]) for k in uncovered)
@@ -1857,6 +2037,9 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     lane_mode_vol: dict[tuple[str, str, str], float] = {}
     lane_mode_cost: dict[tuple[str, str, str], float] = {}
     lane_mode_echelon: dict[tuple[str, str, str], str] = {}
+    lane_mode_co2: dict[tuple[str, str, str], float] = {}
+    lane_mode_tm: dict[tuple[str, str, str], float] = {}
+    lane_mode_carbon: dict[tuple[str, str, str], float] = {}
 
     def _add_flow(
         fr: str,
@@ -1891,8 +2074,19 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
                 row["laneId"] = meta["laneId"]
             if meta.get("leadDays") is not None:
                 row["leadDays"] = round(float(meta["leadDays"]), 2)
-            row["co2Kg"] = round(float(meta.get("co2KgPerUnit") or 0.0) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT, 1)
+            co2_kg = _unit_co2(fr, to, mk, prod) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT
+            tonnes = (
+                vol * PHYSICAL_UNITS_PER_MODEL_UNIT
+                * (unit_tonnes.get(prod, tons_per_unit) if prod is not None else tons_per_unit)
+            )
+            row["co2Kg"] = round(co2_kg, 1)
+            row["tonnes"] = round(tonnes, 1)
             lk = (fr, to, mk)
+            lane_mode_co2[lk] = lane_mode_co2.get(lk, 0.0) + co2_kg
+            lane_mode_tm[lk] = lane_mode_tm.get(lk, 0.0) + tonnes * miles
+            lane_mode_carbon[lk] = lane_mode_carbon.get(lk, 0.0) + (
+                _unit_carbon_m(fr, to, mk, prod) * vol
+            )
             lane_vol[(fr, to)] = lane_vol.get((fr, to), 0.0) + vol
             lane_mode_vol[lk] = lane_mode_vol.get(lk, 0.0) + vol
             lane_mode_cost[lk] = lane_mode_cost.get(lk, 0.0) + unit_cost * vol
@@ -1935,9 +2129,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     uncovered_pen = uncovered_penalty * uncovered_total
     lane_fixed_used = sum(lane_fixed_cost[k] for k, on in z_on.items() if on)
     carbon_cost = (
-        sum(
-            arc_meta[k]["carbonM"] * v for k, v in lane_mode_vol.items()
-        )
+        sum(lane_mode_carbon.values())
         if carbon_price > 0
         else 0.0
     )
@@ -2025,7 +2217,8 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
                 "echelon": lane_mode_echelon.get((a, b, mk)),
                 "volume": round(vol, 2),
                 "transportCostM": round(lane_mode_cost.get((a, b, mk), 0.0), 4),
-                "co2Kg": round(float(meta.get("co2KgPerUnit") or 0.0) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT, 1),
+                "co2Kg": round(lane_mode_co2.get((a, b, mk), 0.0), 1),
+                "tonneMiles": round(lane_mode_tm.get((a, b, mk), 0.0), 1),
                 "leadDays": None
                 if meta.get("leadDays") is None
                 else round(float(meta["leadDays"]), 2),
@@ -2052,6 +2245,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
                 "volume": 0.0,
                 "transportM": 0.0,
                 "co2Kg": 0.0,
+                "tonneMiles": 0.0,
                 "lanes": set(),
                 "leadWeighted": 0.0,
                 "fixedM": 0.0,
@@ -2059,7 +2253,8 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         )
         m["volume"] += vol
         m["transportM"] += lane_mode_cost.get((a, b, mk), 0.0)
-        m["co2Kg"] += float(meta.get("co2KgPerUnit") or 0.0) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT
+        m["co2Kg"] += lane_mode_co2.get((a, b, mk), 0.0)
+        m["tonneMiles"] += lane_mode_tm.get((a, b, mk), 0.0)
         m["lanes"].add((a, b))
         m["leadWeighted"] += float(meta.get("leadDays") or 0.0) * vol
         if z_on.get((a, b, mk)):
@@ -2073,6 +2268,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
             "transportM": round(m["transportM"], 4),
             "laneFixedM": round(m["fixedM"], 4),
             "co2Kg": round(m["co2Kg"], 1),
+            "tonneMiles": round(m["tonneMiles"], 1),
             "laneCount": len(m["lanes"]),
             "avgLeadDays": round(m["leadWeighted"] / m["volume"], 2)
             if m["volume"] > 0
@@ -2080,7 +2276,8 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         }
         for m in sorted(mix.values(), key=lambda m: -m["volume"])
     ]
-    transport_co2_kg = sum(m["co2Kg"] for m in mode_mix)
+    transport_co2_kg = sum(lane_mode_co2.values())
+    transport_tonne_miles = sum(lane_mode_tm.values())
 
     # --- Depth 8: ONE pure LP with every binary fixed at its MIP value; read
     # facility-capacity AND lane-capacity duals straight from HiGHS. ---
@@ -2389,7 +2586,16 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
             "laneModeBinaries": len(z),
             "serviceFilteredModes": lead_filtered_modes,
             "carbonPricePerTonne": carbon_price,
-            "tonsPerUnit": tons_per_unit,
+            "tonsPerUnit": round(tons_per_unit, 6),
+        },
+        "co2Basis": {
+            **weight_info,
+            "demandWeightedUnitWeightKg": round(tons_per_unit * 1000.0, 4),
+            "transportTonneMiles": round(transport_tonne_miles, 1),
+            "transportTonneKm": round(transport_tonne_miles * KM_PER_MILE, 1),
+            "emissionKgPerTonneMileByMode": emission_factors,
+            "formula": "CO2 kg = tonne-miles x mode factor (kg/tonne-mile); "
+            "tonnes = physical units x unit weight; carbon $ = CO2 t x price",
         },
         "laneFlows": lane_flows,
         "laneUtilization": lane_util,
@@ -2412,6 +2618,10 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
             "productCount": len(product_ids),
             "transportCo2Kt": round(transport_co2_kg / 1e6, 3),
             "transportCo2Tonnes": round(transport_co2_kg / 1e3, 3),
+            "transportTonneKm": round(transport_tonne_miles * KM_PER_MILE, 1),
+            "co2GPerTonneKm": round(transport_co2_kg * 1000 / (transport_tonne_miles * KM_PER_MILE), 2)
+            if transport_tonne_miles > 0
+            else None,
             "laneFixedM": round(lane_fixed_used, 4),
             "carbonM": round(carbon_cost, 4),
             "bindingLaneCount": len(binding_lanes),

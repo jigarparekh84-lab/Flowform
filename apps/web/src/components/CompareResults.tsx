@@ -1984,7 +1984,8 @@ function ProductsView({
         <h2>Product / commodity mix</h2>
         <p className="muted tiny">
           Catalog <strong>{catalogLabel(productMix.catalog)}</strong>. Demand
-          volume and KPI cost / CO₂ allocated by demand share. Filter the
+          volume and KPI cost allocated by demand share; CO₂ by demand × unit
+          weight (tonnes). Filter the
           Network map from here or the Inspector.
         </p>
         <div className="product-chip-row wrap" style={{ marginBottom: '0.75rem' }}>
@@ -2118,8 +2119,10 @@ function ModeMixView({
       <section className="library-card modes-summary" aria-label="Mode mix">
         <h2>Transport mode mix</h2>
         <p className="muted tiny">
-          Lane share, ton-miles, and CO₂ by mode. Cost relatives and kg/ton-mile
-          come from the same planning factors used by optimize / CO₂.
+          Network lane structure by mode (lane counts, lane-miles, 1 t per lane —
+          not flow-weighted). Modelled CO₂ from Run (flow tonne-miles × unit
+          weights × kg/ton-mile, same tonnes as the KPI and carbon cost) is in the
+          MIP lane-mode panel above.
         </p>
         <div className="modes-bars" aria-hidden>
           {rows.map((r) => (

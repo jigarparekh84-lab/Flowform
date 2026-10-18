@@ -155,6 +155,18 @@ export type ApiOptimizeResponse = {
   openFacilities?: ApiOpenFacility[]
   flows: ApiFlow[]
   objectiveBreakdown?: ApiObjectiveBreakdown
+  /** CO₂ basis: unit weights (kg/unit) by commodity + tonne-miles. */
+  co2Basis?: {
+    basis: string
+    defaultUnitWeightKg: number
+    defaultSource?: string
+    byCommodity: Record<string, number>
+    demandWeightedUnitWeightKg?: number
+    transportTonneMiles?: number
+    transportTonneKm?: number
+    missingWeightCommodities?: string[]
+    issues?: { level: string; code: string; entityId?: string | null; message: string }[]
+  }
   shadowPrices?: ApiShadowPrice[]
   sensitivity?: { method?: string; laneMethod?: string; note?: string; dualSeconds?: number }
   /** Depth 8 — present when the request set explain=true. */
@@ -200,6 +212,9 @@ export type ApiOptimizeResponse = {
     productCount?: number
     transportCo2Kt?: number
     transportCo2Tonnes?: number
+    transportTonneKm?: number
+    /** g CO₂ per tonne-km (transport intensity). */
+    co2GPerTonneKm?: number | null
     /** D-06: lane fixed charges — included in costM. */
     laneFixedM?: number
     carbonM?: number
@@ -363,6 +378,20 @@ export type ApiMultiPeriodYearRow = {
   servicePct: number
   demandScale?: number
   capacityByFacility?: Record<string, number>
+  carbonM?: number
+  laneFixedM?: number
+  co2Kt?: number
+  eventCapexM?: number
+  candidateCapexM?: number
+  runBreakdown?: {
+    totalM: number
+    transportM: number
+    fixedCapexM: number
+    fixedOpexM: number
+    uncoveredPenaltyM: number
+    laneFixedM: number
+    carbonM: number
+  }
   flowsSummary?: {
     arcCount: number
     totalVolume: number
@@ -392,8 +421,32 @@ export type ApiMultiPeriodResponse = {
     opexNpvM: number
     transportNpvM: number
     uncoveredPenaltyNpvM?: number
+    carbonNpvM?: number
+    laneFixedNpvM?: number
     currency?: string
   }
+  basis?: {
+    model: string
+    description?: string
+    commodityMode?: string
+    commodities?: number
+    variables?: number
+    gapRel?: number
+    timeLimitSec?: number
+    buildSeconds?: number
+    solveOnlySeconds?: number
+  }
+  runCheck?: {
+    runTotalM?: number
+    y0TotalM?: number
+    deltaM?: number
+    deltaPct?: number | null
+    y0HasEvents?: boolean
+    runOpenIds?: string[]
+    y0OpenIds?: string[]
+    matches?: boolean
+    runStatus?: string
+  } | null
   eventTiming: ApiMultiPeriodEventTiming[]
   years: ApiMultiPeriodYearRow[]
   kpis?: {
@@ -436,6 +489,12 @@ export type MultiPeriodRoadmapPayload = {
   hardServiceConstraints?: boolean
   capexBudgetTotalM?: number
   enforceCapexBudget?: boolean
+  /** "run" (default) = every period is the Run MIP; "legacy-aggregate" = old model. */
+  basis?: 'run' | 'legacy-aggregate'
+  /** Also solve Run and return runCheck (Y0 vs Run). */
+  compareRun?: boolean
+  mipGapRel?: number
+  timeLimitSec?: number
 }
 
 export async function postMultiPeriodOptimize(args: {
@@ -443,14 +502,44 @@ export async function postMultiPeriodOptimize(args: {
     nodes: UploadedNetwork['nodes']
     lanes: UploadedNetwork['lanes']
     demandVolume: Record<string, number>
+    bomDemand?: OptimizeBomDemand[]
+    demandByProduct?: {
+      customerId: string
+      productId: string
+      skuId?: string
+      volume: number
+    }[]
+    skus?: { id: string; name?: string; code?: string; groupId?: string; unitWeightKg?: number }[]
+    productGroups?: { id: string; name?: string; code?: string; unitWeightKg?: number }[]
+    costFactors?: OptimizeCostFactors
   }
   constraints: NetworkConstraints
+  bom?: BomState | { rows: BomState['rows'] }
+  bomDemand?: OptimizeBomDemand[]
+  enterpriseSchemaVersion?: string
   roadmap: MultiPeriodRoadmapPayload
   reference?: Scenario
   baseUrl?: string
 }): Promise<ApiMultiPeriodResponse> {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
-  const net = args.network
+  const net = args.network as {
+    nodes: UploadedNetwork['nodes']
+    lanes: UploadedNetwork['lanes']
+    demandVolume: Record<string, number>
+    bomDemand?: OptimizeBomDemand[]
+    demandByProduct?: unknown[]
+    skus?: unknown[]
+    productGroups?: unknown[]
+    costFactors?: OptimizeCostFactors
+  }
+  const bomRows = (args.bom?.rows ?? []).map((r) => ({
+    plantId: r.plantId,
+    preferredSupplierId: r.preferredSupplierId,
+    qtyPerUnit: r.qtyPerUnit,
+    finishedGoodId: r.finishedGoodId,
+    componentId: r.componentId,
+  }))
+  const bomDemand = args.bomDemand ?? net.bomDemand ?? []
   const res = await fetch(`${base}/optimize/multi-period`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -459,7 +548,15 @@ export async function postMultiPeriodOptimize(args: {
         nodes: net.nodes,
         lanes: net.lanes,
         demandVolume: net.demandVolume,
+        bomDemand: bomDemand.length ? bomDemand : undefined,
+        demandByProduct: net.demandByProduct,
+        skus: net.skus,
+        productGroups: net.productGroups,
+        costFactors: net.costFactors,
       },
+      bom: bomRows.length ? { rows: bomRows } : undefined,
+      bomDemand: bomDemand.length ? bomDemand : undefined,
+      enterpriseSchemaVersion: args.enterpriseSchemaVersion,
       constraints: args.constraints,
       roadmap: args.roadmap,
       reference: args.reference
