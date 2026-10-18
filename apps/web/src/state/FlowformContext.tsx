@@ -24,6 +24,7 @@ import {
   mergeConstraints,
   runHeuristicOptimize,
 } from '../data/optimize'
+import { baselineKpisFromApi } from '../data/baselineKpis'
 import {
   checkApiHealth,
   postOptimize,
@@ -411,6 +412,8 @@ type FlowformContextValue = {
 
   /** Edit lane transport mode (Road/Rail/Air/Ocean/Intermodal); rescales cost + CO₂. */
   updateLaneMode: (laneId: string, mode: string) => void
+  /** Remove a lane from the network (Data / Network inspector). */
+  removeLane: (laneId: string) => void
 
   /** Share stub: copy deep-link and/or download read-only share pack. */
   shareProject: (mode: 'copy' | 'download' | 'both') => Promise<{
@@ -1411,7 +1414,18 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             bomDemand: mipPayload.network.bomDemand,
             enterpriseSchemaVersion: mipPayload.enterpriseSchemaVersion,
             explain: { maxCounterfactuals: 12, budgetSec: 30 },
+            computeBaseline: true,
           })
+          // Baseline KPIs from the actual current network (not the $48.2M seed)
+          const baseKpis = baselineKpisFromApi(api.baseline)
+          const refForDelta = baseKpis ? { ...reference, kpis: baseKpis } : reference
+          if (baseKpis) {
+            setScenarios((prev) =>
+              prev.map((s) =>
+                s.id === 'baseline' ? { ...s, kpis: baseKpis, kpiSource: 'api' as const } : s,
+              ),
+            )
+          }
           setOptimizeStatus({
             phase: 'running',
             progress: 85,
@@ -1420,7 +1434,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           await sleep(120)
           const bd = api.objectiveBreakdown
           const bdMsg = bd
-            ? ` · obj $${bd.totalM.toFixed(2)}M (tx $${bd.transportM.toFixed(2)}M + CapEx $${bd.fixedCapexM.toFixed(1)}M + OpEx $${bd.fixedOpexM.toFixed(1)}M)`
+            ? ` · obj $${bd.totalM.toFixed(2)}M (tx $${bd.transportM.toFixed(2)}M + CapEx $${bd.fixedCapexM.toFixed(1)}M + OpEx $${bd.fixedOpexM.toFixed(1)}M${bd.laneFixedM ? ` + lane fixed $${bd.laneFixedM.toFixed(2)}M` : ''}${bd.carbonM ? ` + carbon $${bd.carbonM.toFixed(2)}M` : ''})`
             : ''
           const solveSec = api.solveSeconds
           const timeMsg =
@@ -1471,7 +1485,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             name: infeas
               ? `Optimize Infeasible ${new Date().toLocaleTimeString()}`
               : `Optimize MIP ${new Date().toLocaleTimeString()}`,
-            kpis: kpisFromApi(api, reference),
+            kpis: kpisFromApi(api, refForDelta),
             skipConstraintApply: infeas,
             statusMessage: infeas
               ? `API ${api.solver} · Infeasible${timeMsg}${reportMsg}${skuMsg}`
@@ -1718,6 +1732,21 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
     },
     [emissionFactors],
   )
+
+  const removeLane = useCallback((laneId: string) => {
+    setNetwork((prev) => ({
+      ...prev,
+      lanes: prev.lanes.filter((l) => l.id !== laneId),
+      validation: {
+        ...prev.validation,
+        rowCounts: {
+          ...prev.validation.rowCounts,
+          lanes: Math.max(0, prev.validation.rowCounts.lanes - 1),
+        },
+      },
+    }))
+    setSelection((prev) => ({ ...prev, ids: prev.ids.filter((id) => id !== laneId) }))
+  }, [])
 
   const shareProject = useCallback(
     async (mode: 'copy' | 'download' | 'both') => {
@@ -2365,9 +2394,25 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           })
           return null
         }
-        const api = await postStochasticOptimize({
+        // D-04: robust uses the exact Run payload (open/close, SKUs, BOM).
+        const robustPack = buildEnterprisePack({
           network,
           constraints,
+          productMix,
+          bom,
+          emissionFactors,
+          name: projectMeta?.name,
+        })
+        const robustPayload = packToOptimizePayload(
+          robustPack,
+          validateEnterprisePack(robustPack),
+        )
+        const api = await postStochasticOptimize({
+          network: robustPayload.network as Parameters<typeof postStochasticOptimize>[0]['network'],
+          constraints: robustPayload.constraints as Record<string, unknown>,
+          bom: robustPayload.bom as { rows: unknown[] } | undefined,
+          bomDemand: robustPayload.network.bomDemand as unknown[] | undefined,
+          enterpriseSchemaVersion: robustPayload.enterpriseSchemaVersion,
           reference: activeScenario,
           scenarioTree: {
             objective,
@@ -2400,7 +2445,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
         return null
       }
     },
-    [network, constraints, activeScenario],
+    [network, constraints, activeScenario, productMix, bom, emissionFactors, projectMeta?.name],
   )
 
   const exportStochasticToBrief = useCallback(() => {
@@ -2494,6 +2539,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       logDecision,
       clearDecisionLog,
       updateLaneMode,
+      removeLane,
       shareProject,
       applyMergedNetwork,
       applyHubSpokeNetwork,
@@ -2600,6 +2646,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       logDecision,
       clearDecisionLog,
       updateLaneMode,
+      removeLane,
       shareProject,
       applyMergedNetwork,
       applyHubSpokeNetwork,

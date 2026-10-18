@@ -12,6 +12,8 @@ import type {
 } from './sampleNetwork'
 
 const MILES_PER_UNIT = 12
+/** Minimum service loss (pp) for an outage to count as a SPOF. */
+export const SPOF_MIN_DROP_PP = 0.5
 
 export type CriticalNode = {
   nodeId: string
@@ -93,29 +95,61 @@ function openFacilityIds(
   return open
 }
 
+type Topology = {
+  /** Directed lanes (from → to). */
+  lanes: Set<string>
+  plantIds: Set<string>
+}
+
+function hasLane(t: Topology, a: string, b: string): boolean {
+  return t.lanes.has(`${a}>${b}`)
+}
+
+/**
+ * Coverage with the same reachability the MIP uses: a site reaches a customer
+ * within the service radius *or* over an explicit lane. When the network has
+ * plants, a DC only ships if an open plant supplies it (lane or radius), so a
+ * sole plant is a genuine single point of failure. (D-08)
+ */
 function coveragePct(
   openIds: Set<string>,
   facilities: NetworkNode[],
   demand: { node: NetworkNode; volume: number }[],
   radius: number,
+  topo: Topology,
 ): { pct: number; byFacility: Map<string, number> } {
   const total = demand.reduce((s, d) => s + d.volume, 0) || 1
   const byFacility = new Map<string, number>()
+  const byId = new Map(facilities.map((f) => [f.id, f]))
+  const openPlants = [...openIds].filter((id) => topo.plantIds.has(id))
+  const supplied = (id: string): boolean => {
+    if (topo.plantIds.size === 0 || topo.plantIds.has(id)) return true
+    const site = byId.get(id)
+    return openPlants.some((p) => {
+      const plant = byId.get(p)
+      return (
+        hasLane(topo, p, id) ||
+        (!!plant && !!site && milesBetween(plant, site) <= radius)
+      )
+    })
+  }
   let covered = 0
   for (const d of demand) {
     let best: string | null = null
     let bestDist = Infinity
     for (const id of openIds) {
-      const site = facilities.find((f) => f.id === id)
-      if (!site) continue
+      const site = byId.get(id)
+      if (!site || !supplied(id)) continue
       const m = milesBetween(site, d.node)
-      if (m <= radius && m < bestDist) {
+      const viaLane = hasLane(topo, id, d.node.id)
+      if ((m <= radius || viaLane) && m < bestDist) {
         bestDist = m
         best = id
       }
     }
     if (best) {
       covered += d.volume
+      // Credit the plant that feeds the serving DC as well (for display only)
       byFacility.set(best, (byFacility.get(best) ?? 0) + d.volume)
     }
   }
@@ -144,13 +178,17 @@ export function scoreResilience(args: {
     }))
   const radius = constraints.serviceRadiusMiles
   const open = openFacilityIds(network.nodes, constraints, scenario)
-  const baseline = coveragePct(open, facilities, demand, radius)
+  const topo: Topology = {
+    lanes: new Set((network.lanes ?? []).map((l) => `${l.from}>${l.to}`)),
+    plantIds: new Set(facilities.filter((f) => f.kind === 'plant').map((f) => f.id)),
+  }
+  const baseline = coveragePct(open, facilities, demand, radius, topo)
 
   const ranked: CriticalNode[] = []
   for (const id of open) {
     const remaining = new Set(open)
     remaining.delete(id)
-    const after = coveragePct(remaining, facilities, demand, radius)
+    const after = coveragePct(remaining, facilities, demand, radius, topo)
     const site = facilities.find((f) => f.id === id)
     const dropPp = Math.round((baseline.pct - after.pct) * 10) / 10
     ranked.push({
@@ -166,7 +204,13 @@ export function scoreResilience(args: {
 
   ranked.sort((a, b) => b.dropPp - a.dropPp || a.serviceAfterPct - b.serviceAfterPct)
 
-  const critical = ranked.filter((n) => n.serviceAfterPct < threshold)
+  // D-08: a site is a single point of failure only if losing it strands
+  // demand nobody else can pick up (a real drop) *and* that pushes service
+  // below the floor. A site whose loss costs 0pp is never critical, even
+  // when the network already sits below the threshold.
+  const critical = ranked.filter(
+    (n) => n.dropPp >= SPOF_MIN_DROP_PP && n.serviceAfterPct < threshold,
+  )
   const facilityCount = open.size || 1
   // Score: 100 when no SPOFs; penalize by share of critical + severity of worst drop
   const sharePenalty = (critical.length / facilityCount) * 70

@@ -626,9 +626,9 @@
             "hazmat"
           ],
           "capacityByGroup": {
-            "ambient": 14000,
-            "chilled": 14000,
-            "hazmat": 14000
+            "ambient": 42000,
+            "chilled": 42000,
+            "hazmat": 42000
           }
         },
         {
@@ -639,9 +639,9 @@
             "hazmat"
           ],
           "capacityByGroup": {
-            "ambient": 6000,
-            "chilled": 6000,
-            "hazmat": 6000
+            "ambient": 18000,
+            "chilled": 18000,
+            "hazmat": 18000
           }
         },
         {
@@ -651,8 +651,8 @@
             "chilled"
           ],
           "capacityByGroup": {
-            "ambient": 7000,
-            "chilled": 7000,
+            "ambient": 14000,
+            "chilled": 14000,
             "hazmat": 0
           }
         },
@@ -664,9 +664,9 @@
             "hazmat"
           ],
           "capacityByGroup": {
-            "ambient": 4000,
-            "chilled": 4000,
-            "hazmat": 4000
+            "ambient": 12000,
+            "chilled": 12000,
+            "hazmat": 12000
           }
         }
       ],

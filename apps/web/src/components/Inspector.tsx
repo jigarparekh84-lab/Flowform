@@ -38,6 +38,7 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
     updateFacilityConstraint,
     updateConstraintGlobals,
     updateLaneMode,
+    removeLane,
     productMix,
     setProductFilter,
     updateDemandProductShares,
@@ -478,6 +479,20 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
             <p className="hint">Toggle which commodities this lane may carry.</p>
           </div>
           <div className="constraint-edit">
+            <button
+              type="button"
+              className="btn ghost btn-tiny"
+              data-testid="delete-lane"
+              onClick={() => {
+                if (window.confirm(`Delete lane ${lane.id} (${lane.from} → ${lane.to})?`)) {
+                  removeLane(lane.id)
+                }
+              }}
+            >
+              Delete lane {lane.id}
+            </button>
+          </div>
+          <div className="constraint-edit">
             <h3>Transport mode</h3>
             <label className="field">
               <span>Mode (road / rail / air / ocean)</span>
@@ -647,16 +662,21 @@ function ConstraintsPanel({
         />
       </label>
       <label className="field">
-        <span>Max facilities</span>
+        <span>Max DCs (open)</span>
         <input
           type="number"
           min={1}
           max={20}
           value={constraints.maxFacilities}
+          aria-describedby="max-dcs-help"
           onChange={(e) =>
             onGlobals({ maxFacilities: Number(e.target.value) })
           }
         />
+        <span id="max-dcs-help" className="muted tiny">
+          Counts DCs + candidates only. Plants stay open and are not counted
+          (API: separate <code>maxPlants</code> when plants are optimized).
+        </span>
       </label>
       <label className="field checkbox-field">
         <span>Hard service constraints</span>

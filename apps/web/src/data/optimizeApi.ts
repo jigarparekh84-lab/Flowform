@@ -1,3 +1,4 @@
+import type { ApiBaselineBlock } from './baselineKpis'
 /**
  * Client for Flowform Optimize API (apps/api).
  * Falls back to client heuristic when unreachable.
@@ -198,8 +199,14 @@ export type ApiOptimizeResponse = {
     objectiveTotalM?: number
     productCount?: number
     transportCo2Kt?: number
+    transportCo2Tonnes?: number
+    /** D-06: lane fixed charges — included in costM. */
+    laneFixedM?: number
+    carbonM?: number
     bindingLaneCount?: number
   }
+  /** Current network costed as-is (when computeBaseline was requested). */
+  baseline?: ApiBaselineBlock
   log: string[]
 }
 
@@ -253,6 +260,8 @@ export async function postOptimize(args: {
   enterpriseSchemaVersion?: string
   /** Depth 8: request why-opened/closed explain cards (counterfactual re-solves). */
   explain?: boolean | { maxCounterfactuals?: number; budgetSec?: number; timeLimitSec?: number }
+  /** Also cost the current network as-is → response.baseline (real Baseline KPIs). */
+  computeBaseline?: boolean
   baseUrl?: string
 }): Promise<ApiOptimizeResponse> {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
@@ -306,6 +315,7 @@ export async function postOptimize(args: {
       bomDemand: bomDemand.length ? bomDemand : undefined,
       enterpriseSchemaVersion: args.enterpriseSchemaVersion,
       explain: args.explain || undefined,
+      computeBaseline: args.computeBaseline || undefined,
     }),
   })
   if (!res.ok) {
@@ -576,23 +586,29 @@ export async function postStochasticOptimize(args: {
     lanes: UploadedNetwork['lanes']
     demandVolume: Record<string, number>
   }
-  constraints: NetworkConstraints
+  constraints: NetworkConstraints | Record<string, unknown>
   scenarioTree: StochasticTreePayload
   reference?: Scenario
+  /** D-04: same BOM inbound as Run so robust totals are comparable. */
+  bom?: { rows: unknown[] }
+  bomDemand?: unknown[]
+  enterpriseSchemaVersion?: string
   baseUrl?: string
 }): Promise<ApiStochasticResponse> {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
+  // D-04: pass the full Run payload network (SKUs, demandByProduct, bomDemand…)
   const net = args.network
   const res = await fetch(`${base}/optimize/stochastic`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      network: {
-        nodes: net.nodes,
-        lanes: net.lanes,
-        demandVolume: net.demandVolume,
-      },
+      network: net,
       constraints: args.constraints,
+      ...(args.bom ? { bom: args.bom } : {}),
+      ...(args.bomDemand ? { bomDemand: args.bomDemand } : {}),
+      ...(args.enterpriseSchemaVersion
+        ? { enterpriseSchemaVersion: args.enterpriseSchemaVersion }
+        : {}),
       scenarioTree: args.scenarioTree,
       reference: args.reference
         ? {

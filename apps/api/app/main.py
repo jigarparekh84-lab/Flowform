@@ -138,6 +138,10 @@ class OptimizeRequest(BaseModel):
     reference: dict[str, Any] | None = Field(
         default=None, description="Optional reference scenario for KPI deltas"
     )
+    computeBaseline: bool = Field(
+        default=False,
+        description="Also cost the current network as-is (existing open, candidates closed) → response.baseline",
+    )
     bom: BomIn | dict[str, Any] | None = Field(
         default=None,
         description="Optional BOM rows (supplier→plant) for multi-echelon inbound",
@@ -242,6 +246,7 @@ def _optimize_payload(body: OptimizeRequest, force_explain: bool = False) -> dic
         "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
         "explain": explain,
         "explainOptions": body.explainOptions,
+        "computeBaseline": bool(getattr(body, "computeBaseline", False)),
     }
 
 

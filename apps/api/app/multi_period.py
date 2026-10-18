@@ -203,7 +203,10 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
         if fid in event_node_ids and any(
             e["kind"] == "open" and e["nodeId"] == fid for e in events
         ):
-            base_open[fid] = 1 if st == "open" and f.get("kind") != "candidate" else 0
+            # D-01: a site with an open event starts closed — the event *is* the
+            # opening. (Materialised event nodes default to status "open".)
+            base_open[fid] = 0
+            log.append(f"Facility {fid} has an open event — starts closed at Y0.")
         else:
             base_open[fid] = 0 if st in ("closed", "candidate") else 1
         c = cmap.get(fid, {})

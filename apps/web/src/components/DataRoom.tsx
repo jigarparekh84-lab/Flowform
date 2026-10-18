@@ -54,6 +54,7 @@ export function DataRoom() {
     network,
     loadUploadedNetwork,
     resetToSampleNetwork,
+    removeLane,
     constraints,
     emissionFactors,
     updateEmissionFactor,
@@ -373,6 +374,47 @@ async function onEnterpriseFile(file: File | null) {
             />
           </div>
 
+          <section className="library-card" aria-label="Network lanes">
+            <h2>Lanes ({network.lanes.length})</h2>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>From → To</th>
+                  <th>Mode</th>
+                  <th>$/unit</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {network.lanes.map((l) => (
+                  <tr key={l.id}>
+                    <td>{l.id}</td>
+                    <td>
+                      {l.from} → {l.to}
+                    </td>
+                    <td>{l.mode}</td>
+                    <td>{l.costPerUnit}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn ghost btn-tiny"
+                        data-testid={`delete-lane-${l.id}`}
+                        onClick={() => {
+                          if (window.confirm(`Delete lane ${l.id} (${l.from} → ${l.to})?`)) {
+                            removeLane(l.id)
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
           <section className="library-card data-validation" aria-label="Validation">
             <h2>Validation</h2>
             <ValidationList
@@ -385,7 +427,7 @@ async function onEnterpriseFile(file: File | null) {
             <h2>Constraints linked to Network</h2>
             <p className="studio-sub" style={{ marginTop: 0 }}>
               CapEx budget ${constraints.capexBudgetM}M · max{' '}
-              {constraints.maxFacilities} facilities · service target{' '}
+              {constraints.maxFacilities} DCs (plants not counted) · service target{' '}
               {constraints.serviceTargetPct}% within{' '}
               {constraints.serviceRadiusMiles} mi. Edit statuses in Network
               Inspector.

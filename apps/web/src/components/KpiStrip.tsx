@@ -51,7 +51,12 @@ export function KpiStrip({ kpis }: Props) {
 
   const display = useMemo(() => {
     let next: KpiSnapshot = { ...kpis }
-    if (lanes.length > 0 && nodes.length > 0) {
+    // D-05: when KPIs come from the MIP, CO₂ is the modelled transport CO₂
+    // (same tonnes the carbon price uses). The factor estimate is only a
+    // fallback for scenarios that were never solved.
+    const fromApi =
+      !!activeScenario.optimizeMeta?.objectiveBreakdown || activeScenario.kpiSource === 'api'
+    if (!fromApi && lanes.length > 0 && nodes.length > 0) {
       next = {
         ...next,
         co2: {
@@ -69,7 +74,7 @@ export function KpiStrip({ kpis }: Props) {
       }
     }
     return next
-  }, [kpis, computedCo2Kt, lanes.length, nodes.length, liveInv])
+  }, [kpis, computedCo2Kt, lanes.length, nodes.length, liveInv, activeScenario.optimizeMeta, activeScenario.kpiSource])
 
   const order: { key: keyof KpiSnapshot; label: string }[] = [
     ...CORE,

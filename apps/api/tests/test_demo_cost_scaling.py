@@ -114,8 +114,15 @@ def test_sample_without_hazmat_lane_reproduces_the_original_infeasibility():
     p["network"]["lanes"] = [l for l in p["network"]["lanes"] if l["id"] != "l9"]
     body = solve_optimize(p)
     assert body["status"] == "Infeasible"
-    hint = body["infeasibilityReport"]["hints"][0]
-    assert hint["code"] == "UNREACHABLE_DEMAND" and hint["entities"] == ["n6/sku-hazmat"]
+    # D-02: the root cause is facility minimum throughput, not the soft
+    # unreachable demand (which is still reported, as context).
+    hints = body["infeasibilityReport"]["hints"]
+    assert hints[0]["code"] == "MIN_THROUGHPUT_CONFLICT" and hints[0]["rootCause"]
+    assert "n2" in hints[0]["entities"]
+    assert hints[0]["relaxedServicePct"] == pytest.approx(91.8)
+    assert hints[0]["relaxedObjectiveM"] == pytest.approx(122.76, abs=0.01)
+    unreach = next(h for h in hints if h["code"] == "UNREACHABLE_DEMAND")
+    assert unreach["entities"] == ["n6/sku-hazmat"] and unreach["rootCause"] is False
 
 
 # --- Issue 2: cost scaling ----------------------------------------------------

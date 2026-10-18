@@ -83,7 +83,8 @@ def test_mode_choice_picks_cheaper_mode_when_feasible():
     assert _vol_by_mode(body) == {"Rail": 1000.0}
     mix = body["objectiveBreakdown"]["modeMix"]
     assert mix[0]["mode"] == "Rail" and mix[0]["sharePct"] == 100.0
-    assert mix[0]["co2Kg"] == pytest.approx(5000.0)
+    # D-05: 5 kg per physical unit × 1,000 model units × 1,000 units each
+    assert mix[0]["co2Kg"] == pytest.approx(5_000_000.0)
     assert body["objectiveBreakdown"]["transportM"] == pytest.approx(1.0)
     assert body["modeChoice"]["enabled"] is True
     rail_flow = next(f for f in body["flows"] if f["mode"] == "Rail")

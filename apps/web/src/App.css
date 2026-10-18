@@ -1639,6 +1639,11 @@
   gap: 0.75rem;
 }
 
+/* Cards keep their natural height; the column scrolls instead of squashing them. */
+.data-main > * {
+  flex-shrink: 0;
+}
+
 .data-scores {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -360,6 +360,8 @@ export type Scenario = {
   resilience?: ScenarioResilience
   /** Latest inventory rollup attached to KPIs. */
   inventoryRollup?: InventoryRollupSummary
+  /** 'api' when KPIs came from the optimize API (e.g. computed Baseline). */
+  kpiSource?: 'api' | 'seed'
 }
 
 /** Compact inventory rollup stored on a scenario. */

@@ -115,7 +115,7 @@ def test_expected_2_scenario_toy():
     }
     body = solve_stochastic(payload)
     assert body["ok"] is True
-    assert body["model"] == "stochastic-scenario-tree-v1"
+    assert body["model"] == "stochastic-full-model-v2"
     assert body["objective"] == "expected"
     assert set(body["firstStage"]["openIds"]) >= {"dc_w"}
     # Shared first-stage: every scenario row reports same opens

@@ -233,12 +233,12 @@ function seedFacilityCaps(
             if (id === 'rm' && n.kind === 'dc' && i % 3 === 0) return false
             return true
           })
+    // Per-group caps are enforced by the MIP (shared by every SKU in the
+    // group). Default each capable group to the full site capacity so the cap
+    // only binds once a planner lowers it; the site total still applies.
     const capacityByGroup: Record<string, number> = {}
-    const share = capable.length > 0 ? 1 / capable.length : 0
     for (const id of groupIds) {
-      capacityByGroup[id] = capable.includes(id)
-        ? Math.round(total * share)
-        : 0
+      capacityByGroup[id] = capable.includes(id) ? Math.round(total) : 0
     }
     return {
       nodeId: n.id,

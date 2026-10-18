@@ -37,6 +37,11 @@ from typing import Any
 import pulp
 
 from .diagnostics import diagnose_network_conflicts
+
+# D-05: one model volume unit = 1,000 physical units (see header). Lane
+# co2KgPerUnit and $/unit rates are per physical unit, so CO2 (kg) reported
+# for a flow of ``vol`` model units is co2KgPerUnit × vol × 1,000.
+PHYSICAL_UNITS_PER_MODEL_UNIT = 1000.0
 from .explain import CF_MIP_GAP_REL, build_explain, explain_options
 
 MILES_PER_UNIT = 12.0
@@ -935,6 +940,68 @@ def _capacity_by_product(
 
 
 def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
+    """Solve; optionally attach ``baseline`` (current network, no decisions)."""
+    res = _solve_optimize_core(payload)
+    if payload.get("computeBaseline") and not payload.get("_diagProbe"):
+        try:
+            res["baseline"] = solve_baseline(payload)
+        except Exception as exc:  # never break the main result
+            res["baseline"] = {"status": "Error", "error": str(exc)}
+    return res
+
+
+def solve_baseline(payload: dict[str, Any]) -> dict[str, Any]:
+    """Cost the *current* network: existing sites stay open, candidates stay
+    closed, no open/close decisions. Used for honest Baseline KPIs."""
+    import copy as _copy
+
+    q = _copy.deepcopy(payload)
+    q["computeBaseline"] = False
+    q["explain"] = False
+    q["_diagProbe"] = True
+    cons = q.setdefault("constraints", {})
+    cons["forceOpenSeed"] = True
+    cons["optimizePlants"] = False
+    cons.pop("maxPlants", None)
+    nodes = (q.get("network") or {}).get("nodes") or []
+    facs = cons.setdefault("facilities", [])
+    by_id = {f.get("nodeId"): f for f in facs}
+    n_open = 0
+    for n in nodes:
+        if n.get("kind") not in ("dc", "candidate", "plant"):
+            continue
+        f = by_id.get(n["id"])
+        st = (f or {}).get("status") or ("candidate" if n.get("kind") == "candidate" else "open")
+        if st != "open":
+            if f is None:
+                f = {"nodeId": n["id"]}
+                facs.append(f)
+            f["status"] = "closed"
+        elif n.get("kind") != "plant":
+            n_open += 1
+    cons["maxFacilities"] = max(int(cons.get("maxFacilities") or 0), n_open)
+    r = _solve_optimize_core(q)
+    min_relaxed = False
+    if r.get("status") != "Optimal":
+        # e.g. an existing site with no reachable customers can't meet its
+        # capacityMin when forced open — cost the as-is network without minimums.
+        for f in facs:
+            if f.get("capacityMin"):
+                f["capacityMin"] = 0
+        r = _solve_optimize_core(q)
+        min_relaxed = True
+    return {
+        "capacityMinRelaxed": min_relaxed,
+        "status": r.get("status"),
+        "openIds": r.get("openIds"),
+        "kpis": r.get("kpis"),
+        "objectiveBreakdown": r.get("objectiveBreakdown"),
+        "note": "Current network costed as-is: existing sites open, candidates closed"
+        + (" (capacityMin relaxed — infeasible as-is)." if min_relaxed else "."),
+    }
+
+
+def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     """
     Fixed-charge multi-echelon MIP.
 
@@ -1112,7 +1179,11 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                     "capacity": o["capacity"],
                     "fixedCostM": o["fixedCostM"],
                     "laneId": o["laneId"],
-                    "carbonM": (co2 / 1000.0) * carbon_price / 1000.0
+                    # co2KgPerUnit is per *physical* unit; one model unit is
+                    # PHYSICAL_UNITS_PER_MODEL_UNIT physical units. $/model unit
+                    # = kg × 1000 / 1000 (t) × price; → $M (/1e6).
+                    "carbonM": co2 * PHYSICAL_UNITS_PER_MODEL_UNIT / 1000.0
+                    * carbon_price / 1e6
                     if carbon_price > 0
                     else 0.0,
                     "miles": miles,
@@ -1332,6 +1403,14 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             status_name="Infeasible",
         )
         res["laneCapacityShortfalls"] = lane_short
+        if not pre and not payload.get("_diagProbe"):
+            try:
+                probe = _root_cause_probes(payload)
+            except Exception as exc:  # diagnostics must never break the result
+                probe = None
+                log.append(f"Root-cause probe skipped: {exc}")
+            if probe:
+                _merge_probe_hints(res, probe)
         return res
 
     # Pre-check: hard service with any demand row unreachable → infeasible
@@ -1373,8 +1452,17 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         cat="Binary",
     )
 
+    force_open_ids = {str(i) for i in (constraints.get("forceOpenIds") or [])}
+    force_closed_ids = {str(i) for i in (constraints.get("forceClosedIds") or [])}
     for f in decidable:
         st = _facility_status(f, cmap)
+        if f["id"] in force_closed_ids:
+            prob += y[f["id"]] == 0, _safe_name("fix_closed", f["id"])
+            continue
+        if f["id"] in force_open_ids:
+            # Design fixing (robust / baseline): keeps capex semantics intact
+            prob += y[f["id"]] == 1, _safe_name("fix_open", f["id"])
+            continue
         if st == "closed":
             prob += y[f["id"]] == 0, _safe_name("forced_closed", f["id"])
         elif st == "open" and f.get("kind") == "plant" and not optimize_plants:
@@ -1546,21 +1634,24 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         # Per-product dedicated capacity
         cap_by = _capacity_by_product(fid, cmap, fac_products)
         for prod, pcap in cap_by.items():
-            if prod not in product_ids or pcap <= 0:
+            if pcap <= 0:
                 continue
-            pout: list = []
-            if f.get("kind") in ("dc", "candidate"):
-                pout = [
-                    xv[kind][k]
-                    for kind, k in fac_out_p.get((fid, prod), [])
-                    if kind == "dc"
-                ]
-            elif f.get("kind") == "plant":
-                pout = [
-                    xv[kind][k]
-                    for kind, k in fac_out_p.get((fid, prod), [])
-                    if kind in ("pdc", "pc")
-                ]
+            # Keys may be commodity ids or product-group ids; a group cap is
+            # shared by every SKU commodity in that group (web sends per-SKU
+            # commodities ``sku-<group>`` with group-keyed capacityByProduct).
+            if prod in product_ids:
+                members = [prod]
+            else:
+                members = [p for p in product_ids if sku_to_group.get(p) == prod]
+            if not members:
+                continue
+            kinds = ("dc",) if f.get("kind") in ("dc", "candidate") else ("pdc", "pc")
+            pout: list = [
+                xv[kind][k]
+                for m in members
+                for kind, k in fac_out_p.get((fid, m), [])
+                if kind in kinds
+            ]
             if pout:
                 prob += (
                     pulp.lpSum(pout) <= float(pcap) * y[fid],
@@ -1657,14 +1748,17 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         pulp.lpSum(capex_cost[fid] * y[fid] for fid in y) <= budget,
         "capex_budget",
     )
-    count_ids = [
-        f["id"]
-        for f in decidable
-        if f.get("kind") in ("dc", "candidate")
-        or (f.get("kind") == "plant" and optimize_plants)
-    ]
+    # D-07: maxFacilities caps DCs + candidates only ("Max DCs"); plants have
+    # their own optional maxPlants cap (only meaningful with optimizePlants).
+    count_ids = [f["id"] for f in decidable if f.get("kind") in ("dc", "candidate")]
     if count_ids:
         prob += pulp.lpSum(y[fid] for fid in count_ids) <= max_fac, "max_facilities"
+    max_plants_raw = constraints.get("maxPlants")
+    plant_ids_dec = [f["id"] for f in decidable if f.get("kind") == "plant"]
+    if max_plants_raw is not None and plant_ids_dec:
+        max_plants = int(max_plants_raw)
+        prob += pulp.lpSum(y[fid] for fid in plant_ids_dec) <= max_plants, "max_plants"
+        log.append(f"Max plants {max_plants} (separate from max DCs {max_fac}).")
 
     transport_terms = []
     for arcs, xd in (
@@ -1797,7 +1891,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                 row["laneId"] = meta["laneId"]
             if meta.get("leadDays") is not None:
                 row["leadDays"] = round(float(meta["leadDays"]), 2)
-            row["co2Kg"] = round(float(meta.get("co2KgPerUnit") or 0.0) * vol, 1)
+            row["co2Kg"] = round(float(meta.get("co2KgPerUnit") or 0.0) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT, 1)
             lk = (fr, to, mk)
             lane_vol[(fr, to)] = lane_vol.get((fr, to), 0.0) + vol
             lane_mode_vol[lk] = lane_mode_vol.get(lk, 0.0) + vol
@@ -1931,7 +2025,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
                 "echelon": lane_mode_echelon.get((a, b, mk)),
                 "volume": round(vol, 2),
                 "transportCostM": round(lane_mode_cost.get((a, b, mk), 0.0), 4),
-                "co2Kg": round(float(meta.get("co2KgPerUnit") or 0.0) * vol, 1),
+                "co2Kg": round(float(meta.get("co2KgPerUnit") or 0.0) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT, 1),
                 "leadDays": None
                 if meta.get("leadDays") is None
                 else round(float(meta["leadDays"]), 2),
@@ -1965,7 +2059,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         )
         m["volume"] += vol
         m["transportM"] += lane_mode_cost.get((a, b, mk), 0.0)
-        m["co2Kg"] += float(meta.get("co2KgPerUnit") or 0.0) * vol
+        m["co2Kg"] += float(meta.get("co2KgPerUnit") or 0.0) * vol * PHYSICAL_UNITS_PER_MODEL_UNIT
         m["lanes"].add((a, b))
         m["leadWeighted"] += float(meta.get("leadDays") or 0.0) * vol
         if z_on.get((a, b, mk)):
@@ -2199,16 +2293,21 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         str((ref_kpis.get("co2") or {}).get("value", "12.4")).replace("kt", ""),
         12.4,
     )
-    cost_m = max(1.0, transport_cost + opex_used + capex_used * 0.12)
+    # D-06: lane fixed (activation) charges are part of run-rate cost.
+    cost_m = max(1.0, transport_cost + opex_used + capex_used * 0.12 + lane_fixed_used)
     if cost_m < ref_cost * 0.2:
         cost_m = max(20.0, ref_cost * 0.85 + cost_m)
-    co2_kt = max(
-        4.0,
-        ref_co2
-        - len(opened_ids) * 0.35
-        - len(closed_ids) * 0.15
-        + transport_cost * 0.05,
-    )
+    if transport_co2_kg > 0:
+        # D-05: CO2 KPI is the modelled transport CO2 (same basis as carbonM).
+        co2_kt = transport_co2_kg / 1e6
+    else:
+        co2_kt = max(
+            4.0,
+            ref_co2
+            - len(opened_ids) * 0.35
+            - len(closed_ids) * 0.15
+            + transport_cost * 0.05,
+        )
 
     objective_breakdown = {
         "totalM": round(objective_total, 4),
@@ -2312,6 +2411,9 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             "objectiveTotalM": round(objective_total, 4),
             "productCount": len(product_ids),
             "transportCo2Kt": round(transport_co2_kg / 1e6, 3),
+            "transportCo2Tonnes": round(transport_co2_kg / 1e3, 3),
+            "laneFixedM": round(lane_fixed_used, 4),
+            "carbonM": round(carbon_cost, 4),
             "bindingLaneCount": len(binding_lanes),
         },
         "log": log,
@@ -2487,3 +2589,166 @@ def _infeasible_result(
         },
         "log": log,
     }
+
+
+# --- D-02 / D-03: root-cause probes for MIP infeasibility ---------------------
+
+
+def _root_cause_probes(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Re-solve with one constraint family relaxed at a time.
+
+    If dropping facility minimum throughput (capacityMin) or lane capacity
+    makes the model feasible, that family is a genuine root cause. The relaxed
+    solution then tells us *which* sites / lanes and *by how much*.
+    """
+    import copy as _copy
+
+    hints: list[dict[str, Any]] = []
+    cons = payload.get("constraints") or {}
+    facs = list(cons.get("facilities") or [])
+    lanes = list((payload.get("network") or {}).get("lanes") or [])
+
+    def _solve(p: dict[str, Any]) -> dict[str, Any]:
+        q = _copy.deepcopy(p)
+        q["_diagProbe"] = True
+        q["explain"] = False
+        return solve_optimize(q)
+
+    has_mins = any(float(f.get("capacityMin") or 0) > 0 for f in facs)
+    has_lane_caps = cons.get("enforceLaneCapacity", True) is not False and any(
+        l.get("capacityUnits") is not None
+        or _lane_capacity(l) is not None
+        or any(_lane_capacity(m or {}) is not None for m in (l.get("modes") or []))
+        for l in lanes
+    )
+
+    def _min_hint(r: dict[str, Any], both: bool) -> dict[str, Any]:
+        thr: dict[str, float] = {}
+        for fl in r.get("flows") or []:
+            thr[fl["from"]] = thr.get(fl["from"], 0.0) + float(fl.get("volume") or 0)
+        open_ids = set(r.get("openIds") or [])
+        rows = []
+        for f in facs:
+            mn = float(f.get("capacityMin") or 0)
+            if mn <= 0:
+                continue
+            got = thr.get(f["nodeId"], 0.0)
+            if f["nodeId"] in open_ids and got + 1e-6 < mn:
+                rows.append((f["nodeId"], mn, got))
+        if not rows:  # flag every site with a minimum when none is visibly short
+            rows = [
+                (f["nodeId"], float(f["capacityMin"]), thr.get(f["nodeId"], 0.0))
+                for f in facs
+                if float(f.get("capacityMin") or 0) > 0
+            ]
+        detail = ", ".join(f"{fid} min {mn:.0f} vs feasible {got:.0f}" for fid, mn, got in rows[:6])
+        return {
+            "code": "MIN_THROUGHPUT_CONFLICT",
+            "severity": "high",
+            "rootCause": True,
+            "message": (
+                "Root cause: facility minimum throughput (capacityMin) cannot be met"
+                + (" together with lane capacity" if both else "")
+                + f" — with minimums relaxed the model solves "
+                f"(service {r['kpis']['servicePct']:.1f}%, ${r['objectiveBreakdown']['totalM']:.2f}M). "
+                + detail
+                + "."
+            ),
+            "entities": [fid for fid, _, _ in rows[:8]],
+            "shortfalls": [
+                {"facilityId": fid, "capacityMin": round(mn, 2), "feasibleThroughput": round(got, 2),
+                 "gap": round(mn - got, 2)}
+                for fid, mn, got in rows
+            ],
+            "relaxedObjectiveM": r["objectiveBreakdown"]["totalM"],
+            "relaxedServicePct": r["kpis"]["servicePct"],
+            "hint": "Lower capacityMin on the listed sites, let them close, or restore the lanes that fed them.",
+        }
+
+    def _lane_hint(r: dict[str, Any], both: bool) -> dict[str, Any] | None:
+        cap_by_lane = {}
+        for l in lanes:
+            if l.get("capacityUnits") is not None:
+                cap_by_lane[str(l.get("id"))] = (float(l["capacityUnits"]), l.get("from"), l.get("to"))
+        flow_by_lane: dict[str, float] = {}
+        for fl in r.get("flows") or []:
+            lid = fl.get("laneId")
+            if lid:
+                flow_by_lane[str(lid)] = flow_by_lane.get(str(lid), 0.0) + float(fl.get("volume") or 0)
+        rows = []
+        for lid, (cap, a, b) in cap_by_lane.items():
+            need = flow_by_lane.get(lid, 0.0)
+            if need > cap + 1e-6:
+                rows.append({"laneId": lid, "from": a, "to": b, "capacityUnits": round(cap, 2),
+                             "requiredFlow": round(need, 2), "shortBy": round(need - cap, 2)})
+        rows.sort(key=lambda x: -x["shortBy"])
+        if not rows:
+            return None
+        detail = "; ".join(
+            f"{x['laneId']} ({x['from']}→{x['to']}) cap {x['capacityUnits']:.0f} vs needed "
+            f"{x['requiredFlow']:.0f} (short {x['shortBy']:.0f})" for x in rows[:6]
+        )
+        return {
+            "code": "LANE_CAPACITY_CONFLICT",
+            "severity": "high",
+            "rootCause": True,
+            "message": (
+                "Root cause: lane capacity"
+                + (" together with facility minimum throughput" if both else "")
+                + f" — {detail}."
+            ),
+            "entities": [x["laneId"] for x in rows[:8]],
+            "customers": sorted({x["to"] for x in rows}),
+            "shortfalls": rows,
+            "relaxedObjectiveM": r["objectiveBreakdown"]["totalM"],
+            "hint": "Raise capacityUnits on the listed lanes, add a parallel lane / mode, or relax capacityMin on the sites they feed.",
+        }
+
+    def _no_mins(p):
+        q = _copy.deepcopy(p)
+        for f in q["constraints"].get("facilities") or []:
+            f["capacityMin"] = 0
+        return q
+
+    def _no_lanes(p):
+        q = _copy.deepcopy(p)
+        q["constraints"]["enforceLaneCapacity"] = False
+        return q
+
+    r_min = _solve(_no_mins(payload)) if has_mins else None
+    r_lane = _solve(_no_lanes(payload)) if has_lane_caps else None
+    min_ok = bool(r_min and r_min.get("status") == "Optimal")
+    lane_ok = bool(r_lane and r_lane.get("status") == "Optimal")
+    if min_ok:
+        hints.append(_min_hint(r_min, both=lane_ok))
+    if lane_ok:
+        h = _lane_hint(r_lane, both=min_ok)
+        if h:
+            hints.append(h)
+    if not min_ok and not lane_ok and has_mins and has_lane_caps:
+        r_both = _solve(_no_lanes(_no_mins(payload)))
+        if r_both.get("status") == "Optimal":
+            hints.append(_min_hint(r_both, both=True))
+            h = _lane_hint(r_both, both=True)
+            if h:
+                hints.append(h)
+    return hints
+
+
+def _merge_probe_hints(res: dict[str, Any], probe: list[dict[str, Any]]) -> None:
+    report = res.get("infeasibilityReport") or {}
+    old = list(report.get("hints") or [])
+    for h in old:
+        if h.get("code") == "UNREACHABLE_DEMAND" and not res.get("hardServiceConstraints"):
+            h["severity"] = "info"
+            h["rootCause"] = False
+            h["message"] += " Soft service: this demand is penalised as unmet, not the cause of infeasibility."
+    codes = {h["code"] for h in probe}
+    hints = probe + [h for h in old if h["code"] not in codes]
+    report["hints"] = hints
+    report["rootCauses"] = [h["code"] for h in probe]
+    report["summary"] = "; ".join(h["message"] for h in hints[:3])
+    report["method"] = "structural + relaxation probes"
+    res["infeasibilityReport"] = report
+    if "hints" in res:
+        res["hints"] = hints

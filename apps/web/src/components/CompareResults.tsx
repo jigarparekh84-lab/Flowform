@@ -3049,9 +3049,17 @@ function RobustOptimizeView({
         <span className="muted tiny">scenario-tree · shared first-stage opens</span>
       </div>
       <p className="hint pad" style={{ paddingTop: 0 }}>
-        Two-stage MIP: open/close decisions shared across 2–5 demand (or cost)
-        scenarios; flows recourse per scenario. Use Compare chips as demand
-        shocks, or built-in Base / Soft −15% / Surge +25%.
+        Open/close decisions shared across 2–5 demand (or cost) scenarios;
+        flows re-optimized per scenario. Use Compare chips as demand shocks, or
+        built-in Base / Soft −15% / Surge +25%.
+      </p>
+      <p className="hint pad robust-basis-note" style={{ paddingTop: 0 }}>
+        <strong>Same model as Run</strong> — open/close (existing sites may
+        close), SKUs, BOM inbound, lane modes and cost scale — so scenario
+        totals compare directly with the Run objective. Intentional
+        differences: one shared open set for all scenarios; the design is
+        picked from per-scenario optima plus a two-stage candidate; minimum
+        throughput scales with a demand shock (flagged if relaxed).
       </p>
 
       <div className="sens-cost-actions" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>

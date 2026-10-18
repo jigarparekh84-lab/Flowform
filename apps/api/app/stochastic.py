@@ -261,7 +261,7 @@ def _solve_wait_and_see_one(
     }
 
 
-def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
+def _solve_stochastic_legacy(payload: dict[str, Any]) -> dict[str, Any]:
     t0 = time.perf_counter()
     log: list[str] = ["Flowform stochastic scenario-tree MIP (PuLP)."]
 
@@ -719,6 +719,258 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
             "scenarioCount": len(scenarios),
             "openCount": len(open_ids),
             "evpiGapM": evpi_block.get("evpiGapM") if evpi_block else None,
+            "servicePctMin": min((r["servicePct"] for r in scenario_rows), default=0.0),
+        },
+        "log": log,
+    }
+
+
+# --- D-04: robust on the same model basis as Run ------------------------------
+
+
+def _scenario_payload(base: dict[str, Any], scen: dict[str, Any], base_demand: dict[str, float]) -> dict[str, Any]:
+    """Apply a scenario (demand + cost shock) to a full /optimize payload."""
+    import copy
+
+    q = copy.deepcopy(base)
+    net = q.setdefault("network", {})
+    new_dem = scen["demandVolume"]
+    net["demandVolume"] = dict(new_dem)
+    ratio = {
+        cid: (new_dem.get(cid, 0.0) / v if v > 1e-12 else scen["demandScale"])
+        for cid, v in base_demand.items()
+    }
+    for row in net.get("demandByProduct") or []:
+        cid = str(row.get("customerId") or "")
+        r = ratio.get(cid, scen["demandScale"])
+        row["volume"] = float(row.get("volume") or 0.0) * r
+    cs = scen["costScale"]
+    if abs(cs - 1.0) > 1e-12:
+        for lane in net.get("lanes") or []:
+            if lane.get("costPerUnit") is not None:
+                lane["costPerUnit"] = float(lane["costPerUnit"]) * cs
+            for m in lane.get("modes") or []:
+                if m.get("costPerUnit") is not None:
+                    m["costPerUnit"] = float(m["costPerUnit"]) * cs
+    # Minimum-throughput commitments scale down with a demand shock (a site
+    # cannot be held to its base-case minimum when the market shrinks 15%).
+    tot_base = sum(base_demand.values()) or 1.0
+    shrink = min(1.0, sum(new_dem.values()) / tot_base)
+    if shrink < 1.0:
+        for f in (q.get("constraints") or {}).get("facilities") or []:
+            if f.get("capacityMin"):
+                f["capacityMin"] = float(f["capacityMin"]) * shrink
+    q["explain"] = False
+    q["computeBaseline"] = False
+    return q
+
+
+def _no_mins(p: dict[str, Any]) -> dict[str, Any]:
+    import copy
+
+    q = copy.deepcopy(p)
+    for f in (q.get("constraints") or {}).get("facilities") or []:
+        f["capacityMin"] = 0
+    return q
+
+
+def _fix_design(p: dict[str, Any], decidable: list[str], open_set: set[str]) -> dict[str, Any]:
+    import copy
+
+    q = copy.deepcopy(p)
+    cons = q.setdefault("constraints", {})
+    cons["forceOpenIds"] = sorted(open_set)
+    cons["forceClosedIds"] = sorted(set(decidable) - open_set)
+    cons["maxFacilities"] = max(int(cons.get("maxFacilities") or 0), len(open_set))
+    return q
+
+
+def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
+    """Robust / stochastic design on the full Run model (D-04).
+
+    Every cost is a full ``solve_optimize`` objective (open/close decisions,
+    SKUs, BOM inbound, lane modes, cost scale), so expected / minimax /
+    CVaR-lite totals are directly comparable with Run. Method: candidate
+    first-stage designs = wait-and-see optimum of each scenario + the legacy
+    two-stage MIP design; each design is re-solved (opens fixed, flows free)
+    in every scenario and the best design for the chosen objective wins.
+    ``modelBasis: "legacy"`` keeps the old single-echelon two-stage MIP.
+    """
+    if str(payload.get("modelBasis") or "full").lower() == "legacy":
+        return _solve_stochastic_legacy(payload)
+    from .solver import solve_optimize
+
+    t0 = time.perf_counter()
+    network = payload.get("network") or {}
+    constraints = payload.get("constraints") or {}
+    tree = payload.get("scenarioTree") or payload.get("scenarios") or {}
+    if isinstance(tree, list):
+        tree = {"scenarios": tree, "objective": payload.get("objective", "expected")}
+    objective = str(tree.get("objective") or payload.get("objective") or "expected").lower()
+    if objective not in ("expected", "minimax", "cvar_lite"):
+        objective = "expected"
+    cvar_alpha = max(0.0, min(1.0, _as_float(tree.get("cvarAlpha") or payload.get("cvarAlpha"), 0.3)))
+    nodes = list(network.get("nodes") or [])
+    demands = [n for n in nodes if n.get("kind") == "demand"]
+    if not demands:
+        raise ValueError("No demand nodes in network.")
+    base_demand = {str(k): float(v) for k, v in dict(network.get("demandVolume") or {}).items()}
+    for d in demands:
+        base_demand.setdefault(str(d["id"]), _parse_volume(d.get("capacity"), 1000.0))
+    scenarios = _normalize_scenarios(list(tree.get("scenarios") or []), base_demand)
+    optimize_plants = bool(constraints.get("optimizePlants", False))
+    decidable = [
+        str(n["id"]) for n in nodes
+        if n.get("kind") in ("dc", "candidate") or (n.get("kind") == "plant" and optimize_plants)
+    ]
+    if not decidable:
+        raise ValueError("No facility nodes (dc/plant/candidate) in network.")
+    log: list[str] = [
+        "Flowform robust optimize on the full Run model (design enumeration, D-04).",
+        f"Objective={objective}" + (f" α={cvar_alpha:.2f}" if objective == "cvar_lite" else "")
+        + f" · scenarios={len(scenarios)} · decidable sites={len(decidable)}.",
+    ]
+    base = {k: v for k, v in payload.items() if k not in ("scenarioTree", "scenarios")}
+    scen_payloads = [_scenario_payload(base, sc, base_demand) for sc in scenarios]
+
+    # Wait-and-see (perfect information) per scenario → candidate designs
+    ws_rows: list[dict[str, Any]] = []
+    designs: list[frozenset[str]] = []
+    for sc, sp in zip(scenarios, scen_payloads):
+        r = solve_optimize(sp)
+        if r.get("status") != "Optimal":
+            r = solve_optimize(_no_mins(sp))
+            if r.get("status") == "Optimal":
+                log.append(f"Wait-and-see {sc['id']}: capacityMin relaxed to solve.")
+        ok = r.get("status") == "Optimal"
+        opens = [i for i in (r.get("openIds") or []) if i in decidable]
+        ws_rows.append({
+            "id": sc["id"], "name": sc["name"], "probability": round(sc["probability"], 6),
+            "ok": ok, "costM": r["objectiveBreakdown"]["totalM"] if ok else None,
+            "openIds": opens, "servicePct": r["kpis"]["servicePct"] if ok else 0.0,
+        })
+        if ok:
+            designs.append(frozenset(opens))
+    try:
+        leg = _solve_stochastic_legacy(payload)
+        if leg.get("ok"):
+            designs.append(frozenset(i for i in leg["firstStage"]["openIds"] if i in decidable))
+    except Exception as exc:  # legacy is only a design generator here
+        log.append(f"Legacy design generator skipped: {exc}")
+    if designs:
+        designs.append(frozenset().union(*designs))
+    uniq: list[frozenset[str]] = []
+    for d in designs:
+        if d not in uniq:
+            uniq.append(d)
+    log.append(f"Candidate designs: {len(uniq)} (wait-and-see optima + two-stage MIP + union).")
+
+    evals: list[dict[str, Any]] = []
+    for d in uniq:
+        rows = []
+        feasible = True
+        for sc, sp in zip(scenarios, scen_payloads):
+            r = solve_optimize(_fix_design(sp, decidable, set(d)))
+            if r.get("status") != "Optimal":
+                r = solve_optimize(_fix_design(_no_mins(sp), decidable, set(d)))
+                r["_minRelaxed"] = True
+            if r.get("status") != "Optimal":
+                feasible = False
+                break
+            rows.append((sc, r))
+        if not feasible:
+            continue
+        totals = [r["objectiveBreakdown"]["totalM"] for _, r in rows]
+        exp = sum(sc["probability"] * t for (sc, _), t in zip(rows, totals))
+        worst = max(totals)
+        val = exp if objective == "expected" else worst if objective == "minimax" else (
+            (1.0 - cvar_alpha) * exp + cvar_alpha * worst)
+        evals.append({"design": d, "rows": rows, "expected": exp, "worst": worst, "value": val})
+    solve_seconds = round(time.perf_counter() - t0, 3)
+    if not evals:
+        log.append("No candidate design is feasible in every scenario.")
+        res = _solve_stochastic_legacy(payload)
+        res["ok"] = False
+        res["status"] = "Infeasible"
+        res["model"] = "stochastic-full-model-v2"
+        res["log"] = log + res.get("log", [])
+        return res
+    best = min(evals, key=lambda e: (e["value"], len(e["design"])))
+    # Display: decided sites + sites the Run model keeps open regardless
+    # (e.g. plants when optimizePlants is off), so it matches Run's openIds.
+    open_ids = sorted(set(best["design"]) | set(best["rows"][0][1].get("openIds") or []))
+    closed_ids = [i for i in decidable if i not in best["design"]]
+    first_bd = best["rows"][0][1]["objectiveBreakdown"]
+    scenario_rows = []
+    for sc, r in best["rows"]:
+        bd, k = r["objectiveBreakdown"], r["kpis"]
+        flows = sorted(r.get("flows") or [], key=lambda f: -float(f.get("volume") or 0))
+        scenario_rows.append({
+            "id": sc["id"], "name": sc["name"], "probability": round(sc["probability"], 6),
+            "demandScale": sc["demandScale"], "costScale": sc["costScale"],
+            "capexM": bd["fixedCapexM"], "opexM": bd["fixedOpexM"],
+            "transportM": bd["transportM"], "laneFixedM": bd.get("laneFixedM", 0),
+            "carbonM": bd.get("carbonM", 0), "uncoveredPenaltyM": bd["uncoveredPenaltyM"],
+            "uncoveredDemand": k["uncoveredDemand"], "totalCostM": bd["totalM"],
+            "servicePct": k["servicePct"], "openIds": list(open_ids), "flows": flows[:40],
+            "capacityMinRelaxed": bool(r.get("_minRelaxed")),
+            "flowsSummary": {"arcCount": len(flows), "totalVolume": round(sum(float(f.get("volume") or 0) for f in flows), 2),
+                             "topFlows": flows[:8]},
+        })
+    ws_ok = all(w["ok"] for w in ws_rows)
+    ws_expected = sum(w["probability"] * w["costM"] for w in ws_rows) if ws_ok else None
+    stable = set.intersection(*[set(w["openIds"]) for w in ws_rows if w["ok"]]) if ws_ok and ws_rows else set()
+    evpi = {
+        "hereAndNowExpectedM": round(best["expected"], 6),
+        "waitAndSeeExpectedM": round(ws_expected, 6) if ws_expected is not None else None,
+        "evpiGapM": round(max(0.0, best["expected"] - ws_expected), 6) if ws_expected is not None else None,
+        "note": "EVPI-ish ≈ E[here-and-now] − E[wait-and-see]; both on the full Run model.",
+        "waitAndSeeByScenario": ws_rows,
+        "stableWaitAndSeeOpenIds": sorted(stable),
+        "robustOpenIds": open_ids,
+        "opensOnlyInRobust": sorted(set(open_ids) - stable),
+        "opensOnlyInWaitAndSeeStable": sorted(stable - set(open_ids)),
+    }
+    log.append(
+        f"Best design {open_ids} · E[cost] ${best['expected']:.3f}M · worst ${best['worst']:.3f}M · {solve_seconds}s."
+    )
+    nodes_by = {str(n["id"]): n for n in nodes}
+    return {
+        "ok": True, "solver": "PuLP/HiGHS (full Run model)", "status": "Optimal",
+        "model": "stochastic-full-model-v2",
+        "modelBasis": "full",
+        "basisNote": (
+            "Same model as Run (open/close, SKUs, BOM, lane modes, cost scale). "
+            "Intentional differences: one shared open set across scenarios; the "
+            "best design is chosen from wait-and-see + two-stage candidates (not a "
+            "single monolithic MIP); costScale scales lane rates; capacityMin scales "
+            "down with a demand shock and is relaxed (flagged per scenario) if a "
+            "design still cannot meet it."
+        ),
+        "objective": objective, "cvarAlpha": cvar_alpha if objective == "cvar_lite" else None,
+        "solveSeconds": solve_seconds, "openedIds": open_ids, "closedIds": closed_ids, "openIds": open_ids,
+        "openFacilities": [
+            {"id": i, "name": nodes_by.get(i, {}).get("name", i), "kind": nodes_by.get(i, {}).get("kind")}
+            for i in open_ids
+        ],
+        "firstStage": {
+            "openIds": open_ids, "capexM": first_bd["fixedCapexM"], "opexM": first_bd["fixedOpexM"],
+            "fixedCostM": round(first_bd["fixedCapexM"] + first_bd["fixedOpexM"], 6),
+        },
+        "scenarios": scenario_rows,
+        "objectiveValueM": round(best["value"], 6),
+        "expectedCostM": round(best["expected"], 6),
+        "worstCostM": round(best["worst"], 6),
+        "evpi": evpi,
+        "designsEvaluated": [
+            {"openIds": sorted(e["design"]), "expectedCostM": round(e["expected"], 6),
+             "worstCostM": round(e["worst"], 6), "objectiveValueM": round(e["value"], 6)}
+            for e in evals
+        ],
+        "kpis": {
+            "expectedCostM": round(best["expected"], 6), "worstCostM": round(best["worst"], 6),
+            "objectiveValueM": round(best["value"], 6), "scenarioCount": len(scenarios),
+            "openCount": len(open_ids), "evpiGapM": evpi["evpiGapM"],
             "servicePctMin": min((r["servicePct"] for r in scenario_rows), default=0.0),
         },
         "log": log,

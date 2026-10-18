@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test:enterprise": "npx --yes tsx src/data/enterprisePack.test.ts",
     "test:cts": "npx --yes tsx src/data/costToServe.test.ts",
-    "test:data": "npm run test:enterprise && npm run test:cts"
+    "test:defects": "npx --yes tsx src/data/defectFixes.test.ts",
+    "test:data": "npm run test:enterprise && npm run test:cts && npm run test:defects"
   },
   "dependencies": {
     "maplibre-gl": "^6.11.2",
