@@ -112,6 +112,18 @@ class CapexRoadmapIn(BaseModel):
     hardServiceConstraints: bool | None = None
     capexBudgetTotalM: float | None = None
     enforceCapexBudget: bool | None = True
+    basis: str | None = Field(
+        default="run",
+        description='"run" (default: every period is the Run MIP) | "legacy-aggregate"',
+    )
+    compareRun: bool | None = Field(
+        default=False, description="Also solve Run and report Y0 vs Run (runCheck)."
+    )
+    mipGapRel: float | None = Field(
+        default=None,
+        description="Relative MIP gap (default 1e-4; 2e-3 for models > 2,000 vars).",
+    )
+    timeLimitSec: float | None = None
 
 
 class OptimizeRequest(BaseModel):
@@ -119,7 +131,8 @@ class OptimizeRequest(BaseModel):
         ...,
         description=(
             "nodes, lanes, demandVolume; optional demandByProduct, skus, "
-            "productGroups, bomDemand, facilityProducts. lanes[] may carry "
+            "productGroups, bomDemand, facilityProducts. skus[] / productGroups[] "
+            "may carry unitWeightKg (CO2 = tonne-miles x mode factor). lanes[] may carry "
             "capacity/capacityUnits and modes[] = {mode, costPerUnit, leadDays, "
             "co2KgPerUnit, capacity, fixedCostM}"
         ),
@@ -131,7 +144,9 @@ class OptimizeRequest(BaseModel):
             "serviceTargetPct, hardServiceConstraints, maxLeadTimeDays, "
             "aggregateProductsByGroup, maxProductCommodities, "
             "optimizePlants, forceOpenSeed, enforceLaneCapacity, "
-            "carbonPricePerTonne, tonsPerUnit, emissionKgPerTonMileByMode) "
+            "carbonPricePerTonne, defaultUnitWeightKg (kg/unit, default 20), "
+            "co2WeightBasis ('unit-weight' | 'legacy-1t'), tonsPerUnit (legacy), "
+            "emissionKgPerTonMileByMode) "
             "+ facilities[] with capacity/fixedCapexM/capableProductIds"
         ),
     )
@@ -227,7 +242,7 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "service": "flowform-api",
-        "model": "fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1+stochastic-scenario-tree-v1+explain-v1",
+        "model": "fixed-charge-multi-echelon-v1+multi-period-run-basis-v2+stochastic-scenario-tree-v1+explain-v1",
     }
 
 

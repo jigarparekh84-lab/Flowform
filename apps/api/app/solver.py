@@ -1784,6 +1784,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
 
     # Capacity + min throughput + optional per-product caps
     cap_constraints: dict[str, Any] = {}
+    fac_thr: dict[str, tuple[Any, float, str]] = {}
     for f in decidable:
         fid = f["id"]
         c = cmap.get(fid, {})
@@ -1802,6 +1803,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         ren = _safe_name("cap", fid)
         prob += thr <= cap_max * y[fid], ren
         cap_constraints[fid] = (prob.constraints[ren], cap_max, cap_min)
+        fac_thr[fid] = (thr, cap_max, ren)
         if cap_min > 0:
             prob += thr >= cap_min * y[fid], _safe_name("minthr", fid)
 
@@ -1936,6 +1938,8 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
 
     transport_terms = []
     carbon_terms = []
+    co2_terms = []
+    flow_arcs: list[tuple[str, str, str, str, str, Any, float]] = []
     for arcs, xd in (
         (arcs_dc_cust, x_dc_c),
         (arcs_plant_dc, x_p_dc),
@@ -1943,6 +1947,10 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     ):
         for a, b, p, cost, _miles, mk in arcs:
             transport_terms.append(cost * xd[_vk(a, b, p, mk)])
+            co2_terms.append(
+                _unit_co2(a, b, mk, p) * PHYSICAL_UNITS_PER_MODEL_UNIT * xd[_vk(a, b, p, mk)]
+            )
+            flow_arcs.append((a, b, p, mk, "", xd[_vk(a, b, p, mk)], _miles))
             if carbon_price > 0:
                 carbon_terms.append(_unit_carbon_m(a, b, mk, p) * xd[_vk(a, b, p, mk)])
     for a, b, cost, _qty in bom_arcs:
@@ -1979,6 +1987,40 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
             transport_expr + carbon_expr + capex_expr + opex_expr + uncov_expr
             + keep_bonus
         )
+
+    if payload.get("_buildOnly"):
+        # Multi-period (Roadmap) builds one copy of this exact model per period
+        # and links them; see app/multi_period_run.py.
+        return {
+            "_model": {
+                "prob": prob,
+                "y": y,
+                "decidable": [
+                    {"id": f["id"], "kind": f.get("kind"), "status": _facility_status(f, cmap)}
+                    for f in decidable
+                ],
+                "capexCost": capex_cost,
+                "opexCost": opex_cost,
+                "transport": transport_expr,
+                "carbon": carbon_expr,
+                "co2Kg": pulp.lpSum(co2_terms) if co2_terms else 0,
+                "opex": opex_expr,
+                "uncov": uncov_expr,
+                "uncovered": uncovered,
+                "laneFixed": lane_fixed_expr,
+                "keepBonus": keep_bonus,
+                "facThr": fac_thr,
+                "totalDemand": total_demand,
+                "flowArcs": flow_arcs,
+                "dcIds": [d["id"] for d in dcs],
+                "plantIds": [p["id"] for p in plants],
+                "custIds": cust_ids,
+                "commodityMode": commodity_mode,
+                "productCount": len(product_ids),
+                "solverName": solver_name,
+                "log": log,
+            }
+        }
 
     t_solve0 = time.perf_counter()
     status_code = prob.solve(solver)

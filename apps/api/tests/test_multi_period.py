@@ -116,7 +116,7 @@ def test_force_timeline_2_year_toy():
     }
     body = solve_multi_period(payload)
     assert body["ok"] is True
-    assert body["model"] == "multi-period-capex-npv-v1"
+    assert body["model"] == "multi-period-run-basis-v2"
     assert body["mode"] == "force_timeline"
     assert body["yearCount"] == 2
     assert len(body["years"]) == 2

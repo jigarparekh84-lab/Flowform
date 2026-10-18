@@ -175,7 +175,7 @@ export function RoadmapStudio() {
       <RoomHeader
         kicker="CapEx"
         title="Multi-year roadmap"
-        tip={`Phase open / close / expand across Y0–${capexRoadmap.yearCount - 1}. Optimize timing minimizes CapEx+OpEx+transport NPV, or apply a year slice / export to Brief.`}
+        tip={`Phase open / close / expand across Y0–${capexRoadmap.yearCount - 1}. Optimize timing minimizes NPV of the Run cost (transport, carbon, lane fixed, OpEx, unmet) + CapEx — each year is the Run model, or apply a year slice / export to Brief.`}
         actions={
           <>
             <button
@@ -620,17 +620,73 @@ export function RoadmapStudio() {
                     ${multiPeriodResult.npv.transportNpvM.toFixed(2)}M
                   </strong>
                 </div>
+                {(multiPeriodResult.npv.carbonNpvM ?? 0) > 0 && (
+                  <div className="library-card roadmap-kpi">
+                    <span className="muted tiny">Carbon NPV</span>
+                    <strong>${(multiPeriodResult.npv.carbonNpvM ?? 0).toFixed(2)}M</strong>
+                  </div>
+                )}
+                {(multiPeriodResult.npv.uncoveredPenaltyNpvM ?? 0) > 0 && (
+                  <div className="library-card roadmap-kpi">
+                    <span className="muted tiny">Unmet NPV</span>
+                    <strong>${(multiPeriodResult.npv.uncoveredPenaltyNpvM ?? 0).toFixed(2)}M</strong>
+                  </div>
+                )}
               </div>
+              <p className="muted tiny roadmap-basis" data-testid="roadmap-basis">
+                {multiPeriodResult.basis?.model === 'run' ? (
+                  <>
+                    <strong>Basis: Run model.</strong> Each year is the same MIP as
+                    Run (open/close fixed charges, {multiPeriodResult.basis.commodities ?? '—'}{' '}
+                    {multiPeriodResult.basis.commodityMode === 'product-group' ? 'product groups' : 'SKUs'},
+                    BOM, lane modes &amp; capacity, cost scale, min throughput,
+                    service), linked by event timing and CapEx NPV
+                    {multiPeriodResult.basis.gapRel != null
+                      ? ` · MIP gap ${(multiPeriodResult.basis.gapRel * 100).toFixed(2)}%`
+                      : ''}
+                    .
+                  </>
+                ) : (
+                  <>
+                    <strong>Basis: legacy aggregate</strong> (raw network, single
+                    commodity) — not comparable to Run.
+                  </>
+                )}
+                {multiPeriodResult.runCheck?.runTotalM != null && (
+                  <>
+                    {' '}
+                    <span
+                      className={multiPeriodResult.runCheck.matches ? 'ok-text' : 'warn-text'}
+                      data-testid="roadmap-run-check"
+                    >
+                      Y0 ${multiPeriodResult.runCheck.y0TotalM?.toFixed(2)}M vs Run $
+                      {multiPeriodResult.runCheck.runTotalM.toFixed(2)}M (Δ{' '}
+                      {(multiPeriodResult.runCheck.deltaM ?? 0) >= 0 ? '+' : ''}
+                      {(multiPeriodResult.runCheck.deltaM ?? 0).toFixed(2)}M)
+                      {multiPeriodResult.runCheck.matches
+                        ? ' — match'
+                        : multiPeriodResult.runCheck.y0HasEvents
+                          ? ' — Y0 has events'
+                          : ' — check'}
+                    </span>
+                  </>
+                )}
+              </p>
               <div className="table-scroll">
                 <table className="data-table roadmap-table">
                   <thead>
                     <tr>
                       <th>Year</th>
                       <th>Open</th>
-                      <th>CapEx</th>
-                      <th>OpEx</th>
                       <th>Transport</th>
+                      <th>Carbon</th>
+                      <th>Lane fixed</th>
+                      <th>OpEx</th>
+                      <th>CapEx</th>
+                      <th>Unmet</th>
+                      <th>Total</th>
                       <th>NPV contrib</th>
+                      <th>CO₂</th>
                       <th>Service</th>
                       <th>Flows</th>
                     </tr>
@@ -640,10 +696,17 @@ export function RoadmapStudio() {
                       <tr key={y.year}>
                         <td>{y.label}</td>
                         <td title={y.openIds.join(', ')}>{y.openIds.length}</td>
-                        <td>${y.capexM.toFixed(2)}M</td>
-                        <td>${y.opexM.toFixed(2)}M</td>
                         <td>${y.transportM.toFixed(2)}M</td>
+                        <td>${(y.carbonM ?? 0).toFixed(2)}M</td>
+                        <td>${(y.laneFixedM ?? 0).toFixed(2)}M</td>
+                        <td>${y.opexM.toFixed(2)}M</td>
+                        <td>${y.capexM.toFixed(2)}M</td>
+                        <td>${(y.uncoveredPenaltyM ?? 0).toFixed(2)}M</td>
+                        <td>
+                          <strong>${y.totalCostM.toFixed(2)}M</strong>
+                        </td>
                         <td>${y.npvContributionM.toFixed(2)}M</td>
+                        <td>{y.co2Kt != null ? `${y.co2Kt.toFixed(1)} kt` : '—'}</td>
                         <td>{y.servicePct.toFixed(1)}%</td>
                         <td>
                           {y.flowsSummary

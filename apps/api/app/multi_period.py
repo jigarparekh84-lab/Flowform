@@ -127,6 +127,18 @@ def _ensure_facility_nodes(
 
 
 def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
+    """Roadmap optimize. Default basis "run": every period is the Run MIP
+    (app.multi_period_run). ``roadmap.basis = "legacy-aggregate"`` keeps the
+    previous single-commodity raw-network model below."""
+    basis = str((payload.get("roadmap") or {}).get("basis") or "run").lower()
+    if basis in ("legacy", "legacy-aggregate", "aggregate"):
+        return solve_multi_period_legacy(payload)
+    from .multi_period_run import solve_multi_period_run_basis
+
+    return solve_multi_period_run_basis(payload)
+
+
+def solve_multi_period_legacy(payload: dict[str, Any]) -> dict[str, Any]:
     t0 = time.perf_counter()
     log: list[str] = ["Flowform multi-period CapEx NPV MIP (PuLP)."]
 
@@ -516,7 +528,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
                 "ok": False,
                 "solver": solver_name,
                 "status": "Infeasible",
-                "model": "multi-period-capex-npv-v1",
+                "model": "multi-period-capex-npv-v1", "basis": {"model": "legacy-aggregate"},
                 "mode": mode,
                 "discountRate": discount_rate,
                 "yearCount": year_count,
@@ -695,7 +707,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
         "ok": True,
         "solver": solver_name,
         "status": status_name if status_name != "Not Solved" else "Optimal",
-        "model": "multi-period-capex-npv-v1",
+        "model": "multi-period-capex-npv-v1", "basis": {"model": "legacy-aggregate"},
         "mode": mode,
         "discountRate": discount_rate,
         "yearCount": year_count,

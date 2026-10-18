@@ -638,8 +638,31 @@ export type MultiPeriodOptimizeResult = {
     capexNpvM: number
     opexNpvM: number
     transportNpvM: number
+    carbonNpvM?: number
+    laneFixedNpvM?: number
     uncoveredPenaltyNpvM?: number
   }
+  /** Model basis ("run" = every period is the Run MIP). */
+  basis?: {
+    model: string
+    description?: string
+    commodityMode?: string
+    commodities?: number
+    variables?: number
+    gapRel?: number
+    buildSeconds?: number
+    solveOnlySeconds?: number
+  }
+  /** Y0 vs a fresh Run (same payload). */
+  runCheck?: {
+    runTotalM?: number
+    y0TotalM?: number
+    deltaM?: number
+    deltaPct?: number | null
+    y0HasEvents?: boolean
+    matches?: boolean
+    runStatus?: string
+  } | null
   eventTiming: {
     eventId: string
     name: string
@@ -657,6 +680,12 @@ export type MultiPeriodOptimizeResult = {
     capexM: number
     opexM: number
     transportM: number
+    carbonM?: number
+    laneFixedM?: number
+    uncoveredPenaltyM?: number
+    co2Kt?: number
+    eventCapexM?: number
+    candidateCapexM?: number
     totalCostM: number
     npvContributionM: number
     servicePct: number
@@ -681,12 +710,17 @@ export function formatMultiPeriodBriefSection(
     '',
     '### Per-year plan',
     '',
-    '| Year | Open sites | CapEx $M | OpEx $M | Transport $M | NPV contrib | Service |',
-    '|------|------------|----------|---------|--------------|-------------|---------|',
+    `Basis: **${result.basis?.model === 'run' ? 'Run model (each year = the Run MIP: SKUs, BOM, lane modes, capacities, min throughput, service)' : (result.basis?.model ?? 'legacy aggregate')}**` +
+      (result.runCheck?.runTotalM != null
+        ? ` · Y0 $${(result.runCheck.y0TotalM ?? 0).toFixed(2)}M vs Run $${result.runCheck.runTotalM.toFixed(2)}M (Δ ${(result.runCheck.deltaM ?? 0) >= 0 ? '+' : ''}${(result.runCheck.deltaM ?? 0).toFixed(2)}M)`
+        : ''),
+    '',
+    '| Year | Open sites | Transport $M | Carbon $M | Lane fixed $M | OpEx $M | CapEx $M | Unmet $M | Total $M | NPV contrib | CO₂ kt | Service |',
+    '|------|------------|--------------|-----------|---------------|---------|----------|----------|----------|-------------|--------|---------|',
   ]
   for (const y of result.years) {
     lines.push(
-      `| ${y.label} | ${y.openIds.length} (${y.openIds.slice(0, 4).join(', ')}${y.openIds.length > 4 ? '…' : ''}) | ${y.capexM.toFixed(2)} | ${y.opexM.toFixed(2)} | ${y.transportM.toFixed(2)} | ${y.npvContributionM.toFixed(2)} | ${y.servicePct.toFixed(1)}% |`,
+      `| ${y.label} | ${y.openIds.length} (${y.openIds.slice(0, 4).join(', ')}${y.openIds.length > 4 ? '…' : ''}) | ${y.transportM.toFixed(2)} | ${(y.carbonM ?? 0).toFixed(2)} | ${(y.laneFixedM ?? 0).toFixed(2)} | ${y.opexM.toFixed(2)} | ${y.capexM.toFixed(2)} | ${(y.uncoveredPenaltyM ?? 0).toFixed(2)} | ${y.totalCostM.toFixed(2)} | ${y.npvContributionM.toFixed(2)} | ${y.co2Kt != null ? y.co2Kt.toFixed(2) : '—'} | ${y.servicePct.toFixed(1)}% |`,
     )
   }
   lines.push('', '### Event timing', '')
