@@ -188,7 +188,7 @@ Defined in `apps/web/src/data/enterprisePack.ts`. The pack is the canonical impo
 
 **Constraints** (`NetworkConstraints`): globals (`serviceTargetPct 95, serviceRadiusMiles 250, capexBudgetM 30, maxFacilities = clamp(#facilities, 3, 8)`, optional `hardServiceConstraints, maxLeadTimeDays, aggregateProductsByGroup, maxProductCommodities`) plus `facilities[] {nodeId, status, capacityMin, capacityMax, fixedCapexM}`. Defaults from `defaultConstraintsFromNetwork`: **min = 60 % and max = 125 % of nominal capacity**, CapEx 8 (plant), 4 (DC), or 6 (candidate) $M.
 
-**Scenario.** `{id, name, tag, kpis {cost, service, capex, co2, risk, inventory?, invUnits?}, optimizeMeta?, desLite?, costSensitivity?, resilience?, …}`. Optimize results arrive as new scenarios. Baseline KPIs are hard-coded: **$48.2M · 94.1 % · $0 · 12.4 kt · Med**.
+**Scenario.** `{id, name, tag, kpis {cost, service, capex, co2, risk, inventory?, invUnits?}, optimizeMeta?, desLite?, costSensitivity?, resilience?, …}`. Optimize results arrive as new scenarios. Baseline KPIs start from a seed (**$48.2M · 94.1 % · $0 · 12.4 kt · Med**) and are **replaced on the first API Run** by the as-is costing of the current network (`computeBaseline` → `response.baseline`; sample: **$99.0M · 100.0 % · $0 · 2,703.5 kt · Low**).
 
 ### 4.3 Units
 
@@ -241,7 +241,7 @@ Nav order in code (`LeftNav.tsx`): **Projects · Network · Greenfield · Hubs �
   - **Lane paint:** selected `#7dd3fc` → MIP binding **red `#f87171`** → MIP util ≥ 80 % **amber `#fbbf24`** → BOM lanes `#c084fc` → default.
   - **Inspector, node:** name/type/region/capacity, demand product mix, product capabilities, BOM production and outbound, and the **"Why this site?"** explain card (after an API run). Facility rows: Status (Open/Closed/Candidate), Capacity min/max, Open CapEx $M.
   - **Inspector, lane:** cost/unit, lead time, CO₂, lane product groups, **Transport mode** (changing it rescales cost by mode relatives: Road/Truck 1, Rail 0.55, Intermodal 0.72, Ocean 0.32, Air 4.5, and refreshes CO₂), and carrier bids (Cheapest/Fastest/Balanced, Apply, Add bid, Apply winner).
-  - **Inspector, nothing selected:** **Network constraints**: Service radius (mi), CapEx budget ($M), Max facilities, **Hard service constraints**, Max lead-time (days, optional).
+  - **Inspector, nothing selected:** **Network constraints**: Service radius (mi), CapEx budget ($M), **Max DCs (open)** (DCs + candidates only; plants stay open and are not counted; API also accepts a separate `maxPlants` when `optimizePlants` is on), **Hard service constraints**, Max lead-time (days, optional).
   - **Product group filter:** All / per group; dims entities outside the group.
   - KPI strip, bottom Facilities/Lanes tables, scenario footer (**+ New** is a stub).
 
@@ -452,7 +452,7 @@ Lanes: l1 n7→n1 Truck $1.12 · l2 n1→n2 Rail $0.64 · l3 n1→n3 Truck $0.88
 - **Optimal**, objective **$98.2706M** = transport $95.6706M + CapEx $0 + OpEx $2.6M; unmet $0.
 - **Service 100 %** (all 3 SKUs). Open n1, n2, n3; **closed n8 (Reno)**. Solve 0.003–0.008 s.
 - Supplier→plant BOM inbound is $62.048M of transport (55,400 model units × $1.12).
-- KPI card: cost **$98.3M (+103.9 % vs the hard-coded $48.2M baseline)**, service 100.0 % (+5.9 pp), CapEx $0M, CO₂ 17.0 kt (+37 %), Risk Low.
+- KPI card: cost **$98.3M (−0.7 % vs the computed Baseline $99.0M**, i.e. Reno's $0.7M OpEx), service 100.0 % (+0.0 pp), CapEx $0M, CO₂ **2,703.5 kt** (modelled transport CO₂, −0 %), Risk Low.
 
 ### 8.2 Sample project pack
 
@@ -506,51 +506,54 @@ cd /Users/jigar/Projects/Flowform && docker compose up --build
 
 ## 11. Known limitations and defects found
 
-### 11.1 Known gaps (confirmed in code)
+### 11.1 Known gaps (confirmed in code, refreshed after `a6d3fae`)
 
-1. **Baseline is hard-coded.** Optimize KPI deltas compare against Baseline `$48.2M / 94.1 % / 12.4 kt`. The `kpisFromApi` fallback uses the same numbers. The sample Run shows **+103.9 %**, which is meaningless as a delta.
-2. **Multi-period and robust use a single lane rate with no mode choice.** They also send only the **raw network**, with no `demandByProduct` and no BOM. Their $ are therefore **not comparable** to Run: robust E[cost] is **$21.13M** vs Run **$98.27M** on the same sample.
+1. ~~Baseline is hard-coded.~~ **Fixed (`a6d3fae`).** The first API Run also costs the as-is network (existing sites open, candidates closed, no decisions; `capacityMin` relaxed only if the as-is network is infeasible) and writes it onto the Baseline scenario. Sample: Run **$98.3M** vs Baseline **$99.0M** → **−0.7 %**. Before the first API Run (or with the API offline) the seed $48.2M is still shown.
+2. **Multi-period still uses a single lane rate with no mode choice and the raw network** (no `demandByProduct`, no BOM), so Roadmap NPVs are not on the Run basis. Robust **is** on the Run basis now (D-04): base-scenario cost = Run objective ($98.27M).
 3. **Supplier lanes have no mode choice.** BOM supplier→plant arcs carry no `laneId` or `mode` in flows.
-4. **Per-product-group capacity is ignored with per-SKU products.** `capacityByProduct` is keyed by group id (`ambient`…) while commodities are `sku-<group>`, so `_capacity_by_product` never matches. Capability *is* expanded via `groupId`; capacity is not.
+4. ~~Per-product-group capacity is ignored with per-SKU products.~~ **Fixed (`a6d3fae`):** a group-keyed `capacityByProduct` cap is shared by every SKU commodity in that group. Default group caps are now the full site capacity (so they only bind when a planner lowers them); the sample's saved caps were updated the same way.
 5. **Headless map worker warning** in non-GUI runs (MapLibre); cosmetic.
 6. **Collaboration and auth are stubs.** Share deep link `flowform://…` has no receiver. Comments are local only. Search ⌘K and scenario footer "+ New" are stubs. No auth.
 7. **Basemap.** OpenFreeMap today; move to **self-hosted Protomaps** before commercial launch.
 8. **Greenfield and composed scenarios are mock heuristics**, not MIP-driven (`generateCandidates` uses static `NODES`; `kpisForComposedScenario` is a formula).
 9. **Persistence is browser-only** (`localStorage`); there is no server store.
+10. **CO₂ magnitude.** Lane `co2KgPerUnit` and emission factors are per *physical* unit (default 1 t/unit), and one model unit = 1,000 physical units, so the sample reports **2,703.5 kt** transport CO₂. That is unit-consistent with carbon pricing (D-05) but large; set `tonsPerUnit` for real unit weights. Before any Run, the CO₂ tile still shows the lane-factor estimate.
+11. **Robust is design enumeration**, not one monolithic two-stage MIP: candidate designs = each scenario's wait-and-see optimum + the legacy two-stage design + their union, each re-solved on the full model in every scenario. Minimum throughput scales down with a demand shock (flagged per scenario if relaxed).
+12. **Infeasibility root-cause probes** re-solve up to 3 times (minimums off / lane caps off / both), so an infeasible Run takes a little longer.
 
-### 11.2 Defects and discrepancies found while writing this blueprint (logged in the workbook defect log)
+### 11.2 Defects found while writing this blueprint — all fixed in `a6d3fae`
 
-| ID | Finding | Evidence (captured) |
-|---|---|---|
-| D-01 | **Roadmap → Optimize timing is Infeasible on the default sample roadmap**, in both choose-timing and force-timeline. The "Open Kansas City DC" event targets `roadmap-kc-dc`, which the API materializes as a DC **without status**, so it is treated as already open. Its open event is then forced to 0 (`no_reopen`) and to 1 (`once_ev`) at the same time. | `status: Infeasible`, hint `MULTI_PERIOD_INFEASIBLE`, log "Facility roadmap-kc-dc already open — open event(s) ignored in linkage." Without the KC event: choose_timing NPV **$111.9095M** (all events pushed to Y5); force_timeline **$116.4309M**. With KC passed as a `candidate` facility: **$119.7942M** / **$128.361M**. Reproduced on the Mac. |
-| D-02 | **Removing l9 is diagnosed as `UNREACHABLE_DEMAND` even in soft mode.** The actual blocker is the facility **min-throughput** (`capacityMin` = 60 % of nominal). Columbus and Austin can't meet their minimums once NYC hazmat drops out, and the existing open plant is locked. | No-l9: Infeasible `UNREACHABLE_DEMAND n6/sku-hazmat` at target 95 or 90. Same payload with `capacityMin=0`: **Optimal, service 91.8 %, $122.7578M incl. $34.2M unmet penalty** (2,280 × $15). |
-| D-03 | Lane-capacity infeasibility returns **no hints**. | l9 `capacityUnits=1000` → Infeasible, `hints: []`. |
-| D-04 | **Robust keeps existing open sites forced open** (`stochastic.py` forces `status=open` non-candidates). On the sample, Reno stays open in every robust result, unlike Run. EVPI gap is $0.00 on default shocks. | firstStage opens n1, n2, n3, n8, OpEx $3.3M. |
-| D-05 | **Carbon price magnitude looks inconsistent** with reported CO₂. | `carbonPricePerTonne=100` adds **$197.34M** carbon on the sample, while `transportCo2Kt` = 2.704 and the KPI `co2Kt` = 17.0. Units need review. |
-| D-06 | `kpis.costM` excludes lane fixed charges. | stress-200 `costM` 176.3 vs `objectiveTotalM` 176.8117 (lane fixed 0.53) |
-| D-07 | `maxFacilities` counts DCs/candidates only (plants excluded). This is undocumented. | sample `maxFacilities=2` still opens n1 + n2 + n3, $98.2706M |
-| D-08 | Resilience on the Baseline scenario marks **all 4 facilities critical**, because baseline coverage (58.8 % within 250 mi) is already below the 95 % threshold. | score 10, critical n2 (−33.2 pp), n1 (−25.6 pp), n3, n8 (0 pp) |
+| ID | Finding | Fix (`a6d3fae`) | Verified (captured after fix) |
+|---|---|---|---|
+| D-01 | Roadmap → Optimize timing Infeasible on the default roadmap; the materialized `roadmap-kc-dc` was treated as already open. | `multi_period.py`: any site with an open event starts closed at Y0 (the event *is* the opening). | Fresh sample: choose_timing **Optimal NPV $119.79M** (CapEx $18.13M, OpEx $15.81M, transport $85.85M; all events Y5); force_timeline **Optimal NPV $128.36M** (CapEx $22.40M, OpEx $16.91M, transport $89.04M). After a Run (Reno closed): $116.44M / $125.01M. Headless Chrome light + dark. |
+| D-02 | No-l9 diagnosed as `UNREACHABLE_DEMAND`; real blocker is `capacityMin`. | Relaxation probes: re-solve with minimums off / lane caps off; feasible relaxation ⇒ root cause. New `MIN_THROUGHPUT_CONFLICT` (sites, min vs feasible throughput, relaxed $ and service). Soft unreachable demand is kept as `info` context. | No-l9 (target 95 or 90): root cause `MIN_THROUGHPUT_CONFLICT` — *n2 min 10800 vs feasible 9200*; relaxed **91.8 %, $122.76M**. |
+| D-03 | Lane-capacity infeasibility returned no hints. | New `LANE_CAPACITY_CONFLICT` (lane, from→to, cap vs required flow, short-by, customers). Both families reported when both bind. | l9 cap 1000: `MIN_THROUGHPUT_CONFLICT` (n2 min 10800 vs 10200) + `LANE_CAPACITY_CONFLICT` *l9 (n2→n6) cap 1000 vs needed 2280 (short 1280)*. |
+| D-04 | Robust forced existing sites open and omitted SKUs/BOM. | `stochastic.py` v2: full Run model per scenario (open/close, SKUs, BOM, modes, cost scale); web sends the Run payload; Compare → Robust shows a basis note. `modelBasis: "legacy"` keeps the old model. | Built-in shocks: opens **n1, n2, n3** (Reno closes). E[cost] **$101.14M**, worst **$122.19M**, CVaR-lite (α 0.3) **$107.45M**, EVPI $0.00M. Base scenario **$98.27M** = Run. |
+| D-05 | Carbon $ inconsistent with reported CO₂. | CO₂ reported per physical unit (×1,000 per model unit) so `carbonM = price × transportCo2Tonnes`; new `transportCo2Tonnes`, `carbonM` KPIs; CO₂ KPI = modelled transport CO₂. | Price 100: carbon **$197.3422M** = 100 × **1,973,422 t**; total $296.4632M. Price 0: 2,703.5 kt. |
+| D-06 | `kpis.costM` excluded lane fixed. | `costM` += lane fixed; `kpis.laneFixedM`; Run status line shows lane fixed / carbon. | stress-200 KPI **$176.8M** (lane fixed $0.53M) = objective $176.81M. |
+| D-07 | `maxFacilities` silently excluded plants. | `maxFacilities` = max **DCs + candidates** (always); optional `maxPlants`; Inspector label *Max DCs (open)* + help, Data snapshot *N DCs (plants not counted)*. | Max DCs 2 → $98.27M, n1 + n2 + n3 (plant + 2 DCs). `maxPlants: 0` with `optimizePlants` closes n1. |
+| D-08 | Resilience flagged all 4 sites critical on Baseline. | Lane-aware reachability (radius **or** lane), DCs need plant supply, SPOF requires ≥ 0.5 pp drop **and** service below threshold. | Fresh Baseline, threshold 95: baseline svc **100 %**, score **35**, critical **Austin Plant (−100 pp)**, **Columbus DC (−33.2 pp)**; Atlanta, Reno 0 pp (not critical). |
 
 ---
 
 ## 12. Roadmap
 
-**Now (stabilize the demo; from §11.2):**
-1. Fix D-01: materialized open-event nodes should start closed (`status: candidate`), or the web should send the KC node as a candidate.
-2. Fix D-02 and D-03: add `MIN_THROUGHPUT_CONFLICT` and lane-capacity hints to `diagnostics.py`, and surface the facility `capacityMin` in diagnostics.
-3. Replace the hard-coded $48.2M baseline: compute the baseline by running the MIP with current open/close locked, store it on the Baseline scenario, and compute deltas from it.
-4. Decide the robust policy for existing sites (D-04): allow closing when `optimizePlants`/decidable.
-5. Audit the carbon-price units (D-05) and `costM` vs `objectiveTotalM` (D-06).
+**Done (`a6d3fae`):** D-01…D-08, computed Baseline KPIs, per-group capacity for SKU commodities, delete-lane (Data + Inspector), CORS confirmed (5180 + 5181 preview only).
+
+**Now (stabilize the demo):**
+1. Put `/optimize/multi-period` on the Run basis (SKUs, BOM, lane modes) so Roadmap NPVs match Run.
+2. Surface `MIN_THROUGHPUT_CONFLICT` / `LANE_CAPACITY_CONFLICT` shortfall tables in the Run results panel (today: summary text).
+3. Add a unit-weight (`tonsPerUnit`) control in Data so CO₂ tonnes reflect real shipment weights.
 
 **Next (depth):**
-6. Mode choice and the enterprise payload (SKUs, BOM) in `/optimize/multi-period` and `/optimize/stochastic`, so their $ match Run.
-7. Supplier-lane mode choice; per-SKU capacity mapped through `groupId`.
-8. MIP-backed Greenfield (candidate generation + open decision in the MIP).
-9. Map: self-hosted Protomaps; fix the headless worker warning.
+4. Mode choice in multi-period (robust already uses the Run model).
+5. Supplier-lane mode choice.
+6. MIP-backed Greenfield (candidate generation + open decision in the MIP).
+7. Map: self-hosted Protomaps; fix the headless worker warning.
 
 **Later (product):**
-10. Auth, server-side project storage, real share links and comments.
-11. Ritara intake adapter that consumes `flowform.handoff.v1` (contract only; no Ritara source copied).
+8. Auth, server-side project storage, real share links and comments.
+9. Ritara intake adapter that consumes `flowform.handoff.v1` (contract only; no Ritara source copied).
 
 ---
 
@@ -567,3 +570,4 @@ cd /Users/jigar/Projects/Flowform && docker compose up --build
 | `33863ee` | Lane capacity + Truck/Rail/Intermodal mode choice, lane duals, flows-by-mode panel, red/amber lanes | `solver.py`, `MipLaneModes.tsx`, `laneMip.ts` |
 | `e516c51` | Explain cards, counterfactual flip cost, real facility duals, `POST /optimize/explain`, Inspector + Brief + Compare | `explain.py`, `ExplainCards.tsx` |
 | `1b2afc2` | Feasible sample (hazmat lane l9), realistic cost scaling ($M; off-lane ×1.35; penalty max($15, 10× median)) | `test_demo_cost_scaling.py` |
+| `a6d3fae` | Defect fixes D-01…D-08, computed Baseline, group caps for SKUs, delete-lane | `test_defect_fixes.py`, `defectFixes.test.ts` |

@@ -40,6 +40,8 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
 - [ ] Download sites / demand / lanes CSV templates; re-upload at least one without hard errors.
 - [ ] Validation summary shows counts; CO₂ factors editable.
 - [ ] Product / commodity groups present; lane rate tables & bids list corridors; BOM table has sample FG←RM rows.
+- [ ] **Lanes** card lists 9 lanes; **Delete** removes one after confirm (count → 8). Inspector on a lane also has **Delete lane**.
+- [ ] Constraints snapshot reads *max N DCs (plants not counted)*; Inspector label **Max DCs (open)** (D-07).
 - [ ] Reset sample for rates / BOM restores defaults without crashing.
 
 ---
@@ -77,7 +79,7 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
 ## 7. Roadmap
 
 - [ ] CapEx events (Y0–Y5) show on Gantt-lite; cumulative CapEx / capacity KPIs update (Y5 cumulative $29.2M).
-- [ ] Known defect **D-01**: **Optimize timing** on the default roadmap returns Infeasible. Remove the *Open Kansas City DC* event to get NPV $111.91M *(→ RMP-03, RMP-05)*.
+- [ ] **Optimize timing** on the default roadmap (fresh sample) is **Optimal** in both modes: Choose timing **NPV $119.79M**, Force timeline **NPV $128.36M** (D-01 fixed in a6d3fae) *(→ RMP-03, RMP-04)*.
 - [ ] Apply a year slice as scenario; **Export to Brief** / reset sample works.
 
 ---
@@ -103,13 +105,13 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 | **DES-lite** | Run Monte Carlo → fill rate / late % on Active |
 | **Sensitivity** | Tornado + MC; P10/P50/P90 |
 | **Inventory** | Edit policy; Apply to Active KPIs (Inv $ / units) |
-| **Resilience** | SPOF score / critical nodes → Risk KPI |
+| **Resilience** | SPOF score / critical nodes → Risk KPI. Fresh Baseline @95: score **35**, critical only **Austin Plant** + **Columbus DC**; Atlanta/Reno 0 pp (D-08) |
 | **Mode mix** | Mode summary for lanes |
 | **Products** | Filter / mix by product group |
 | **Bids** | Carrier bid compare / apply |
 | **BOM** | Implied RM + echelon view |
 | **Territory** | Coverage summary from territory studio |
-| **Robust** | Scenario-tree optimize (expected / minimax / CVaR-lite); built-in shocks → E $21.13M / worst $24.94M *(→ SCN-08)* |
+| **Robust** | Scenario-tree optimize (expected / minimax / CVaR-lite); built-in shocks (untick chips) → opens n1, n2, n3; E **$101.14M** / worst **$122.19M** / CVaR-lite **$107.45M**; base scenario = Run $98.27M; basis note visible *(→ SCN-08)* |
 
 - [ ] Decision log panel visible and appends on meaningful actions (optimize, apply_*, etc.).
 
@@ -142,7 +144,7 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 - [ ] **Theme toggle** (Dark / Light) in top chrome flips `data-theme` and persists.
 - [ ] **?** opens Keyboard shortcuts help; **Esc** closes help and clears map/table selection.
 - [ ] Help button in chrome also opens the same dialog.
-- [ ] **Run** optimize: with API up → MIP path (sample: **Optimal $98.27M**, Reno DC closed, 100% service *(→ RUN-02)*); with API down → `Heuristic v1 · service 58.8% (API offline or fallback)` (no hard hang).
+- [ ] **Run** optimize: with API up → MIP path (sample: **Optimal $98.27M**, Reno DC closed, 100% service; KPI **$98.3M −0.7 %** vs computed Baseline **$99.0M**, CO₂ 2,703.5 kt *(→ RUN-02)*); with API down → `Heuristic v1 · service 58.8% (API offline or fallback)` (no hard hang).
 - [ ] **Share** copies deep-link stub and downloads `.share.json`.
 
 ---
@@ -158,7 +160,7 @@ All rooms above load without console errors that block interaction; sample impor
 2. **Export pack JSON** — downloads `.enterprise.json`.
 3. **Load stress-200** (or **Load stress-120**) — one-click fetch of `public/samples/stress-*-demand.enterprise.json` into the Active network. Same buttons exist under **Projects**.
 4. Confirm scorecard: stress-200 = 212 sites · 400 demand rows · 425 lanes · score 100 (stress-120 = 132 · 240 · 265 · 100), geocode 100%.
-5. **Run** optimize — chrome shows model `fixed-charge-multi-echelon-v1`, solver status, and solve seconds; MIP log mentions enterprise pack schema. stress-200: **Optimal $176.81M**, 9 open, `6 binding lane cap(s)`, solve ≈ 1 s *(→ STR-03)*.
+5. **Run** optimize — chrome shows model `fixed-charge-multi-echelon-v1`, solver status, and solve seconds; MIP log mentions enterprise pack schema. stress-200: **Optimal $176.81M**, 9 open, `6 binding lane cap(s)`, solve ≈ 1 s; KPI cost **$176.8M** now includes lane fixed $0.53M (D-06) *(→ STR-03)*.
 6. **Compare → Cost-to-serve** — after MIP, rows show **Service DC**, transport + variable OpEx; totals match objective transport+OpEx (gap ≈ 0).
 
 ### Stress benchmark (API)
@@ -169,3 +171,15 @@ pytest -q tests/test_stress_benchmark.py -s
 ```
 
 Expect Optimal, open = 9, `solveSeconds` ≪ 60s on stress-120 (objective 89.1208) and stress-200 (176.8117); **3 passed**.
+
+### Defect regression (a6d3fae)
+
+```bash
+cd apps/api && .venv/bin/pytest -q            # 65 passed (54 + 11 in tests/test_defect_fixes.py)
+cd apps/web && npm run test:data && npm run build   # enterprise 12/12, CTS 2/2, defectFixes ok
+```
+
+- [ ] Infeasible Run with l9 removed: message starts *Root cause: facility minimum throughput…* (D-02). With l9 `capacityUnits: 1000`: min-throughput **and** *l9 (n2→n6) cap 1000 vs needed 2280 (short 1280)* (D-03).
+- [ ] API `carbonPricePerTonne: 100` on the sample: `carbonM` 197.3422 = 100 × `kpis.transportCo2Tonnes` 1,973,422 / 1e6 (D-05).
+- [ ] CORS: only `localhost`/`127.0.0.1` on **5180** (dev) and **5181** (preview) are allowed.
+

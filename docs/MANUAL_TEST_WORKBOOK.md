@@ -5,7 +5,7 @@
 
 | | |
 |---|---|
-| Build under test | `master` @ `1b2afc2` (expected values captured Oct 17, 2026) |
+| Build under test | `master` @ `a6d3fae` (defect fixes; affected expected values re-captured Oct 18, 2026; others captured Oct 17 at `1b2afc2`) |
 | Scope | **20 workflows · 199 test cases** + 16 regression checks + defect log |
 | Ports | Web **5180** (never 5173) · API **5182** |
 | Solver | PuLP + HiGHS (`pulp-highs`) |
@@ -15,8 +15,8 @@
 
 1. Complete **WF00 Setup** first. If any SET case fails, the expected values below are not valid for your environment.
 2. Each case lists a **precondition** (a PRE-x state below or another case ID). Reach that state first.
-3. Values in **bold** were **captured** by running the code at `1b2afc2` (API on the box and the Mac; client engines with their built-in seeds). Times vary by machine; costs should match to the cent. Cases marked *exploratory* have no captured value, so record what you see.
-4. Cases that reproduce a known defect (D-01…D-08) say so. Mark them **Fail** and reference the defect until it is fixed.
+3. Values in **bold** were **captured** by running the code at `1b2afc2` (rows touched by the D-01…D-08 fixes re-captured at `a6d3fae`) (API on the box and the Mac; client engines with their built-in seeds). Times vary by machine; costs should match to the cent. Cases marked *exploratory* have no captured value, so record what you see.
+4. D-01…D-08 are **Fixed in `a6d3fae`**; the affected cases now carry the post-fix expected values. Log any new defect as D-09+.
 5. Fill in Result and Notes. Log every Fail in the Defect log (§ Defect log) with the test ID.
 
 ## Preconditions
@@ -65,7 +65,7 @@ _Make sure the environment matches the expected-value baseline before running an
 | **SET-02** | API starts on 5182 | Python venv exists | 1. cd apps/api && source .venv/bin/activate<br>2. uvicorn app.main:app --reload --host 127.0.0.1 --port 5182<br>3. curl -s http://127.0.0.1:5182/health | `{"status":"ok","service":"flowform-api","model":"fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1+stochastic-scenario-tree-v1+explain-v1"}` | ☐ | |
 | **SET-03** | Solver is HiGHS | SET-02 | 1. Run API-02, or look at the Run log tooltip after RUN-02 | Response `solver` = `pulp-highs`. If CBC is used instead, duals fall back to a proxy and expected values may differ. | ☐ | |
 | **SET-04** | Web starts on 5180 (never 5173) | Node 20+, npm install done | 1. cd apps/web && npm run dev<br>2. Open http://localhost:5180 | Vite serves on **5180** (`strictPort`). The app opens on the **Network** room with the map. If 5180 is busy, Vite fails instead of moving to another port. | ☐ | |
-| **SET-05** | API unit tests green | SET-02 venv | 1. cd apps/api && pytest -q | **54 passed** (captured Oct 17, 2026). Deprecation warnings are OK. | ☐ | |
+| **SET-05** | API unit tests green | SET-02 venv | 1. cd apps/api && pytest -q | **65 passed** (54 + 11 defect regressions in `tests/test_defect_fixes.py`; captured Oct 18, 2026 at a6d3fae). Deprecation warnings are OK. | ☐ | |
 | **SET-06** | Web data tests + build green | npm install done | 1. cd apps/web && npm run test:data<br>2. npm run build | Enterprise tests **12 passed** and CTS **2/2 passed**. Build finishes with `✓ built`; only the >500 kB chunk-size warning appears. | ☐ | |
 | **SET-07** | Basemap default is OpenFreeMap | PRE-A, no VITE_BASEMAP override | 1. Open Network<br>2. DevTools → Network, filter `openfreemap` | Tiles load from `tiles.openfreemap.org` (`liberty` in light, `dark` in dark). No API key is requested. | ☐ | |
 | **SET-08** | Optional Carto basemap | `apps/web/.env.local` with `VITE_BASEMAP=carto` (+ key) | 1. Restart `npm run dev`; hard-refresh<br>2. Open Network | Carto tiles render. After the test, revert `.env.local`, and **never commit it**. | ☐ | |
@@ -79,7 +79,7 @@ _Core happy path: built-in sample → MIP → new optimized scenario._
 |---|---|---|---|---|---|---|
 | **RUN-01** | Default sample loaded | PRE-A | 1. Open Network<br>2. Check the Layers rail and the map | 8 sites: Austin Plant (n1), Columbus DC (n2), Atlanta DC (n3), Chicago Hub (n4), Dallas Metro (n5), NYC Corridor (n6), Monterrey Sup (n7, supplier), Reno DC (n8). 9 lanes (l1–l9; l9 = Columbus→NYC Truck $1.38, hazmat). | ☐ | |
 | **RUN-02** | Run via API (MIP) | PRE-A | 1. Click **Run** in the top chrome<br>2. Watch the status line until it finishes | Progress shows `Checking optimize API…` → `API available — MIP via enterprise-data-v1 (score 100)…`. Final status: `API pulp-highs · Optimal · 0.00Xs · fixed-charge-multi-echelon-v1 · service 100.0% · obj $98.27M (tx $95.67M + CapEx $0.0M + OpEx $2.6M) · 3 SKUs/groups`. **(captured total 98.2706)** | ☐ | |
-| **RUN-03** | New optimized scenario + KPIs | RUN-02 | 1. Check the Active chip and the KPI strip | Active = `Optimize MIP <time>`. KPIs: Cost **$98.3M (+103.9%)**, Service **100.0% (+5.9pp)**, CapEx **$0M**, CO₂ **17.0 kt (+37%)**, Risk **Low**. Deltas compare against the hard-coded Baseline ($48.2M, 94.1%, 12.4 kt), which is a known gap. | ☐ | |
+| **RUN-03** | New optimized scenario + KPIs | RUN-02 | 1. Check the Active chip and the KPI strip | Active = `Optimize MIP <time>`. KPIs: Cost **$98.3M (−0.7%)**, Service **100.0% (+0.0pp)**, CapEx **$0M**, CO₂ **2703.5 kt (−0%)**, Risk **Low**. Deltas compare against the **computed Baseline** ($99.0M, 100.0%, 2703.5 kt — the as-is network with Reno open), written onto the Baseline chip by the same Run. CO₂ is the modelled transport CO₂ (D-05). | ☐ | |
 | **RUN-04** | Open/close decisions | RUN-02 | 1. Select Reno DC; read the Inspector / facilities table | Reno DC (n8) is **Closed**. Austin Plant, Columbus DC, and Atlanta DC stay open. (API `openIds` n2, n3, n1; `closedIds` n8.) | ☐ | |
 | **RUN-05** | Objective breakdown in Compare | RUN-02 | 1. Compare → Matrix (Reference Baseline, optimize scenario selected)<br>2. Find **Optimize objective breakdown** | Total **$98.27M** = Transport **$95.67M** + CapEx **$0.0M** + OpEx **$2.6M**. Uncovered penalty **$0**. Open sites **3**. Model `fixed-charge-multi-echelon-v1`. | ☐ | |
 | **RUN-06** | SKU breakdown | RUN-02 | 1. Compare → Matrix → SKU / product-group breakdown | 3 rows: sku-ambient, sku-chilled, sku-hazmat, each at **100%** service. | ☐ | |
@@ -107,7 +107,7 @@ _Map interactions, Inspector edits, constraint globals, and depth-8 explain card
 | **NET-10** | Network constraints defaults | PRE-A | 1. Press Esc so the Inspector shows **Network constraints** | Service target **95%**, radius **250** mi, CapEx budget **$30M**, max facilities **4**, hard service **off**. Facilities: Austin min 25,200 / max 52,500 / CapEx 8; Columbus 10,800 / 22,500 / 4; Atlanta 8,400 / 17,500 / 4; Reno 7,200 / 15,000 / 4 (min = 60%, max = 125% of nominal). | ☐ | |
 | **NET-11** | Hard service on the sample | PRE-A | 1. Turn on **Hard service constraints**<br>2. Run | Optimal **$98.27M**, service 100% (captured). | ☐ | |
 | **NET-12** | Service radius 800 | PRE-A | 1. Radius = 800<br>2. Run | Optimal **$98.27M**, Reno still closed (captured). Lanes already reach every customer. | ☐ | |
-| **NET-13** | Max facilities = 2 | PRE-A | 1. Max facilities = 2<br>2. Run | Optimal **$98.27M** with n1 + n2 + n3 open (captured). Plants are not counted (D-07). | ☐ | |
+| **NET-13** | Max DCs = 2 | PRE-A | 1. Max facilities = 2<br>2. Run | Inspector label reads **Max DCs (open)** with help *Counts DCs + candidates only. Plants stay open and are not counted*. Set 2 → Run: Optimal **$98.27M** with n1 (plant) + n2 + n3 open (D-07 fixed). | ☐ | |
 | **NET-14** | Product group filter | PRE-A | 1. Inspector → Product group filter → Hazmat<br>2. Back to All | Entities that don't match the filter are dimmed. All restores everything. | ☐ | |
 | **NET-15** | Capacity heat layer | PRE-A | 1. Layers → Capacity heat on | Facilities are tinted by load vs capacity, and the legend appears. | ☐ | |
 | **NET-16** | SVG fallback | PRE-A | 1. Switch the map view to the SVG / schematic canvas | The same nodes and lanes render, and selection still works. | ☐ | |
@@ -164,13 +164,13 @@ _Commodity groups, capabilities, BOM implied RM, inbound scenario, multi-SKU MIP
 | **PRD-01** | Product rollup | PRE-A | 1. Compare → Products | Ambient **15,382 (55.5%)**, Chilled **8,266 (29.8%)**, Hazmat **4,052 (14.6%)** (captured). | ☐ | |
 | **PRD-02** | Atlanta is not hazmat-capable | PRE-A | 1. Data → **Facility capabilities** | Atlanta capable = Ambient + Chilled, with Hazmat cap 0. Austin, Columbus, and Reno are capable of all 3. | ☐ | |
 | **PRD-03** | Catalog switch | PRE-A | 1. Switch the product catalog to an alternate set, then back | Groups relabel without crashing. Switching back restores Ambient / Chilled / Hazmat. | ☐ | |
-| **PRD-04** | Make Atlanta hazmat-capable | PRE-A | 1. Tick Hazmat for Atlanta<br>2. Run | Optimal, with objective ≤ $98.27M. Record it (exploratory). | ☐ | |
+| **PRD-04** | Make Atlanta hazmat-capable | PRE-A | 1. Tick Hazmat for Atlanta<br>2. Run | Optimal **$98.16M** (captured 98.155 via API with Atlanta hazmat cap 14,000), ≤ $98.27M. | ☐ | |
 | **PRD-05** | BOM defaults + implied RM | PRE-A | 1. Data → Bill of materials | FG mix **55 / 30 / 15**. 6 BOM rows from Monterrey Sup (n7) → Austin (n1). Implied RM (captured): Polymer resin **30,470**, Carton **15,235**, Chill base **12,465**, Insulated liner **8,310**, Drum/tote **4,155**, Specialty additive **1,662**. Total **72,297**. | ☐ | |
 | **PRD-06** | BOM rollup in Compare | PRE-A | 1. Compare → BOM | 6 BOM rows, 6 components, implied lane gaps **0** (l1 covers n7→n1). | ☐ | |
 | **PRD-07** | Draft inbound scenario with no gaps | PRE-A | 1. Data → BOM → **Draft inbound scenario** | Message *BOM inbound: all Plant←Supplier pairs already have lanes.* No scenario is created. | ☐ | |
 | **PRD-08** | Draft inbound with a gap | PRE-A | 1. Add a BOM row whose supplier has no lane to Austin<br>2. Draft inbound scenario | `BOM inbound: added N supplier→plant lane(s).` A scenario named `BOM inbound (N lane[s])` is created. Log `apply_bom`. | ☐ | |
 | **PRD-09** | Highlight BOM lanes | PRE-A | 1. Tick **Highlight BOM lanes on Network** → open Network | Lane l1 is highlighted. | ☐ | |
-| **PRD-10** | Per-group capacity not enforced (known gap) | PRE-A | 1. Set Columbus Hazmat cap = 1,000<br>2. Run | **Expected per the documented gap:** the result is unchanged (Optimal $98.27M), because `capacityByProduct` is keyed by group while MIP commodities are `sku-<group>`. Pass = matches the gap; log it as a defect once a fix lands. | ☐ | |
+| **PRD-10** | Per-group capacity enforced for SKUs | PRE-A | 1. Set Columbus Hazmat cap = 1,000<br>2. Run | Optimal **$122.75M** (was $98.27M while the cap was ignored): Columbus ships ≤ 1,000 hazmat units, so NYC hazmat is partly unmet. The group cap now applies to the `sku-hazmat` commodity (fixed in a6d3fae). Restore the cap afterwards. | ☐ | |
 
 ## WF07 — Lane rates, modes, and capacity
 
@@ -186,7 +186,7 @@ _Carrier bids, MIP mode choice, lane capacity, binding lanes on the map._
 | **LAN-06** | MIP mode choice on stress-200 | PRE-C | 1. Run<br>2. Compare → **Optimized flows by mode · lane capacity** | Truck **60.9%**, Rail **33.5%**, Intermodal **5.7%** of flow. 24 lanes with modes, 72 options, 48 fixed-charge mode binaries. | ☐ | |
 | **LAN-07** | Binding lane caps + duals | LAN-06 | 1. Read the binding lane list | 6 binding Rail lanes at **100%** (15,000 / 15,000): ln-1 (π −0.000135), ln-10, ln-11, ln-20, ln-21, ln-22 (π −0.000048 to −0.000054). | ☐ | |
 | **LAN-08** | Map colors for lane utilization | LAN-06 | 1. Open Network | Binding lanes are **red `#f87171`**. Lanes ≥80% are **amber `#fbbf24`**. | ☐ | |
-| **LAN-09** | Lane capacity infeasible (sample) | PRE-E | 1. API: sample payload with l9 `capacityUnits: 1000` | `Infeasible`, `hints: []` (captured), which is **D-03**. | ☐ | |
+| **LAN-09** | Lane capacity infeasible (sample) | PRE-E | 1. API: sample payload with l9 `capacityUnits: 1000` | `Infeasible`. Root causes `MIN_THROUGHPUT_CONFLICT` (*n2 min 10800 vs feasible 10200*) **and** `LANE_CAPACITY_CONFLICT`: *l9 (n2→n6) cap 1000 vs needed 2280 (short 1280)*, customers `[n6]` (D-03 fixed). | ☐ | |
 | **LAN-10** | Lead-time filter on modes | PRE-E | 1. API: stress-200 payload + `maxLeadTimeDays: 4` | `modeChoice.serviceFilteredModes` > 0. Record the status and objective (exploratory). | ☐ | |
 
 ## WF08 — Data import and validation scorecard
@@ -231,12 +231,12 @@ _Scenario library, presets, Compare tabs, and the robust scenario tree._
 | **SCN-05** | Matrix + Map diff + Waterfall | SCN-04 | 1. Select Baseline + East Coast DC; open Matrix, Map diff, and Waterfall | KPI deltas vs the Reference render. Map diff shows the legend. With focus = Reference it shows *No diff vs Reference (same scenario).* | ☐ | |
 | **SCN-06** | Cost-to-serve on MIP flows | PRE-B | 1. Compare → Cost-to-serve (focus the optimize scenario) | Rows show the service DC per customer. The total ≈ objective transport + variable OpEx. | ☐ | |
 | **SCN-07** | Robust: default chips | PRE-A | 1. Compare → Robust; leave **Use selected chips as shocks** ticked (2 chips) → **Robust optimize** | Optimal. E[cost] **$20.62M** (both chips scale 1.0; captured 20.615). | ☐ | |
-| **SCN-08** | Robust: built-in shocks, Expected | PRE-A | 1. Untick **Use selected chips as shocks**<br>2. Objective **Expected cost** → Robust optimize | Captured: E[cost] **$21.13M**, worst **$24.94M**, EVPI gap **$0.00M**. First-stage opens **n1, n2, n3, n8**. Per scenario: Base (p 0.4, ×1.0) $20.615M, Soft (0.3, ×0.85) $18.018M, Surge (0.3, ×1.25) $24.944M. Log `robust_optimize`. | ☐ | |
-| **SCN-09** | Robust: Minimax | SCN-08 | 1. Objective **Minimax (robust)** | Objective value **$24.94M**. | ☐ | |
-| **SCN-10** | Robust: CVaR-lite | SCN-08 | 1. Objective **CVaR-lite**, α 0.3 | Objective value **$22.28M** (captured 22.27724). | ☐ | |
-| **SCN-11** | Robust from Scenarios room | PRE-A | 1. Scenarios → Robust optimize card → Expected → run | Uses the 4 library scenarios at p 0.25 each. Status `Robust expected: E[cost] $21.9M · opens n1, n2, n3, n8 · EVPI $0.00M. See Compare → Robust.` (captured E 21.9136). | ☐ | |
+| **SCN-08** | Robust: built-in shocks, Expected | PRE-A | 1. Untick **Use selected chips as shocks**<br>2. Objective **Expected cost** → Robust optimize | Captured: E[cost] **$101.14M**, worst **$122.19M**, EVPI gap **$0.00M**. First-stage opens **n1, n2, n3** (Reno closes, as in Run). Per scenario: Base (p 0.4, ×1.0) **$98.27M** (= Run objective), Soft (0.3, ×0.85) **$83.92M**, Surge (0.3, ×1.25) **$122.19M**. Panel shows the *Same model as Run* basis note. Log `robust_optimize`. | ☐ | |
+| **SCN-09** | Robust: Minimax | SCN-08 | 1. Objective **Minimax (robust)** | Objective value **$122.19M** (= worst). | ☐ | |
+| **SCN-10** | Robust: CVaR-lite | SCN-08 | 1. Objective **CVaR-lite**, α 0.3 | Objective value **$107.45M** (captured 107.454929). | ☐ | |
+| **SCN-11** | Robust from Scenarios room | PRE-A | 1. Scenarios → Robust optimize card → Expected → run | Uses the 4 library scenarios at p 0.25 each (Baseline ×1, East Coast DC ×1, Nearshore MX ×1.1, Lean Lanes ×1.2). Card: `Last E[cost] $105.4M · 3 opens` (n1, n2, n3). | ☐ | |
 | **SCN-12** | Robust export to Brief | SCN-08 | 1. **Export to Brief**, twice | `Exported to Decision Brief notes.` The notes hold a single `## Robust / stochastic optimize` section (replaced, not duplicated). | ☐ | |
-| **SCN-13** | Robust keeps Reno open (D-04) | SCN-08 | 1. Compare the robust opens with the Run result | Robust opens **n8**; Run closed it. Robust $ omit BOM/SKUs, so robust and Run totals are not comparable. | ☐ | |
+| **SCN-13** | Robust on the Run basis (D-04) | SCN-08 | 1. Compare the robust opens with the Run result | Robust opens **n1, n2, n3** — Reno (n8) closes, same as Run. Base-scenario total **$98.27M** equals the Run objective, so robust and Run $ are comparable (D-04 fixed). | ☐ | |
 | **SCN-14** | Comments | PRE-A | 1. Compare → Comments: add a comment<br>2. Reload | The comment persists after reload and can be deleted. | ☐ | |
 
 ## WF10 — Roadmap and Optimize timing
@@ -247,10 +247,10 @@ _CapEx events, cumulative KPIs, multi-period NPV, year slices._
 |---|---|---|---|---|---|---|
 | **RMP-01** | Default roadmap | PRE-A | 1. Open Roadmap | Base FY26, 6 years (Y0–Y5). Events: Expand Columbus DC Y1 $4.5M +6; Open Kansas City DC Y2 $12M +10 (`roadmap-kc-dc`); Expand Reno DC Y3 $3.2M +4; Close Atlanta DC Y4 $1.5M −14; Expand Austin Plant Y5 $8M +8. | ☐ | |
 | **RMP-02** | Cumulative table | RMP-01 | 1. Read the cumulative CapEx / capacity rows | Captured: Y0 $0 / cap 86 / 4 open; Y1 $4.5M / 92 / 4; Y2 **$16.5M** / 102 / 5; Y3 $19.7M / 106 / 5; Y4 $21.2M / 92 / 4 open + 1 closed; Y5 **$29.2M** / 100 / 4. | ☐ | |
-| **RMP-03** | Optimize timing: choose (D-01) | PRE-A | 1. Mode Choose timing, discount 10% → **Optimize timing** | **Actual (captured on Mac and box):** `Infeasible / Infeasible. See results panel.` Hint `MULTI_PERIOD_INFEASIBLE` (*Multi-period CapEx NPV model infeasible.*). Mark **Fail → D-01**. After the fix, expect Optimal with an NPV. | ☐ | |
-| **RMP-04** | Optimize timing: force (D-01) | PRE-A | 1. Mode Force timeline → Optimize timing | Same Infeasible result. Fail → D-01. | ☐ | |
-| **RMP-05** | Workaround: drop the KC open event | PRE-A | 1. Remove *Open Kansas City DC*<br>2. Choose timing → Optimize timing | Optimal (captured). `NPV $111.91M · mode choose_timing · r=10% · timing applied to roadmap events.` CapEx NPV $10.68M, OpEx $15.38M, transport $85.85M. All 4 events move to **Y5**. Per-year total Y0–Y4 $20.615M, Y5 $41.789M. Log `optimize_timing`. | ☐ | |
-| **RMP-06** | Workaround: force timeline | RMP-05 | 1. Force timeline → Optimize timing | Optimal **NPV $116.43M** (captured 116.4309). | ☐ | |
+| **RMP-03** | Optimize timing: choose | PRE-A | 1. Mode Choose timing, discount 10% → **Optimize timing** | **Optimal** (captured, fresh PRE-A): `NPV $119.79M · mode choose_timing · r=10% · timing applied to roadmap events.` CapEx NPV **$18.13M**, OpEx **$15.81M**, transport **$85.85M**; all 5 events move to **Y5**. (After a Run with Reno closed: $116.44M.) D-01 fixed. | ☐ | |
+| **RMP-04** | Optimize timing: force | PRE-A | 1. Mode Force timeline → Optimize timing | **Optimal NPV $128.36M** (CapEx $22.40M, OpEx $16.91M, transport $89.04M); events stay at Y1–Y5, KC opens Y2. (After a Run: $125.01M.) D-01 fixed. | ☐ | |
+| **RMP-05** | Drop the KC open event | PRE-A | 1. Remove *Open Kansas City DC*<br>2. Choose timing → Optimize timing | Optimal (captured via API). NPV **$111.91M** (CapEx $10.68M, OpEx $15.38M, transport $85.85M). All 4 events move to **Y5**. Log `optimize_timing`. | ☐ | |
+| **RMP-06** | No KC: force timeline | RMP-05 | 1. Force timeline → Optimize timing | Optimal **NPV $116.43M** (captured 116.4309). | ☐ | |
 | **RMP-07** | Discount rate 0% | RMP-05 | 1. Discount 0% → Optimize timing | NPV changes (no discounting). Record it (exploratory). | ☐ | |
 | **RMP-08** | Apply year slice | PRE-A | 1. Apply year slice: through **Y2** → Apply as scenario | `Roadmap Y2: 2 CapEx event(s) applied (cum $16.5M).` New Active scenario. Log `apply_roadmap`. | ☐ | |
 | **RMP-09** | Export NPV to Brief | RMP-05 | 1. **Export NPV to Brief** | Brief notes gain `## CapEx multi-period optimize (NPV)`. Assumption a3 is unticked and relabeled *CapEx is overnight build — no phased construction (roadmap NPV in notes)*. | ☐ | |
@@ -270,7 +270,7 @@ _Seeded client-side analytics on the Active scenario._
 | **SEN-06** | Inventory (ASCM combined) | PRE-A | 1. Compare → Inventory | Total **5,039 units / $77,802**. Austin 2,150 / $25,800; Columbus 1,642 / $29,556; Atlanta 556 / $10,008; Reno 691 / $12,438. | ☐ | |
 | **SEN-07** | Inventory simple formula | SEN-06 | 1. Formula **Simple z · σ · √LT** | Total **2,447 units / $38,100**. | ☐ | |
 | **SEN-08** | Apply inventory to KPIs | SEN-06 | 1. **Apply to Active KPIs** | Inventory $ and units appear for the Active scenario. | ☐ | |
-| **SEN-09** | Resilience (D-08) | PRE-A | 1. Compare → Resilience, threshold 95 → **Score resilience** | Score **10**, baseline service **58.8%**. Critical: Columbus (after 25.6%, −33.2pp), Austin (33.2%, −25.6pp), Atlanta (0pp), Reno (0pp). All 4 are flagged, which is **D-08**. | ☐ | |
+| **SEN-09** | Resilience | PRE-A | 1. Compare → Resilience, threshold 95 → **Score resilience** | Fresh Baseline: Score **35**, baseline service **100.0%** (lanes count as reachability). Critical (SPOF) only: **Austin Plant** (sole plant, −100.0pp, after 0.0%) and **Columbus DC** (−33.2pp, after 66.8%). Atlanta and Reno: −0.0pp, **not** critical (D-08 fixed). After a Run (Reno closed): score 23, same 2 critical. | ☐ | |
 
 ## WF12 — Infeasibility diagnostics
 
@@ -278,9 +278,9 @@ _Break the sample on purpose; check hints, chips, and UI behavior._
 
 | ID | Test | Preconditions | Steps | Expected result | Pass/Fail | Notes |
 |---|---|---|---|---|---|---|
-| **INF-01** | Remove hazmat lane l9 | PRE-A | 1. Data → Export pack JSON; delete lane `l9` from `lanes[]` (there is no lane-delete button in the UI)<br>2. Data → Import pack JSON (score 100, loads)<br>3. Run | Captured: **Infeasible**, chip **UNREACHABLE_DEMAND**, *1 demand row(s) have no reachable capable server within 250 mi (vol 2280).* Entity `n6/sku-hazmat`. The new scenario is named `Optimize Infeasible <time>`. | ☐ | |
+| **INF-01** | Remove hazmat lane l9 | PRE-A | 1. Data → **Lanes** → **Delete** on `l9` (confirm), or select l9 on the map → Inspector → **Delete lane l9**<br>2. Run | Captured: **Infeasible**. First hint **MIN_THROUGHPUT_CONFLICT** — *Root cause: facility minimum throughput (capacityMin) cannot be met — with minimums relaxed the model solves (service 91.8%, $122.76M). n2 min 10800 vs feasible 9200.* `UNREACHABLE_DEMAND` (`n6/sku-hazmat`, vol 2280) is still listed as **info** context. The new scenario is named `Optimize Infeasible <time>`. (Lanes can now be deleted in Data → Lanes or the lane Inspector.) | ☐ | |
 | **INF-02** | Diagnostics panel | INF-01 | 1. Compare → Matrix → Infeasibility diagnostics | Hint code, message, remediation text, and metrics (unreachable volume 2,280; openable capacity 107,500). | ☐ | |
-| **INF-03** | Lower target still infeasible (D-02) | INF-01 | 1. Service target 90 → Run | Still **UNREACHABLE_DEMAND** (captured). The real blocker is `capacityMin` (D-02). | ☐ | |
+| **INF-03** | Lower target still infeasible | INF-01 | 1. Service target 90 → Run | Still Infeasible with root cause **MIN_THROUGHPUT_CONFLICT** (captured) — the diagnosis now names `capacityMin` (D-02 fixed). | ☐ | |
 | **INF-04** | Root cause: zero capacity mins | INF-01 | 1. Inspector on Austin, Columbus, Atlanta, Reno: capacity min = 0<br>2. Run | **Optimal, 91.8%**, **$122.76M** including a **$34.2M** unmet penalty (2,280 × $15) (captured). | ☐ | |
 | **INF-05** | Hard service + 3-day lead | PRE-A | 1. Hard service on, max lead-time 3 → Run | Infeasible, **HARD_SERVICE_INFEASIBLE** (captured). | ☐ | |
 | **INF-06** | Restore | INF-01 | 1. Data → Restore sample network (or re-import the unmodified pack)<br>2. Run | Optimal $98.27M. | ☐ | |
@@ -295,10 +295,10 @@ _Large enterprise packs: load, solve time, chips, CTS, explain._
 | **STR-01** | Load stress-200 (Projects) | PRE-A | 1. Projects → **Load stress-200** | `Loaded stress-200 into Active project · 212 sites · 400 demand rows (schema enterprise-data-v1). Open Data to review scorecard, then Run.` | ☐ | |
 | **STR-02** | Load stress-200 (Data) | PRE-A | 1. Data → **Load stress-200** | `Loaded stress-200 · schema enterprise-data-v1 · score 100 · 212 sites · 400 demand rows · 425 lanes.` | ☐ | |
 | **STR-03** | Run stress-200 | PRE-C | 1. Run; time from click to done | `API pulp-highs · Optimal · …s · fixed-charge-multi-echelon-v1 · service 100.0% · obj $176.81M (tx $168.48M + CapEx $0.0M + OpEx $7.8M) · … · modes Truck 61%/Rail 34%/Intermodal 6% · 6 binding lane cap(s)`. Solve **0.85 s (Mac) / 1.34 s (box)**. Wall time with explain ≈ **3.7 s** (11 counterfactuals ≈ 2.3 s). Pass if < 60 s. | ☐ | |
-| **STR-04** | Stress-200 decisions | STR-03 | 1. Compare objective breakdown | **9 open** (dc-1…dc-6, plt-1…plt-3). **Seattle DC (dc-7)** and **Miami DC (dc-8)** stay closed. Lane fixed **$0.53M**, unmet $0. KPI **$176.3M (+265.8%)**, CO₂ **20.8 kt (+68%)** (D-06: costM omits lane fixed). | ☐ | |
+| **STR-04** | Stress-200 decisions | STR-03 | 1. Compare objective breakdown | **9 open** (dc-1…dc-6, plt-1…plt-3). **Seattle DC (dc-7)** and **Miami DC (dc-8)** stay closed. Lane fixed **$0.53M**, unmet $0. KPI **$176.8M** (now includes lane fixed, D-06 fixed) vs computed Baseline $176.8M (**+0.0%**); CO₂ **11931.2 kt**. | ☐ | |
 | **STR-05** | Stress-200 explain | STR-03 | 1. Inspector on Dallas DC and Seattle DC; Compare Why-this-network | Headline *The MIP kept 9 existing site(s) open. Costliest flip: closing Ontario Plant strands 37.5M units (service 81.0%).* Dallas DC: *Capacity binding (100% utilized): each extra unit of capacity saves $0.065/unit*. Seattle DC: *Opening it raises cost by $6.6M (3.8%); service holds at 100.0%*. | ☐ | |
 | **STR-06** | CTS on stress-200 | STR-03 | 1. Compare → Cost-to-serve | Customer rows render with a service DC. Record the render time. | ☐ | |
-| **STR-07** | Stress-120 | PRE-A | 1. Load stress-120 → Run | Optimal **$89.12M** (tx $81.00M, OpEx $7.8M, lane fixed $0.32M), 9 open, 100%. `modes Truck 59%/Rail 36%/Intermodal 4% · 3 binding lane cap(s)` (ln-10, ln-20, ln-22). Solve 0.07–0.16 s. KPI $88.8M (+84.2%). Scorecard: 132 sites, 240 demand rows, 265 lanes, score 100. | ☐ | |
+| **STR-07** | Stress-120 | PRE-A | 1. Load stress-120 → Run | Optimal **$89.12M** (tx $81.00M, OpEx $7.8M, lane fixed $0.32M), 9 open, 100%. `modes Truck 59%/Rail 36%/Intermodal 4% · 3 binding lane cap(s)` (ln-10, ln-20, ln-22). Solve 0.07–0.16 s. KPI **$89.1M (+0.0%)** vs computed Baseline $89.1M; CO₂ 7533.1 kt. Scorecard: 132 sites, 240 demand rows, 265 lanes, score 100. | ☐ | |
 | **STR-08** | pytest benchmark | SET-02 | 1. cd apps/api && pytest -q tests/test_stress_benchmark.py -s | Prints stress-120 objective **89.1208**, stress-200 objective **176.8117** (176.8118 on the Mac), open=9, Optimal. **3 passed**. | ☐ | |
 | **STR-09** | UI responsiveness | STR-03 | 1. Pan/zoom, toggle layers, switch Compare tabs | No freeze longer than ~2 s. | ☐ | |
 
@@ -352,7 +352,7 @@ _Append-only audit log, project CRUD, export/import, share stub._
 | **LOG-01** | Log entries | PRE-A | 1. Activate a scenario, Run, apply a preset, apply bids<br>2. Open the Decision log panel | Entries appear in time order: `activate_scenario`, `run_optimize`, `create_scenario` / `apply_sensitivity`, `apply_bids`. | ☐ | |
 | **LOG-02** | Filter / export / clear | LOG-01 | 1. Filter by run_optimize<br>2. **Export JSON**<br>3. Clear | The filter works. Export downloads `<project>.decision-log.json`. Clear empties the log. | ☐ | |
 | **LOG-03** | Persistence | LOG-01 | 1. Reload | Entries persist in the project snapshot. | ☐ | |
-| **LOG-04** | All 13 action types | PRE-A | 1. Trigger each: create_scenario, activate_scenario, run_optimize, apply_hub, apply_territory, apply_roadmap, optimize_timing, robust_optimize, apply_bom, apply_bids, apply_sensitivity, handoff_export, share | Each appears at least once. `optimize_timing` needs the RMP-05 workaround (D-01). `apply_bom` needs PRD-08. | ☐ | |
+| **LOG-04** | All 13 action types | PRE-A | 1. Trigger each: create_scenario, activate_scenario, run_optimize, apply_hub, apply_territory, apply_roadmap, optimize_timing, robust_optimize, apply_bom, apply_bids, apply_sensitivity, handoff_export, share | Each appears at least once. `optimize_timing` comes from RMP-03 (D-01 fixed). `apply_bom` needs PRD-08. | ☐ | |
 | **LOG-05** | Projects CRUD | PRE-A | 1. New → Rename → Duplicate → Export → Open → Delete | Each works. Export gives `<name>.flowform.json`. With one project left, Delete is disabled (*Keep at least one project*). | ☐ | |
 | **LOG-06** | Project isolation | LOG-05 | 1. Run in project A, then switch to B | B does not show A's optimize scenario. | ☐ | |
 | **LOG-07** | Share stub | PRE-A | 1. Top chrome **Share** | Shows a `flowform://share?…` link and downloads `<name>.share.json` (read-only stub). Log `share`. | ☐ | |
@@ -382,17 +382,17 @@ _Contract checks without the UI. Run from `apps/api` with the venv active, API o
 | **API-01** | Build sample payload | PRE-E | 1. python3 -c "import json; from tests.test_demo_cost_scaling import sample_payload; json.dump(sample_payload(), open('/tmp/ff-sample.json','w'))" | `/tmp/ff-sample.json` is written. | ☐ | |
 | **API-02** | POST /optimize | API-01 | 1. curl -s -X POST localhost:5182/optimize -H 'content-type: application/json' -d @/tmp/ff-sample.json \| python3 -m json.tool | `status Optimal`, `solver pulp-highs`, `objectiveBreakdown.totalM 98.2706`, `transportM 95.6706`, `fixedOpexM 2.6`, `closedIds ["n8"]`, `kpis.servicePct 100.0`, `costScale.offLanePremium 1.35`, `uncoveredPenaltyPerUnit 15.0`. No `explain` key. | ☐ | |
 | **API-03** | POST /optimize/explain | API-01 | 1. curl -s -X POST localhost:5182/optimize/explain -H 'content-type: application/json' -d @/tmp/ff-sample.json \| python3 -c "import json,sys; e=json.load(sys.stdin)['explain']; print(e['headline']); print(e['topOpenedIds'], e['topClosedIds'])" | The NET-06 headline, then `['n2', 'n1', 'n3'] ['n8']`. | ☐ | |
-| **API-04** | No l9 → infeasible | API-01 | 1. python3 -c "import json; p=json.load(open('/tmp/ff-sample.json')); p['network']['lanes']=[l for l in p['network']['lanes'] if l['id']!='l9']; json.dump(p, open('/tmp/ff-nol9.json','w'))"<br>2. curl -s -X POST localhost:5182/optimize -H 'content-type: application/json' -d @/tmp/ff-nol9.json \| python3 -c "import json,sys; r=json.load(sys.stdin); h=r['infeasibilityReport']['hints'][0]; print(r['status'], h['code'], h['entities'])" | `Infeasible UNREACHABLE_DEMAND ['n6/sku-hazmat']` | ☐ | |
+| **API-04** | No l9 → infeasible | API-01 | 1. python3 -c "import json; p=json.load(open('/tmp/ff-sample.json')); p['network']['lanes']=[l for l in p['network']['lanes'] if l['id']!='l9']; json.dump(p, open('/tmp/ff-nol9.json','w'))"<br>2. curl -s -X POST localhost:5182/optimize -H 'content-type: application/json' -d @/tmp/ff-nol9.json \| python3 -c "import json,sys; r=json.load(sys.stdin); h=r['infeasibilityReport']['hints'][0]; print(r['status'], h['code'], h['entities'])" | `Infeasible MIN_THROUGHPUT_CONFLICT ['n2']` (then `UNREACHABLE_DEMAND ['n6/sku-hazmat']` as info). | ☐ | |
 | **API-05** | Stress-200 timing | PRE-E | 1. python3 -c "import json,time,urllib.request as u; from tests.enterprise_payload import load_enterprise_pack as L, pack_to_optimize_payload as P; p=P(L('stress-200-demand.enterprise.json')); t=time.time(); r=json.load(u.urlopen(u.Request('http://127.0.0.1:5182/optimize', json.dumps(p).encode(), {'content-type':'application/json'}))); print(r['status'], r['objectiveBreakdown']['totalM'], len(r['openIds']), r['solveSeconds'], round(time.time()-t,2))" | `Optimal 176.8117 9 <0.85–1.35> <wall s>` (176.8118 on the Mac). | ☐ | |
-| **API-06** | Multi-period replay (D-01) | PRE-A + DevTools | 1. Roadmap → Optimize timing; DevTools → Network → right-click `/optimize/multi-period` → Copy as cURL; replay it in the terminal | `ok false`, `status Infeasible`, hint `MULTI_PERIOD_INFEASIBLE`. The log includes *Facility roadmap-kc-dc already open — open event(s) ignored in linkage.* Without the KC event: `Optimal`, `npv.totalM 111.9095`. | ☐ | |
-| **API-07** | Stochastic replay | PRE-A + DevTools | 1. Run SCN-08; Copy as cURL for `/optimize/stochastic`; replay it | `expectedCostM 21.13445`, `worstCostM 24.94375`, `firstStage.openIds [n1,n2,n3,n8]`, `evpi.evpiGapM 0.0`. Change objective to minimax → `objectiveValueM 24.94375`; cvar_lite → `22.27724`. | ☐ | |
+| **API-06** | Multi-period replay | PRE-A + DevTools | 1. Roadmap → Optimize timing; DevTools → Network → right-click `/optimize/multi-period` → Copy as cURL; replay it in the terminal | `ok true`, `status Optimal`, `npv.totalM 119.7942` (fresh) — log *Facility roadmap-kc-dc has an open event — starts closed at Y0.* Force timeline: `128.361`. | ☐ | |
+| **API-07** | Stochastic replay | PRE-A + DevTools | 1. Run SCN-08; Copy as cURL for `/optimize/stochastic`; replay it | `modelBasis full`, `expectedCostM 101.14067`, `worstCostM 122.1882`, `firstStage.openIds [n1,n2,n3]`, `evpi.evpiGapM 0.0`. Minimax → `objectiveValueM 122.1882`; cvar_lite → `107.454929`. | ☐ | |
 | **API-08** | 422 schema error | PRE-E | 1. curl -s -w ' %{http_code}' -X POST localhost:5182/optimize -H 'content-type: application/json' -d '{"network":{}}' | HTTP **422**, `loc [body, constraints]`, `Field required`. | ☐ | |
 | **API-09** | 400 empty network | PRE-E | 1. curl -s -w ' %{http_code}' -X POST localhost:5182/optimize -H 'content-type: application/json' -d '{"network":{"nodes":[],"lanes":[]},"constraints":{}}' | HTTP **400** `No facility nodes (dc/plant/candidate) in network.` | ☐ | |
 | **API-10** | 400 multi-period without demand | PRE-E | 1. curl -s -w ' %{http_code}' -X POST localhost:5182/optimize/multi-period -H 'content-type: application/json' -d '{"network":{"nodes":[],"lanes":[]},"constraints":{},"roadmap":{"events":[]}}' | HTTP **400** `No demand nodes in network.` | ☐ | |
 | **API-11** | 400 stochastic with 1 scenario | API-07 | 1. Edit the replayed body down to 1 scenario | HTTP **400** `Need 2–5 scenarios, got 1.` | ☐ | |
 | **API-12** | Cost knobs | API-01 | 1. Add `offLanePremium: 1.5` and `uncoveredPenaltyPerUnit: 40` to `constraints`; POST | `costScale.offLanePremium 1.5`, `uncoveredPenaltyPerUnit 40`. | ☐ | |
 | **API-13** | CORS allows 5180 (not 5173) | SET-02 | 1. curl -s -i -X OPTIONS localhost:5182/optimize -H 'Origin: http://localhost:5180' -H 'Access-Control-Request-Method: POST'<br>2. Repeat with Origin http://localhost:5173 | 5180 → `access-control-allow-origin: http://localhost:5180` (5181 is also allowed). 5173 → HTTP 400 with no allow-origin header. | ☐ | |
-| **API-14** | Carbon price (D-05) | API-01 | 1. Add `carbonPricePerTonne: 100`; POST | `objectiveBreakdown.carbonM 197.3422`, total **296.4632**, while `kpis.transportCo2Kt` is 2.704. This is D-05. | ☐ | |
+| **API-14** | Carbon price | API-01 | 1. Add `carbonPricePerTonne: 100`; POST | `objectiveBreakdown.carbonM 197.3422`, total **296.4632**, `kpis.transportCo2Tonnes 1973422.4` → 100 × 1,973,422 t / 1e6 = **$197.34M** (consistent; D-05 fixed). Without a carbon price: 2,703,523 t. | ☐ | |
 
 ## Regression suite
 
@@ -406,31 +406,31 @@ Run this after any change to `apps/api/app/*` or `apps/web/src/data/*`. It takes
 | **REG-04** | Stress-200: Optimal ≈$176.81M, 9 open, 6 binding lanes, < 60 s | STR-03, STR-08 | ☐ | |
 | **REG-05** | Stress-120: Optimal ≈$89.12M, 3 binding lanes | STR-07 | ☐ | |
 | **REG-06** | Import blocks on errors and loads on warnings | DAT-N1, DAT-N6 | ☐ | |
-| **REG-07** | Robust built-in shocks: E $21.13M / worst $24.94M | SCN-08 | ☐ | |
-| **REG-08** | Roadmap Optimize timing (Fail until D-01 is fixed) | RMP-03 | ☐ | |
+| **REG-07** | Robust built-in shocks: E $101.14M / worst $122.19M | SCN-08 | ☐ | |
+| **REG-08** | Roadmap Optimize timing Optimal: choose $119.79M / force $128.36M | RMP-03 | ☐ | |
 | **REG-09** | Heuristic fallback when the API is down (58.8%) | RUN-09 | ☐ | |
 | **REG-10** | Sensitivity P10/P50/P90 44.34 / 48.29 / 51.92 | SEN-01 | ☐ | |
 | **REG-11** | DES-lite fill 98% / late 2% | SEN-05 | ☐ | |
 | **REG-12** | Brief MD/HTML + Handoff JSON/MD downloads; counts 8/9/5/3/5 | BRF-04, HND-02 | ☐ | |
 | **REG-13** | Merge sample: 14/14, 2 conflicts | MRG-01, MRG-02 | ☐ | |
 | **REG-14** | Theme persists; ? and Esc behave; web on port 5180 | UX-01..05, SET-04 | ☐ | |
-| **REG-15** | pytest 54 passed; web test:data + build green | SET-05, SET-06 | ☐ | |
+| **REG-15** | pytest 65 passed; web test:data (incl. defectFixes) + build green | SET-05, SET-06 | ☐ | |
 | **REG-16** | OpenFreeMap default basemap, no key | SET-07 | ☐ | |
 
 ## Defect log
 
-Template: copy a row per defect. Severity is High (blocks a workflow), Medium (wrong result with a workaround), or Low (cosmetic or diagnostic). The pre-filled rows are the defects found while capturing the expected values (details in the blueprint §11).
+Template: copy a row per defect. Severity is High (blocks a workflow), Medium (wrong result with a workaround), or Low (cosmetic or diagnostic). The pre-filled rows are the defects found while capturing the expected values (details in the blueprint §11); all eight are Fixed in `a6d3fae` (Actual column = verified post-fix result).
 
 | Defect ID | Date | Tester | Test ID | Severity | Summary | Steps to reproduce | Expected | Actual | Build | Status | Owner |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| D-01 | 2026-10-17 | capture | RMP-03 / API-06 | High | Roadmap Optimize timing is Infeasible on the default roadmap: the materialized KC open-event node is treated as already open | see RMP-03 | see test | see test | 1b2afc2 | Open | |
-| D-02 | 2026-10-17 | capture | INF-03 / INF-04 | Medium | No-l9 is diagnosed as UNREACHABLE_DEMAND; the real blocker is facility capacityMin | see INF-03 | see test | see test | 1b2afc2 | Open | |
-| D-03 | 2026-10-17 | capture | LAN-09 | Low | Lane-capacity infeasibility returns no hints | see LAN-09 | see test | see test | 1b2afc2 | Open | |
-| D-04 | 2026-10-17 | capture | SCN-13 | Medium | Robust forces existing sites open; robust $ omit BOM/SKUs | see SCN-13 | see test | see test | 1b2afc2 | Open | |
-| D-05 | 2026-10-17 | capture | API-14 | Medium | Carbon-price magnitude is inconsistent with the reported CO₂ | see API-14 | see test | see test | 1b2afc2 | Open | |
-| D-06 | 2026-10-17 | capture | STR-04 | Low | kpis.costM excludes lane fixed charges | see STR-04 | see test | see test | 1b2afc2 | Open | |
-| D-07 | 2026-10-17 | capture | NET-13 | Low | maxFacilities excludes plants (undocumented) | see NET-13 | see test | see test | 1b2afc2 | Open | |
-| D-08 | 2026-10-17 | capture | SEN-09 | Low | Resilience flags every facility critical on Baseline (58.8% < 95%) | see SEN-09 | see test | see test | 1b2afc2 | Open | |
+| D-01 | 2026-10-17 | capture | RMP-03 / API-06 | High | Roadmap Optimize timing is Infeasible on the default roadmap: the materialized KC open-event node is treated as already open | see RMP-03 | see test | Fixed a6d3fae — sites with an open event start closed; default roadmap Optimal (choose $119.79M / force $128.36M) | 1b2afc2 → a6d3fae | Fixed | |
+| D-02 | 2026-10-17 | capture | INF-03 / INF-04 | Medium | No-l9 is diagnosed as UNREACHABLE_DEMAND; the real blocker is facility capacityMin | see INF-03 | see test | Fixed a6d3fae — relaxation probe reports MIN_THROUGHPUT_CONFLICT (n2 10800 vs 9200; relaxed 91.8%, $122.76M) | 1b2afc2 → a6d3fae | Fixed | |
+| D-03 | 2026-10-17 | capture | LAN-09 | Low | Lane-capacity infeasibility returns no hints | see LAN-09 | see test | Fixed a6d3fae — LANE_CAPACITY_CONFLICT: l9 cap 1000 vs 2280 (short 1280) + min-throughput | 1b2afc2 → a6d3fae | Fixed | |
+| D-04 | 2026-10-17 | capture | SCN-13 | Medium | Robust forces existing sites open; robust $ omit BOM/SKUs | see SCN-13 | see test | Fixed a6d3fae — robust on the full Run model; opens n1,n2,n3; E $101.14M / worst $122.19M; base = Run $98.27M | 1b2afc2 → a6d3fae | Fixed | |
+| D-05 | 2026-10-17 | capture | API-14 | Medium | Carbon-price magnitude is inconsistent with the reported CO₂ | see API-14 | see test | Fixed a6d3fae — CO₂ per physical unit; carbonM 197.3422 = 100 × 1,973,422 t | 1b2afc2 → a6d3fae | Fixed | |
+| D-06 | 2026-10-17 | capture | STR-04 | Low | kpis.costM excludes lane fixed charges | see STR-04 | see test | Fixed a6d3fae — costM includes lane fixed (stress-200 $176.8M) | 1b2afc2 → a6d3fae | Fixed | |
+| D-07 | 2026-10-17 | capture | NET-13 | Low | maxFacilities excludes plants (undocumented) | see NET-13 | see test | Fixed a6d3fae — maxFacilities = Max DCs (plants not counted), optional maxPlants; UI labelled | 1b2afc2 → a6d3fae | Fixed | |
+| D-08 | 2026-10-17 | capture | SEN-09 | Low | Resilience flags every facility critical on Baseline (58.8% < 95%) | see SEN-09 | see test | Fixed a6d3fae — SPOF needs a real drop; Baseline critical = Austin Plant, Columbus DC (score 35) | 1b2afc2 → a6d3fae | Fixed | |
 | D-__ | | | | | | | | | | | |
 
 ## Sign-off
