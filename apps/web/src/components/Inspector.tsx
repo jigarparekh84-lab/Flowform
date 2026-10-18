@@ -22,6 +22,7 @@ import {
 import { kindLabel, type FacilityStatus } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
 import { EmptyState } from './ui/EmptyState'
+import { FacilityExplainCard } from './ExplainCards'
 
 type Props = {
   selectedIds: string[]
@@ -51,6 +52,7 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
     network,
     bom,
     setBomHighlight,
+    activeScenario,
   } = useFlowform()
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null
@@ -63,6 +65,11 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
       ? lanes.find((l) => l.id === primaryId)
       : undefined
   const multi = selectedIds.length > 1
+  const explain = activeScenario?.optimizeMeta?.explain
+  const explainFx =
+    node && explain
+      ? explain.facilities.find((f) => f.facilityId === node.id)
+      : undefined
 
   const facility = node
     ? constraints.facilities.find((f) => f.nodeId === node.id)
@@ -172,6 +179,13 @@ export function Inspector({ selectedIds, selectedKind }: Props) {
           {selectedIds.length} {selectedKind}
           {selectedIds.length === 1 ? '' : 's'} selected
         </p>
+      )}
+      {node && explainFx && explain && (
+        <FacilityExplainCard
+          fx={explainFx}
+          explain={explain}
+          nameOf={(id) => nodeById(id)?.name ?? id}
+        />
       )}
       {node && (
         <>

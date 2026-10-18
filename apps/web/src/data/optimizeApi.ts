@@ -10,6 +10,7 @@ import type {
   OptimizeLaneCapacityRow,
   OptimizeLaneUtilizationRow,
   OptimizeModeChoiceSummary,
+  OptimizeExplain,
   OptimizeModeMixRow,
   Scenario,
 } from './sampleNetwork'
@@ -128,7 +129,9 @@ export type ApiOptimizeResponse = {
   flows: ApiFlow[]
   objectiveBreakdown?: ApiObjectiveBreakdown
   shadowPrices?: ApiShadowPrice[]
-  sensitivity?: { method?: string; note?: string }
+  sensitivity?: { method?: string; laneMethod?: string; note?: string; dualSeconds?: number }
+  /** Depth 8 — present when the request set explain=true. */
+  explain?: OptimizeExplain
   commodityMode?: string
   hardServiceConstraints?: boolean
   productBreakdown?: ApiProductBreakdown[]
@@ -220,6 +223,8 @@ export async function postOptimize(args: {
   bomDemand?: OptimizeBomDemand[]
   /** When set, echoed in API log / client status (enterprise-data-v1). */
   enterpriseSchemaVersion?: string
+  /** Depth 8: request why-opened/closed explain cards (counterfactual re-solves). */
+  explain?: boolean | { maxCounterfactuals?: number; budgetSec?: number; timeLimitSec?: number }
   baseUrl?: string
 }): Promise<ApiOptimizeResponse> {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
@@ -270,6 +275,7 @@ export async function postOptimize(args: {
       bom: bomRows.length ? { rows: bomRows } : undefined,
       bomDemand: bomDemand.length ? bomDemand : undefined,
       enterpriseSchemaVersion: args.enterpriseSchemaVersion,
+      explain: args.explain || undefined,
     }),
   })
   if (!res.ok) {

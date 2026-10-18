@@ -63,6 +63,7 @@ import {
   type CostSensitivityResult,
 } from '../data/costSensitivity'
 import { useFlowform } from '../state/FlowformContext'
+import { WhyThisNetwork } from './ExplainCards'
 
 type ViewMode =
   | 'matrix'
@@ -634,6 +635,20 @@ function MatrixView({
       )}
 
       <MipLaneModePanel scenarios={withBreakdown} />
+
+      {selected
+        .filter((s) => s.optimizeMeta?.explain)
+        .slice(0, 2)
+        .map((s) => (
+          <div key={`why-${s.id}`} style={{ marginBottom: '1rem' }}>
+            <WhyThisNetwork
+              scenario={s}
+              explain={s.optimizeMeta!.explain!}
+              limit={3}
+              title={`Why this network — ${s.name}`}
+            />
+          </div>
+        ))}
 
       {selected.some((s) => s.optimizeMeta?.infeasibilityReport) && (
         <section className="library-card infeas-card" aria-label="Infeasibility report" style={{ marginBottom: '1rem' }}>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { CommentsPanel } from './CommentsPanel'
 import { DecisionLogPanel } from './DecisionLogPanel'
+import { WhyThisNetwork, explainMarkdown } from './ExplainCards'
 import {
   buildBriefHtml,
   buildBriefMarkdown,
@@ -56,6 +57,12 @@ export function DecisionBrief({ onHandoff }: Props) {
     cards.find((s) => s.id !== reference.id) ??
     cards[0]
 
+  // Depth 8: "Why this network" from the recommended scenario's MIP explain
+  // block, else the first briefed scenario that carries one.
+  const explainScenario =
+    (recommended?.optimizeMeta?.explain ? recommended : undefined) ??
+    cards.find((s) => s.optimizeMeta?.explain)
+
   function toggleAssumption(id: string) {
     updateBrief({
       assumptions: brief.assumptions.map((a) =>
@@ -91,6 +98,9 @@ export function DecisionBrief({ onHandoff }: Props) {
     }
     if (stochasticResult?.ok) {
       parts.push(formatStochasticBriefSection(stochasticResult))
+    }
+    if (explainScenario?.optimizeMeta?.explain) {
+      parts.push(explainMarkdown(explainScenario.optimizeMeta.explain).join('\n'))
     }
     return parts.join('\n\n')
   }
@@ -196,6 +206,18 @@ export function DecisionBrief({ onHandoff }: Props) {
             />
           ))}
         </div>
+
+        {explainScenario?.optimizeMeta?.explain ? (
+          <WhyThisNetwork
+            scenario={explainScenario}
+            explain={explainScenario.optimizeMeta.explain}
+          />
+        ) : (
+          <p className="muted tiny why-network-empty">
+            Why this network: run Optimize with the API online to get MIP
+            explain cards (counterfactual flip cost + capacity duals).
+          </p>
+        )}
 
         <div className="brief-bottom">
           <section className="library-card">

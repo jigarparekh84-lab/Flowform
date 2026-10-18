@@ -153,6 +153,102 @@ export type OptimizeShadowPrice = {
   method?: string
 }
 
+/** Depth 8: one ranked plain-language reason behind a facility decision. */
+export type OptimizeExplainReason = {
+  text: string
+  kind: 'demand' | 'counterfactual' | 'capacity' | 'utilization' | 'cost' | 'service' | 'locked' | string
+  tone: 'support' | 'risk' | 'info' | string
+  score: number
+}
+
+/** Depth 8: counterfactual MIP re-solve with the facility forced to the opposite state. */
+export type OptimizeExplainCounterfactual = {
+  evaluated: boolean
+  reason?: string
+  flipTo?: 'open' | 'closed'
+  status?: string
+  seconds?: number
+  lockLifted?: boolean
+  costM?: number
+  deltaM?: number
+  deltaPct?: number | null
+  servicePct?: number
+  serviceDeltaPct?: number
+  fixedDeltaM?: number
+  variableDeltaM?: number
+  transportDeltaM?: number
+  penaltyDeltaM?: number
+  operatingDeltaM?: number
+  unservedUnits?: number
+  unservedDeltaUnits?: number
+  alsoOpens?: string[]
+  alsoCloses?: string[]
+  withinGap?: boolean
+  error?: string
+}
+
+/** Depth 8: "why was this site opened / closed" explain card payload. */
+export type OptimizeExplainFacility = {
+  facilityId: string
+  name: string
+  kind?: string
+  tier: 'dc' | 'plant'
+  decision: 'opened' | 'kept-open' | 'closed' | 'kept-closed'
+  open: boolean
+  wasOpen: boolean
+  locked?: 'open' | 'closed' | null
+  fixedCapexM: number
+  fixedOpexM: number
+  fixedCostM: number
+  inboundTransportM: number
+  outboundTransportM: number
+  variableCostM: number
+  throughput: number
+  capacityMax: number
+  utilizationPct: number
+  capacityDual: number | null
+  capacityDualMethod?: string | null
+  capacityBinding: boolean
+  openReducedCostM?: number | null
+  customersServed: number
+  demandServed: number
+  demandSharePct: number
+  reachableDemandPct: number
+  costToServeM: number
+  costToServeSharePct: number
+  landedCostPerUnit: number | null
+  landedCostRank: number | null
+  impactScore: number
+  counterfactual: OptimizeExplainCounterfactual
+  flipCostM: number | null
+  flipOperatingCostM?: number | null
+  reasons: OptimizeExplainReason[]
+  headline: string
+}
+
+export type OptimizeExplain = {
+  enabled: boolean
+  method: string
+  baseCostM: number
+  baseServicePct: number
+  gapToleranceM: number
+  headline: string
+  facilities: OptimizeExplainFacility[]
+  topOpenedIds: string[]
+  topClosedIds: string[]
+  maxCounterfactuals: number
+  timing: {
+    solveSeconds: number
+    dualSeconds: number
+    counterfactualCount: number
+    counterfactualSeconds: number
+    perSolveTimeLimitSec: number
+    budgetSec: number
+    explainSeconds: number
+  }
+  note?: string
+}
+
 export type OptimizeMeta = {
   /** Client heuristic or API MIP solver id (e.g. pulp-highs, pulp-cbc). */
   heuristic: 'v1-greedy' | 'pulp-highs' | 'pulp-cbc' | string
@@ -220,6 +316,8 @@ export type OptimizeMeta = {
   /** Depth 7: binding subset of laneCapacity. */
   bindingLaneCapacities?: OptimizeLaneCapacityRow[]
   modeChoice?: OptimizeModeChoiceSummary
+  /** Depth 8: why-opened/closed explain block (API explain=true). */
+  explain?: OptimizeExplain
   /** Positions for map-diff when nodes are not in the sample set. */
   marks?: { id: string; kind: 'open' | 'close'; label: string; x: number; y: number }[]
 }

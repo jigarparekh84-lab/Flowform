@@ -1247,6 +1247,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       laneCapacity?: ApiOptimizeResponse['laneCapacity']
       bindingLaneCapacities?: ApiOptimizeResponse['bindingLaneCapacities']
       modeChoice?: ApiOptimizeResponse['modeChoice']
+      explain?: ApiOptimizeResponse['explain']
       log: string[]
       name: string
       kpis: Scenario['kpis']
@@ -1284,6 +1285,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
           laneCapacity: args.laneCapacity,
           bindingLaneCapacities: args.bindingLaneCapacities,
           modeChoice: args.modeChoice,
+          explain: args.explain,
           solvedAt: new Date().toISOString(),
           marks: [
             ...openedIds.map((id) => {
@@ -1407,6 +1409,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             bom: mipPayload.bom,
             bomDemand: mipPayload.network.bomDemand,
             enterpriseSchemaVersion: mipPayload.enterpriseSchemaVersion,
+            explain: { maxCounterfactuals: 12, budgetSec: 30 },
           })
           setOptimizeStatus({
             phase: 'running',
@@ -1462,6 +1465,7 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
             laneCapacity: api.laneCapacity,
             bindingLaneCapacities: api.bindingLaneCapacities,
             modeChoice: api.modeChoice,
+            explain: api.explain,
             log: api.log,
             name: infeas
               ? `Optimize Infeasible ${new Date().toLocaleTimeString()}`

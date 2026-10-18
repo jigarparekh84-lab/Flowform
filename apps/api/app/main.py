@@ -21,9 +21,11 @@ app = FastAPI(
         "infeasibility diagnostics, objective breakdown + capacity duals. "
         "Lane transport mode choice (truck / rail / intermodal: $/unit, transit, CO2, "
         "capacity, fixed charge) with lane + lane-mode capacity and LP duals. "
-        "Multi-period CapEx NPV: POST /optimize/multi-period. Stochastic scenario-tree / robust: POST /optimize/stochastic."
+        "Multi-period CapEx NPV: POST /optimize/multi-period. Stochastic scenario-tree / robust: POST /optimize/stochastic. "
+        "Explain cards (why each site is open/closed, real HiGHS facility duals, "
+        "counterfactual flip cost): POST /optimize with explain=true or POST /optimize/explain."
     ),
-    version="0.6.0",
+    version="0.7.0",
 )
 
 app.add_middleware(
@@ -148,6 +150,19 @@ class OptimizeRequest(BaseModel):
         default=None,
         description="Client enterprise pack schema id (e.g. enterprise-data-v1)",
     )
+    explain: bool | dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Depth 8: when true, adds an `explain` block — per-facility "
+            "open/close rationale, cost-to-serve, capacity dual and "
+            "counterfactual re-solve (facility forced to the opposite state). "
+            "May be an object with maxCounterfactuals / timeLimitSec / budgetSec."
+        ),
+    )
+    explainOptions: dict[str, Any] | None = Field(
+        default=None,
+        description="maxCounterfactuals (default 12), timeLimitSec, budgetSec (60), topDecisions (6)",
+    )
 
 
 
@@ -208,25 +223,45 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "service": "flowform-api",
-        "model": "fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1+stochastic-scenario-tree-v1",
+        "model": "fixed-charge-multi-echelon-v1+multi-period-capex-npv-v1+stochastic-scenario-tree-v1+explain-v1",
     }
+
+
+def _optimize_payload(body: OptimizeRequest, force_explain: bool = False) -> dict[str, Any]:
+    explain: Any = body.explain
+    if force_explain and not explain:
+        explain = True
+    return {
+        "network": body.network,
+        "constraints": body.constraints,
+        "reference": body.reference or {},
+        "bom": body.bom if isinstance(body.bom, dict) else (
+            body.bom.model_dump() if body.bom else {}
+        ),
+        "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
+        "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
+        "explain": explain,
+        "explainOptions": body.explainOptions,
+    }
+
+
+@app.post("/optimize/explain")
+def optimize_explain(body: OptimizeRequest) -> dict[str, Any]:
+    """Optimize + explain block (same response as /optimize with explain=true)."""
+    try:
+        return solve_optimize(_optimize_payload(body, force_explain=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Explain failed: {e}") from e
 
 
 @app.post("/optimize")
 def optimize(body: OptimizeRequest) -> dict[str, Any]:
     try:
-        return solve_optimize(
-            {
-                "network": body.network,
-                "constraints": body.constraints,
-                "reference": body.reference or {},
-                "bom": body.bom if isinstance(body.bom, dict) else (
-                    body.bom.model_dump() if body.bom else {}
-                ),
-                "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
-                "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
-            }
-        )
+        return solve_optimize(_optimize_payload(body))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:

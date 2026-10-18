@@ -19,6 +19,12 @@ Model (depth slices 1–4, 7):
     fixed activation charge (binary); lane + lane-mode capacity constraints;
     hard service filters modes by transit; lane capacity LP duals; mode mix.
     Networks without mode/capacity data build the identical legacy model.
+  - Depth 8: facility capacity shadow prices read directly from HiGHS row
+    duals (same pure-LP pass as lanes, all binaries fixed) + optional
+    ``explain`` block: per-facility open/close rationale, cost-to-serve,
+    capacity dual and counterfactual re-solves (facility forced to the
+    opposite state) with $ flip penalty, service impact and ranked
+    plain-language reasons (see app/explain.py).
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from typing import Any
 import pulp
 
 from .diagnostics import diagnose_network_conflicts
+from .explain import build_explain, explain_options
 
 MILES_PER_UNIT = 12.0
 DEFAULT_TRANSPORT_PER_MILE = 0.002  # $M proxy per unit-mile when no lane rate
@@ -549,6 +556,26 @@ def _highs_row_duals(prob: Any) -> dict[str, float] | None:
     if len(duals) != len(names):
         return None
     return dict(zip(names, duals))
+
+
+def _highs_col_duals(prob: Any, vars_: list[Any]) -> dict[str, float] | None:
+    """Column duals (reduced costs) from the highspy model, keyed by var name."""
+    model = getattr(prob, "solverModel", None)
+    if model is None or not hasattr(model, "getSolution"):
+        return None
+    try:
+        sol = model.getSolution()
+        if not bool(getattr(sol, "dual_valid", True)):
+            return None
+        cd = [float(d) for d in sol.col_dual]
+    except Exception:  # noqa: BLE001
+        return None
+    out: dict[str, float] = {}
+    for v in vars_:
+        ix = getattr(v, "index", None)
+        if isinstance(ix, int) and 0 <= ix < len(cd):
+            out[v.name] = cd[ix]
+    return out
 
 
 def _vk(a: str, b: str, p: str, mk: str) -> tuple:
@@ -1515,8 +1542,10 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         if _facility_status(f, cmap) == "open" and f["id"] in y
     )
 
+    lane_fixed_expr = (
+        pulp.lpSum(lane_fixed_cost[k] * z[k] for k in z) if z else 0
+    )
     if z:
-        lane_fixed_expr = pulp.lpSum(lane_fixed_cost[k] * z[k] for k in z)
         prob += (
             transport_expr + capex_expr + opex_expr + uncov_expr + keep_bonus
             + lane_fixed_expr
@@ -1541,6 +1570,31 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     def _val(var: Any) -> float:
         v = pulp.value(var)
         return float(v) if v is not None else 0.0
+
+    def _ev(expr: Any) -> float:
+        v = pulp.value(expr)
+        return float(v) if v is not None else 0.0
+
+    def _cost_parts() -> dict[str, float]:
+        """True cost of the incumbent (objective minus the keep-open bonus)."""
+        tr = _ev(transport_expr)
+        cx = _ev(capex_expr)
+        ox = _ev(opex_expr)
+        un = 0.0 if uncovered is None else sum(_val(uncovered[k]) for k in uncovered)
+        pen = UNCOVERED_PENALTY * un
+        lf = _ev(lane_fixed_expr)
+        return {
+            "totalM": tr + cx + ox + pen + lf,
+            "transportM": tr,
+            "fixedCapexM": cx,
+            "fixedOpexM": ox,
+            "uncoveredPenaltyM": pen,
+            "laneFixedM": lf,
+            "uncovered": un,
+            "servicePct": max(0.0, min(100.0, (total_demand - un) / total_demand * 100)),
+        }
+
+    base_parts = _cost_parts()
 
     open_ids = [fid for fid in y if _val(y[fid]) > 0.5]
     seed_open = [
@@ -1781,125 +1835,120 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     ]
     transport_co2_kg = sum(m["co2Kg"] for m in mode_mix)
 
-    # Sensitivity duals
-    shadow_prices: list[dict[str, Any]] = []
-    dual_method = "none"
+    # --- Depth 8: ONE pure LP with every binary fixed at its MIP value; read
+    # facility-capacity AND lane-capacity duals straight from HiGHS. ---
+    t_dual0 = time.perf_counter()
+    row_duals: dict[str, float] | None = None
+    col_duals: dict[str, float] | None = None
+    lp_dual_status = "none"
+    bins = [(v, 1.0 if fid in open_ids else 0.0) for fid, v in y.items()]
+    bins += [(v, 1.0 if z_on.get(k) else 0.0) for k, v in z.items()]
+    saved_vals = {v.name: v.varValue for v in prob.variables()}
+    saved_bins = [(v, v.cat, v.lowBound, v.upBound) for v, _ in bins]
     try:
-        lp = prob.copy()
-        lp.name = "flowform_multi_echelon_lp"
-        for fid in y:
-            fixed = 1.0 if fid in open_ids else 0.0
-            lp += y[fid] == fixed, _safe_name("fix_y", fid)
+        for v, fixed in bins:
+            v.cat = pulp.LpContinuous
+            v.lowBound = fixed
+            v.upBound = fixed
         lp_solver, _ = _pick_solver([])
-        lp.solve(lp_solver)
-        dual_method = "fixed-MIP-LP-duals"
-        for fid, (constr, cap_max, _cap_min) in cap_constraints.items():
-            cname = _safe_name("cap", fid)
-            if cname not in lp.constraints:
-                continue
-            pi = _safe_dual(lp.constraints[cname])
-            thr = next(
-                (of["throughput"] for of in open_facilities if of["id"] == fid),
-                0.0,
-            )
-            slack = max(0.0, cap_max - thr) if fid in open_ids else cap_max
-            if pi is None:
-                binding = fid in open_ids and slack < max(1.0, 0.01 * cap_max)
-                pi_est = (-UNCOVERED_PENALTY * 0.001) if binding else 0.0
-                shadow_prices.append(
-                    {
-                        "facilityId": fid,
-                        "constraint": "capacity",
-                        "shadowPrice": round(pi_est, 6),
-                        "unit": "$M per unit capacity",
-                        "binding": binding,
-                        "slack": round(slack, 2),
-                        "method": "reduced-cost-proxy",
-                    }
-                )
-            else:
-                shadow_prices.append(
-                    {
-                        "facilityId": fid,
-                        "constraint": "capacity",
-                        "shadowPrice": round(pi, 6),
-                        "unit": "$M per unit capacity",
-                        "binding": abs(slack) < max(1.0, 0.01 * cap_max)
-                        and fid in open_ids,
-                        "slack": round(slack, 2),
-                        "method": "lp-dual",
-                    }
-                )
-        if shadow_prices and all(s.get("method") == "lp-dual" for s in shadow_prices):
-            dual_method = "lp-dual"
-        elif shadow_prices:
-            dual_method = "mixed-dual-proxy"
+        lp_status = prob.solve(lp_solver)
+        if pulp.LpStatus.get(lp_status) == "Optimal":
+            row_duals = _highs_row_duals(prob)
+            col_duals = _highs_col_duals(prob, [v for v, _ in bins])
+            lp_dual_status = "optimal"
+        else:
+            lp_dual_status = "not-optimal"
     except Exception as exc:  # noqa: BLE001
         log.append(f"Sensitivity dual pass skipped: {exc}")
-        dual_method = "failed"
-        for fid, (_constr, cap_max, _cap_min) in cap_constraints.items():
-            thr = next(
-                (of["throughput"] for of in open_facilities if of["id"] == fid),
-                0.0,
-            )
-            slack = max(0.0, cap_max - thr) if fid in open_ids else cap_max
-            binding = fid in open_ids and slack < max(1.0, 0.01 * cap_max)
+        lp_dual_status = "failed"
+    finally:
+        for v, cat, lo, up in saved_bins:
+            v.cat = cat
+            v.lowBound = lo
+            v.upBound = up
+        for v in prob.variables():
+            if v.name in saved_vals:
+                v.varValue = saved_vals[v.name]
+    dual_seconds = round(time.perf_counter() - t_dual0, 3)
+
+    def _row_dual(name: str) -> float | None:
+        if row_duals is not None and name in row_duals:
+            return row_duals[name]
+        if lp_dual_status != "optimal":
+            return None
+        c = prob.constraints.get(name)
+        return _safe_dual(c) if c is not None else None
+
+    # Facility capacity shadow prices (real HiGHS row duals of cap_<fid>)
+    shadow_prices: list[dict[str, Any]] = []
+    thr_by_fac = {of["id"]: float(of["throughput"]) for of in open_facilities}
+    for fid, (_constr, cap_max, _cap_min) in cap_constraints.items():
+        cname = _safe_name("cap", fid)
+        is_open = fid in open_ids
+        thr = thr_by_fac.get(fid, 0.0)
+        slack = max(0.0, cap_max - thr) if is_open else cap_max
+        tight = is_open and slack < max(1.0, 0.01 * cap_max)
+        pi = _row_dual(cname)
+        if pi is None:
+            # CBC / dual-less fallback: legacy reduced-cost proxy
             shadow_prices.append(
                 {
                     "facilityId": fid,
                     "constraint": "capacity",
                     "shadowPrice": round(
-                        (-UNCOVERED_PENALTY * 0.001) if binding else 0.0, 6
+                        (-UNCOVERED_PENALTY * 0.001) if tight else 0.0, 6
                     ),
                     "unit": "$M per unit capacity",
-                    "binding": binding,
+                    "binding": tight,
                     "slack": round(slack, 2),
                     "method": "reduced-cost-proxy",
                 }
             )
+            continue
+        if not is_open:
+            # Closed site: row reads "flow ≤ 0" (degenerate with link rows) —
+            # not a capacity limit, so no capacity dual.
+            pi = 0.0
+        if abs(pi) < 1e-12:
+            pi = 0.0
+        shadow_prices.append(
+            {
+                "facilityId": fid,
+                "constraint": "capacity",
+                "shadowPrice": round(pi, 6),
+                "unit": "$M per unit capacity",
+                "binding": bool(is_open and (tight or abs(pi) > 1e-7)),
+                "slack": round(slack, 2),
+                "method": "lp-dual",
+                **({} if is_open else {"closed": True}),
+            }
+        )
+    if not shadow_prices:
+        dual_method = "none" if lp_dual_status != "failed" else "failed"
+    elif all(sp["method"] == "lp-dual" for sp in shadow_prices):
+        dual_method = "lp-dual"
+    elif any(sp["method"] == "lp-dual" for sp in shadow_prices):
+        dual_method = "mixed-dual-proxy"
+    else:
+        dual_method = "reduced-cost-proxy" if lp_dual_status != "failed" else "failed"
 
-    # --- Lane capacity duals: pure LP with every binary fixed at its MIP value ---
+    # --- Lane capacity duals (same LP pass) ---
     lane_capacity: list[dict[str, Any]] = []
     lane_dual_method = "none"
     if lane_cap_rows:
-        lane_duals: dict[str, float | None] = {}
-        bins = [(v, 1.0 if fid in open_ids else 0.0) for fid, v in y.items()]
-        bins += [(v, 1.0 if z_on.get(k) else 0.0) for k, v in z.items()]
-        saved_vals = {v.name: v.varValue for v in prob.variables()}
-        saved_bins = [(v, v.cat, v.lowBound, v.upBound) for v, _ in bins]
-        try:
-            for v, fixed in bins:
-                v.cat = pulp.LpContinuous
-                v.lowBound = fixed
-                v.upBound = fixed
-            lp_solver, _ = _pick_solver([])
-            lp_status = prob.solve(lp_solver)
-            if pulp.LpStatus.get(lp_status) == "Optimal":
-                row_duals = _highs_row_duals(prob)
-                for row in lane_cap_rows:
-                    if row_duals is not None and row["name"] in row_duals:
-                        lane_duals[row["name"]] = row_duals[row["name"]]
-                    else:
-                        c = prob.constraints.get(row["name"])
-                        lane_duals[row["name"]] = _safe_dual(c) if c is not None else None
-                lane_dual_method = (
-                    "lp-dual"
-                    if any(v is not None for v in lane_duals.values())
-                    else "lp-no-duals"
-                )
-            else:
-                lane_dual_method = "lp-not-optimal"
-        except Exception as exc:  # noqa: BLE001
-            log.append(f"Lane-capacity dual pass skipped: {exc}")
+        lane_duals: dict[str, float | None] = {
+            row["name"]: _row_dual(row["name"]) for row in lane_cap_rows
+        }
+        if lp_dual_status == "optimal":
+            lane_dual_method = (
+                "lp-dual"
+                if any(v is not None for v in lane_duals.values())
+                else "lp-no-duals"
+            )
+        elif lp_dual_status == "failed":
             lane_dual_method = "failed"
-        finally:
-            for v, cat, lo, up in saved_bins:
-                v.cat = cat
-                v.lowBound = lo
-                v.upBound = up
-            for v in prob.variables():
-                if v.name in saved_vals:
-                    v.varValue = saved_vals[v.name]
+        else:
+            lane_dual_method = "lp-not-optimal"
 
         for row in lane_cap_rows:
             a, b, mk = row["from"], row["to"], row["mk"]
@@ -2051,7 +2100,7 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             + "."
         )
 
-    return {
+    result: dict[str, Any] = {
         "ok": True,
         "solver": solver_name,
         "status": status_name,
@@ -2069,10 +2118,13 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
             "method": dual_method,
             "laneMethod": lane_dual_method,
             "note": (
-                "Capacity shadow prices from LP with open/close binaries fixed; "
-                "fallback reduced-cost proxy when solver duals unavailable. "
-                "Lane capacity duals from a pure LP with all binaries fixed."
+                "Facility + lane capacity shadow prices are HiGHS row duals "
+                "from one pure LP with every open/close and lane-mode binary "
+                "fixed at its MIP value ($M objective change per extra unit of "
+                "capacity; negative = saving). Reduced-cost proxy only when "
+                "the solver returns no duals (e.g. CBC)."
             ),
+            "dualSeconds": dual_seconds,
         },
         "commodityMode": commodity_mode,
         "hardServiceConstraints": hard_service,
@@ -2106,6 +2158,90 @@ def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "log": log,
     }
+
+    # --- Depth 8: explain block (opt-in) ---
+    ex_opts = explain_options(payload)
+    if ex_opts["enabled"]:
+        locked: dict[str, str] = {}
+        for fid in y:
+            if _safe_name("forced_open", fid) in prob.constraints:
+                locked[fid] = "open"
+            elif _safe_name("forced_closed", fid) in prob.constraints:
+                locked[fid] = "closed"
+
+        def _counterfactual(fid: str, flip_to: int, time_limit: float) -> dict[str, Any]:
+            """Re-solve the MIP with ``fid`` forced to ``flip_to`` (lock lifted)."""
+            orig = dict(prob.constraints)
+            for nm in (_safe_name("forced_open", fid), _safe_name("forced_closed", fid)):
+                prob.constraints.pop(nm, None)
+            prob.addConstraint(y[fid] == flip_to, "cf_flip")
+            t0 = time.perf_counter()
+            try:
+                if solver_name == "pulp-highs":
+                    cf_solver = pulp.HiGHS(msg=False, timeLimit=time_limit)
+                else:
+                    cf_solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit)
+                st = prob.solve(cf_solver)
+                secs = time.perf_counter() - t0
+                st_name = pulp.LpStatus.get(st, str(st))
+                if st != 1:
+                    return {"status": "infeasible" if st in (-1, -3) else st_name.lower(),
+                            "seconds": round(secs, 3)}
+                parts = _cost_parts()
+                cf_open = [k for k in y if _val(y[k]) > 0.5]
+                return {
+                    "status": "optimal"
+                    if getattr(prob, "sol_status", 1) == pulp.LpSolutionOptimal
+                    else "time-limit",
+                    "seconds": round(secs, 3),
+                    "parts": parts,
+                    "openIds": cf_open,
+                }
+            except Exception as exc:  # noqa: BLE001
+                return {"status": "error", "error": str(exc),
+                        "seconds": round(time.perf_counter() - t0, 3)}
+            finally:
+                prob.constraints.clear()
+                prob.constraints.update(orig)
+
+        saved_cf = {v.name: v.varValue for v in prob.variables()}
+        try:
+            result["explain"] = build_explain(
+                decidable=decidable,
+                fac_by_id=fac_by_id,
+                y_ids=list(y.keys()),
+                open_ids=open_ids,
+                seed_open=seed_open,
+                locked=locked,
+                capex_cost=capex_cost,
+                opex_cost=opex_cost,
+                cap_info={fid: v[1] for fid, v in cap_constraints.items()},
+                cmap=cmap,
+                flows=flows,
+                open_facilities=open_facilities,
+                shadow_prices=shadow_prices,
+                col_duals={fid: (col_duals or {}).get(y[fid].name) for fid in y},
+                reachable=reachable,
+                dem_map=dem_map,
+                total_demand=total_demand,
+                base_parts=base_parts,
+                hard_service=hard_service,
+                solve_seconds=solve_seconds,
+                dual_seconds=dual_seconds,
+                counterfactual=_counterfactual,
+                options=ex_opts,
+                parse_volume=_parse_volume,
+            )
+        finally:
+            for v in prob.variables():
+                if v.name in saved_cf:
+                    v.varValue = saved_cf[v.name]
+        log.append(
+            f"Explain: {result['explain']['timing']['counterfactualCount']} "
+            f"counterfactual re-solve(s) in "
+            f"{result['explain']['timing']['counterfactualSeconds']:.2f}s."
+        )
+    return result
 
 
 def _infeasible_result(

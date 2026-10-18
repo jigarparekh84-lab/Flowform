@@ -224,3 +224,28 @@ pytest -q tests/test_stochastic.py
 ```bash
 pytest -q tests/test_depth7_lane_modes.py
 ```
+
+## Depth slice 8 — Why-opened/closed explain cards + real facility duals
+
+- **Facility capacity duals** are now real HiGHS row duals of `cap_<facility>`, read
+  from the same pure LP (every open/close + lane-mode binary fixed at its MIP value)
+  that already serves lane-capacity duals. One LP pass replaces the old copy+MIP
+  re-solve; the flat −0.08 proxy only remains as a fallback when the solver returns
+  no duals (CBC). Closed sites report `shadowPrice: 0, closed: true`.
+- **Explain block** (opt-in): `POST /optimize` with `"explain": true` (or
+  `{"maxCounterfactuals": 12, "timeLimitSec": …, "budgetSec": 60}`), or
+  `POST /optimize/explain`. Per decidable facility: decision (opened / kept-open /
+  closed / kept-closed), fixed CapEx+OpEx, inbound/outbound transport, utilization,
+  capacity dual, customers + demand share, cost-to-serve share + landed-cost rank,
+  and a **counterfactual**: the full MIP re-solved with that facility forced to the
+  opposite state (scenario lock lifted), giving the $ flip penalty (objective,
+  operating-cost and unmet-demand-penalty split), service impact and which other
+  sites open/close. Ranked plain-language `reasons[]` + `headline`.
+- Counterfactuals: all facilities when ≤ `maxCounterfactuals` (default 12), else
+  top-N by impact (≥⅓ slots reserved for closed candidates), bounded by `budgetSec`.
+  Stress-200: 11 re-solves ≈ 0.3 s on top of the base solve.
+- Without `explain` the response is unchanged (no `explain` key).
+
+```bash
+pytest -q tests/test_depth8_explain.py
+```
