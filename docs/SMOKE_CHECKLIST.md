@@ -1,5 +1,7 @@
 # Flowform — manual smoke checklist
 
+> **Quick smoke only (~10 min).** For full manual QA, use the **[Manual Test Workbook](MANUAL_TEST_WORKBOOK.md)** (20 workflows, 199 cases with captured expected values, a regression suite, and a defect log). An Excel copy with Pass/Fail dropdowns and status counts is at [`Flowform_Manual_Test_Workbook.xlsx`](Flowform_Manual_Test_Workbook.xlsx). The product and architecture reference is the **[Master Blueprint](MASTER_BLUEPRINT.md)** ([`.docx`](Flowform_Master_Blueprint.docx)). Workbook case IDs are shown as *(→ RUN-02)*.
+
 Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional API on **5182**). Use a fresh browser profile or clear Flowform `localStorage` keys if state looks stale.
 
 **Default basemap:** OpenFreeMap (no API key). Do not require Carto for smoke.
@@ -74,7 +76,8 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
 
 ## 7. Roadmap
 
-- [ ] CapEx events (Y0–Y5) show on Gantt-lite; cumulative CapEx / capacity KPIs update.
+- [ ] CapEx events (Y0–Y5) show on Gantt-lite; cumulative CapEx / capacity KPIs update (Y5 cumulative $29.2M).
+- [ ] Known defect **D-01**: **Optimize timing** on the default roadmap returns Infeasible. Remove the *Open Kansas City DC* event to get NPV $111.91M *(→ RMP-03, RMP-05)*.
 - [ ] Apply a year slice as scenario; **Export to Brief** / reset sample works.
 
 ---
@@ -106,6 +109,7 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 | **Bids** | Carrier bid compare / apply |
 | **BOM** | Implied RM + echelon view |
 | **Territory** | Coverage summary from territory studio |
+| **Robust** | Scenario-tree optimize (expected / minimax / CVaR-lite); built-in shocks → E $21.13M / worst $24.94M *(→ SCN-08)* |
 
 - [ ] Decision log panel visible and appends on meaningful actions (optimize, apply_*, etc.).
 
@@ -119,16 +123,16 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 
 ---
 
-## 11. Handoff
+## 11. Merge (light)
 
-- [ ] Build S&OP package (`flowform.handoff.v1` shape): sites, lanes, preferred territory, CapEx years, product mix, BOM RM, inventory targets, scenarios.
-- [ ] Download JSON + Markdown ops brief; no crash when payload empty then after Brief → send.
+- [ ] **Load sample acquired** → 6 acquired nodes / 5 lanes, 2 conflicts (n2, l4), merged preview 14 / 14; apply merged network + draft baseline *(→ MRG-01..04)*.
 
 ---
 
-## 12. Merge (light)
+## 12. Handoff
 
-- [ ] **Load sample acquired**; conflict list for duplicate ids; apply merged network + draft baseline.
+- [ ] Build S&OP package (`flowform.handoff.v1` shape): sites, lanes, preferred territory, CapEx years, product mix, BOM RM, inventory targets, scenarios.
+- [ ] Download JSON + Markdown ops brief; no crash when payload empty then after Brief → send *(→ HND-01..04)*.
 
 ---
 
@@ -138,7 +142,7 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 - [ ] **Theme toggle** (Dark / Light) in top chrome flips `data-theme` and persists.
 - [ ] **?** opens Keyboard shortcuts help; **Esc** closes help and clears map/table selection.
 - [ ] Help button in chrome also opens the same dialog.
-- [ ] **Run** optimize: with API up → MIP path; with API down → heuristic fallback message (no hard hang).
+- [ ] **Run** optimize: with API up → MIP path (sample: **Optimal $98.27M**, Reno DC closed, 100% service *(→ RUN-02)*); with API down → `Heuristic v1 · service 58.8% (API offline or fallback)` (no hard hang).
 - [ ] **Share** copies deep-link stub and downloads `.share.json`.
 
 ---
@@ -153,8 +157,8 @@ All rooms above load without console errors that block interaction; sample impor
 1. Open **Data** — confirm schema `enterprise-data-v1` scorecard (score, geocode, demand/lanes).
 2. **Export pack JSON** — downloads `.enterprise.json`.
 3. **Load stress-200** (or **Load stress-120**) — one-click fetch of `public/samples/stress-*-demand.enterprise.json` into the Active network. Same buttons exist under **Projects**.
-4. Confirm scorecard: ~200 (or 120) demand sites, geocode ~100%, score ready for MIP.
-5. **Run** optimize — chrome shows model `fixed-charge-multi-echelon-v1`, solver status, and solve seconds; MIP log mentions enterprise pack schema.
+4. Confirm scorecard: stress-200 = 212 sites · 400 demand rows · 425 lanes · score 100 (stress-120 = 132 · 240 · 265 · 100), geocode 100%.
+5. **Run** optimize — chrome shows model `fixed-charge-multi-echelon-v1`, solver status, and solve seconds; MIP log mentions enterprise pack schema. stress-200: **Optimal $176.81M**, 9 open, `6 binding lane cap(s)`, solve ≈ 1 s *(→ STR-03)*.
 6. **Compare → Cost-to-serve** — after MIP, rows show **Service DC**, transport + variable OpEx; totals match objective transport+OpEx (gap ≈ 0).
 
 ### Stress benchmark (API)
@@ -164,4 +168,4 @@ cd apps/api && source .venv/bin/activate
 pytest -q tests/test_stress_benchmark.py -s
 ```
 
-Expect Optimal, open ≥ 1, `solveSeconds` ≪ 60s on stress-120 and stress-200 fixtures.
+Expect Optimal, open = 9, `solveSeconds` ≪ 60s on stress-120 (objective 89.1208) and stress-200 (176.8117); **3 passed**.
