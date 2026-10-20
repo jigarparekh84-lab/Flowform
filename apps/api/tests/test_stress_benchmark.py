@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -11,7 +12,7 @@ from app.solver import solve_optimize
 from .enterprise_payload import load_enterprise_pack, pack_to_optimize_payload
 
 # Fail if cold solve exceeds this (HiGHS on stress-200 is typically <1s).
-STRESS_TIMEOUT_S = 60.0
+STRESS_TIMEOUT_S = float(os.environ.get("STRESS_TIMEOUT_S", "60"))
 
 
 @pytest.mark.parametrize(

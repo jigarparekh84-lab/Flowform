@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "typecheck": "tsc -b",
     "preview": "vite preview",
     "test:enterprise": "npx --yes tsx src/data/enterprisePack.test.ts",
     "test:cts": "npx --yes tsx src/data/costToServe.test.ts",
@@ -28,5 +29,5 @@
     "typescript": "~6.0.2",
     "vite": "^8.3.0"
   },
-  "description": "Flowform \u2014 network/footprint design studio (web)"
+  "description": "Flowform — network/footprint design studio (web)"
 }
