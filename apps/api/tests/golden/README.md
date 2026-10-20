@@ -23,6 +23,9 @@ The engine reports money in **$M rounded to 4 decimals** (i.e. $100), so
   last-digit rounding flip passes. For any total ≥ $1.5M this is tighter than
   the plan §10.3 rule (drift > 0.01 % fails).
 
+- Objective-indeterminate fields are not locked: stress-pack `transportCo2Kt`
+  (carbon price 0) differs between equally-optimal solutions across platforms.
+
 ## Regenerating
 
 Only when a result change is intended and reviewed:

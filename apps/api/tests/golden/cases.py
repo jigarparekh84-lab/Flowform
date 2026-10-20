@@ -38,7 +38,10 @@ SHOCKS = [
 ]
 
 
-def _optimize_summary(body: dict[str, Any]) -> dict[str, Any]:
+def _optimize_summary(body: dict[str, Any], *, co2: bool = True) -> dict[str, Any]:
+    """``co2=False`` drops transportCo2Kt: with carbon price 0 it is not part of
+    the objective, so alternate optima (seen Linux vs macOS on stress-200)
+    move CO2 without changing cost."""
     bd = body["objectiveBreakdown"]
     k = body["kpis"]
     return {
@@ -47,7 +50,7 @@ def _optimize_summary(body: dict[str, Any]) -> dict[str, Any]:
         "openIds": sorted(body["openIds"]),
         "closedIds": sorted(body.get("closedIds") or []),
         "objectiveBreakdown": {key: bd[key] for key in BREAKDOWN_KEYS},
-        "kpis": {key: k[key] for key in KPI_KEYS if key in k},
+        "kpis": {key: k[key] for key in KPI_KEYS if key in k and (co2 or key != "transportCo2Kt")},
         "bindingLaneCapacities": sorted(
             (b.get("laneId") or b.get("id") or json.dumps(b, sort_keys=True))
             for b in (body.get("bindingLaneCapacities") or [])
@@ -64,11 +67,11 @@ def g_sample() -> dict[str, Any]:
 
 
 def g_m120() -> dict[str, Any]:
-    return _optimize_summary(solve_optimize(_stress("stress-120-demand.enterprise.json")))
+    return _optimize_summary(solve_optimize(_stress("stress-120-demand.enterprise.json")), co2=False)
 
 
 def g_m200() -> dict[str, Any]:
-    return _optimize_summary(solve_optimize(_stress("stress-200-demand.enterprise.json")))
+    return _optimize_summary(solve_optimize(_stress("stress-200-demand.enterprise.json")), co2=False)
 
 
 def g_inf() -> dict[str, Any]:
