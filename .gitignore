@@ -51,3 +51,6 @@ apps/api/.venv/
 **/__pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Python packaging
+*.egg-info/

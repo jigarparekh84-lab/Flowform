@@ -6,8 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+COPY apps/engine /engine
 COPY apps/api/requirements.txt .
-RUN pip install -r requirements.txt
+RUN grep -v '^-e ../engine' requirements.txt > req.txt && pip install -r req.txt /engine
 
 COPY apps/api/app ./app
 

@@ -48,7 +48,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: apps/api/requirements*.txt
+          cache-dependency-path: |
+            apps/api/requirements*.txt
+            apps/engine/pyproject.toml
       - run: pip install -r requirements.txt ruff
       - name: Lint (ruff — syntax errors and undefined names)
         run: ruff check --select E9,F63,F7,F82 .
@@ -70,7 +72,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: apps/api/requirements*.txt
+          cache-dependency-path: |
+            apps/api/requirements*.txt
+            apps/engine/pyproject.toml
       - run: pip install -r requirements.txt
       - name: stress-120 / stress-200 benchmark
         run: |

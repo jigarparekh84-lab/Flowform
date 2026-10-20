@@ -8,9 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .multi_period import solve_multi_period
-from .solver import solve_optimize
-from .stochastic import solve_stochastic
+from flowform_engine import solve_multi_period, solve_optimize, solve_stochastic
 
 app = FastAPI(
     title="Flowform Optimize API",
