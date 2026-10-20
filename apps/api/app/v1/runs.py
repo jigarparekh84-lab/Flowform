@@ -31,9 +31,28 @@ router = APIRouter(prefix="/v1/projects/{project_id}/runs", tags=["runs"])
 
 
 class RunIn(BaseModel):
+    """``payload`` is the same JSON body the sync /optimize[/multi-period|/stochastic] endpoint takes."""
+
     kind: Literal["optimize", "multi-period", "stochastic"] = "optimize"
     payload: dict[str, Any] = Field(default_factory=dict)
     scenarioId: uuid.UUID | None = None
+
+
+def normalize_request(kind: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Apply the exact request→engine mapping of the sync endpoint for ``kind``
+    so a job and a sync call with the same body solve the same model."""
+    from pydantic import ValidationError
+
+    from .. import main as m
+
+    try:
+        if kind == "optimize":
+            return m._optimize_payload(m.OptimizeRequest(**body))
+        if kind == "multi-period":
+            return m.multi_period_payload(m.MultiPeriodOptimizeRequest(**body))
+        return m.stochastic_payload(m.StochasticOptimizeRequest(**body))
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=json.loads(e.json())) from e
 
 
 def _run(s, ident: Identity, project_id: uuid.UUID, run_id: uuid.UUID) -> Run:
@@ -48,6 +67,7 @@ def _run(s, ident: Identity, project_id: uuid.UUID, run_id: uuid.UUID) -> Run:
 @router.post("", status_code=202)
 def create_run(project_id: uuid.UUID, body: RunIn, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
     engine_v, solver_v = versions()
+    payload = normalize_request(body.kind, body.payload)
     with tenant_session(ident.tenant_id) as s:
         get_project_or_404(s, ident, project_id)
         if body.scenarioId and s.execute(select(Scenario.id).where(
@@ -55,8 +75,8 @@ def create_run(project_id: uuid.UUID, body: RunIn, ident: Identity = Depends(cur
         )).first() is None:
             raise HTTPException(status_code=404, detail="scenario not found")
         r = Run(tenant_id=ident.tenant_id, project_id=project_id, scenario_id=body.scenarioId,
-                kind=body.kind, status="queued", progress=0.0, payload=body.payload,
-                input_hash=input_hash(body.kind, body.payload), engine_version=engine_v, solver_version=solver_v)
+                kind=body.kind, status="queued", progress=0.0, payload=payload,
+                input_hash=input_hash(body.kind, payload), engine_version=engine_v, solver_version=solver_v)
         s.add(r)
         s.flush()
         s.add(AuditEvent(tenant_id=ident.tenant_id, actor_id=ident.user_id, action="run.create", target=str(r.id)))

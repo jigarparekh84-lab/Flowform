@@ -1,3 +1,4 @@
+import { solveRequest } from './jobsApi'
 import type { ApiBaselineBlock } from './baselineKpis'
 /**
  * Client for Flowform Optimize API (apps/api).
@@ -16,11 +17,8 @@ import type {
   Scenario,
 } from './sampleNetwork'
 
-export const DEFAULT_API_BASE =
-  (typeof import.meta !== 'undefined' &&
-    (import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env
-      ?.VITE_API_URL) ||
-  'http://127.0.0.1:5182'
+export { DEFAULT_API_BASE } from './apiBase'
+import { DEFAULT_API_BASE } from './apiBase'
 
 export type ApiFlow = {
   from: string
@@ -309,10 +307,7 @@ export async function postOptimize(args: {
     productGroups?: { id: string; name?: string; code?: string }[]
     costFactors?: OptimizeCostFactors
   }
-  const res = await fetch(`${base}/optimize`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const res = await solveRequest(base, '/optimize', {
       network: {
         nodes: net.nodes,
         lanes: net.lanes,
@@ -334,8 +329,7 @@ export async function postOptimize(args: {
       enterpriseSchemaVersion: args.enterpriseSchemaVersion,
       explain: args.explain || undefined,
       computeBaseline: args.computeBaseline || undefined,
-    }),
-  })
+    })
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -543,10 +537,7 @@ export async function postMultiPeriodOptimize(args: {
     componentId: r.componentId,
   }))
   const bomDemand = args.bomDemand ?? net.bomDemand ?? []
-  const res = await fetch(`${base}/optimize/multi-period`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const res = await solveRequest(base, '/optimize/multi-period', {
       network: {
         nodes: net.nodes,
         lanes: net.lanes,
@@ -569,8 +560,7 @@ export async function postMultiPeriodOptimize(args: {
             kpis: args.reference.kpis,
           }
         : undefined,
-    }),
-  })
+    })
   if (!res.ok) {
     let detail = res.statusText
     try {
@@ -698,10 +688,7 @@ export async function postStochasticOptimize(args: {
   const base = (args.baseUrl ?? DEFAULT_API_BASE).replace(/\/$/, '')
   // D-04: pass the full Run payload network (SKUs, demandByProduct, bomDemand…)
   const net = args.network
-  const res = await fetch(`${base}/optimize/stochastic`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const res = await solveRequest(base, '/optimize/stochastic', {
       network: net,
       constraints: args.constraints,
       ...(args.bom ? { bom: args.bom } : {}),
@@ -717,8 +704,7 @@ export async function postStochasticOptimize(args: {
             kpis: args.reference.kpis,
           }
         : undefined,
-    }),
-  })
+    })
   if (!res.ok) {
     let detail = res.statusText
     try {

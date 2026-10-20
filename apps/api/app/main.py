@@ -303,27 +303,71 @@ def optimize_validate(body: OptimizeRequest, deep: bool = False) -> dict[str, An
     return validate_optimize(_optimize_payload(body), deep=deep)
 
 
+def multi_period_payload(body: "MultiPeriodOptimizeRequest") -> dict[str, Any]:
+    roadmap = (
+        body.roadmap
+        if isinstance(body.roadmap, dict)
+        else body.roadmap.model_dump()
+    )
+    payload = (
+        {
+            "network": body.network,
+            "constraints": body.constraints,
+            "reference": body.reference or {},
+            "bom": body.bom if isinstance(body.bom, dict) else (
+                body.bom.model_dump() if body.bom else {}
+            ),
+            "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
+            "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
+            "roadmap": roadmap,
+        }
+    )
+    return payload
+
+
+def stochastic_payload(body: "StochasticOptimizeRequest") -> dict[str, Any]:
+    tree: dict[str, Any]
+    if body.scenarioTree is not None:
+        tree = (
+            body.scenarioTree
+            if isinstance(body.scenarioTree, dict)
+            else body.scenarioTree.model_dump()
+        )
+    else:
+        scenarios = body.scenarios or []
+        tree = {
+            "scenarios": [
+                s if isinstance(s, dict) else s.model_dump() for s in scenarios
+            ],
+            "objective": body.objective or "expected",
+            "cvarAlpha": body.cvarAlpha,
+            "computeEvpi": body.computeEvpi if body.computeEvpi is not None else True,
+        }
+    if body.objective and not tree.get("objective"):
+        tree["objective"] = body.objective
+    payload = (
+        {
+            "network": body.network,
+            "constraints": body.constraints,
+            "reference": body.reference or {},
+            "bom": body.bom if isinstance(body.bom, dict) else (
+                body.bom.model_dump() if body.bom else {}
+            ),
+            "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
+            "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
+            "scenarioTree": tree,
+            "objective": tree.get("objective") or body.objective or "expected",
+            "cvarAlpha": tree.get("cvarAlpha", body.cvarAlpha),
+            "computeEvpi": tree.get("computeEvpi", body.computeEvpi),
+        }
+    )
+    return payload
+
+
 @app.post("/optimize/multi-period")
 def optimize_multi_period(body: MultiPeriodOptimizeRequest) -> dict[str, Any]:
     try:
-        roadmap = (
-            body.roadmap
-            if isinstance(body.roadmap, dict)
-            else body.roadmap.model_dump()
-        )
-        return solve_multi_period(
-            {
-                "network": body.network,
-                "constraints": body.constraints,
-                "reference": body.reference or {},
-                "bom": body.bom if isinstance(body.bom, dict) else (
-                    body.bom.model_dump() if body.bom else {}
-                ),
-                "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
-                "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
-                "roadmap": roadmap,
-            }
-        )
+        return solve_multi_period(multi_period_payload(body))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:
@@ -337,41 +381,7 @@ def optimize_multi_period(body: MultiPeriodOptimizeRequest) -> dict[str, Any]:
 @app.post("/optimize/stochastic")
 def optimize_stochastic(body: StochasticOptimizeRequest) -> dict[str, Any]:
     try:
-        tree: dict[str, Any]
-        if body.scenarioTree is not None:
-            tree = (
-                body.scenarioTree
-                if isinstance(body.scenarioTree, dict)
-                else body.scenarioTree.model_dump()
-            )
-        else:
-            scenarios = body.scenarios or []
-            tree = {
-                "scenarios": [
-                    s if isinstance(s, dict) else s.model_dump() for s in scenarios
-                ],
-                "objective": body.objective or "expected",
-                "cvarAlpha": body.cvarAlpha,
-                "computeEvpi": body.computeEvpi if body.computeEvpi is not None else True,
-            }
-        if body.objective and not tree.get("objective"):
-            tree["objective"] = body.objective
-        return solve_stochastic(
-            {
-                "network": body.network,
-                "constraints": body.constraints,
-                "reference": body.reference or {},
-                "bom": body.bom if isinstance(body.bom, dict) else (
-                    body.bom.model_dump() if body.bom else {}
-                ),
-                "bomDemand": body.bomDemand or body.network.get("bomDemand") or [],
-                "enterpriseSchemaVersion": body.enterpriseSchemaVersion,
-                "scenarioTree": tree,
-                "objective": tree.get("objective") or body.objective or "expected",
-                "cvarAlpha": tree.get("cvarAlpha", body.cvarAlpha),
-                "computeEvpi": tree.get("computeEvpi", body.computeEvpi),
-            }
-        )
+        return solve_stochastic(stochastic_payload(body))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:

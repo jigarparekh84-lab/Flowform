@@ -75,8 +75,27 @@ def test_multi_period_and_stochastic_kinds(monkeypatch):
     p["scenarioTree"] = {"objective": "expected", "scenarios": SHOCKS}
     rid = c.post(f"/v1/projects/{pid}/runs", json={"kind": "stochastic", "payload": p}, headers=_h(t)).json()["id"]
     assert _wait(c, t, pid, rid)["result"]["ok"] is True
-    rid = c.post(f"/v1/projects/{pid}/runs", json={"kind": "optimize", "payload": {"bad": True}}, headers=_h(t)).json()["id"]
-    assert _wait(c, t, pid, rid)["status"] in ("failed", "succeeded")
+    r = c.post(f"/v1/projects/{pid}/runs", json={"kind": "optimize", "payload": {"bad": True}}, headers=_h(t))
+    assert r.status_code == 422  # same request validation as the sync endpoint
+
+
+def test_job_and_sync_endpoint_give_identical_results(monkeypatch):
+    c, t = _client(monkeypatch, "inline"), uuid.uuid4()
+    pid = _project(c, t)
+    from .test_defect_fixes import _roadmap_payload
+
+    for kind, path, body in (
+        ("optimize", "/optimize", {**sample_payload(), "explain": True}),
+        ("multi-period", "/optimize/multi-period", _roadmap_payload("choose_timing")),
+        ("stochastic", "/optimize/stochastic", {**sample_payload(), "scenarioTree": {"objective": "minimax", "scenarios": SHOCKS}}),
+    ):
+        sync = c.post(path, json=body).json()
+        rid = c.post(f"/v1/projects/{pid}/runs", json={"kind": kind, "payload": body}, headers=_h(t)).json()["id"]
+        job = _wait(c, t, pid, rid)["result"]
+        for k in ("solveSeconds", "log", "explain", "timing", "elapsedSeconds"):
+            sync.pop(k, None), job.pop(k, None)
+        key = {"optimize": "objectiveBreakdown", "multi-period": "npv", "stochastic": "expectedCostM"}[kind]
+        assert job[key] == sync[key], kind
 
 
 def test_five_parallel_runs_complete(monkeypatch):
@@ -112,8 +131,8 @@ def test_sse_progress_stream(monkeypatch):
 def test_runs_are_tenant_scoped(monkeypatch):
     c, a, b = _client(monkeypatch, "manual"), uuid.uuid4(), uuid.uuid4()
     pid = _project(c, a)
-    rid = c.post(f"/v1/projects/{pid}/runs", json={"payload": {}}, headers=_h(a)).json()["id"]
-    assert c.post(f"/v1/projects/{pid}/runs", json={"payload": {}}, headers=_h(b)).status_code == 404
+    rid = c.post(f"/v1/projects/{pid}/runs", json={"payload": sample_payload()}, headers=_h(a)).json()["id"]
+    assert c.post(f"/v1/projects/{pid}/runs", json={"payload": sample_payload()}, headers=_h(b)).status_code == 404
     assert c.get(f"/v1/projects/{pid}/runs/{rid}", headers=_h(b)).status_code == 404
     assert c.post(f"/v1/projects/{pid}/runs/{rid}/cancel", headers=_h(b)).status_code == 404
     assert c.get(f"/v1/projects/{pid}/runs/{rid}/events", headers=_h(b)).status_code == 404

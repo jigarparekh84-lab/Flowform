@@ -1,5 +1,6 @@
 import { HORIZON_OPTIONS, type Scenario } from '../data/sampleNetwork'
 import { useFlowform } from '../state/FlowformContext'
+import { ActiveJobChip } from './ActiveJobChip'
 import type { ThemeMode } from '../state/theme'
 
 type Props = {
@@ -165,6 +166,7 @@ export function TopChrome({
       </div>
 
       <div className="chrome-right">
+        <ActiveJobChip />
         <button
           type="button"
           className="theme-toggle"

@@ -8,7 +8,7 @@
  */
 
 import { authHeaders } from './apiAuth'
-import { DEFAULT_API_BASE } from './optimizeApi'
+import { DEFAULT_API_BASE } from './apiBase'
 import {
   exportProjectJson,
   getActiveProjectId,

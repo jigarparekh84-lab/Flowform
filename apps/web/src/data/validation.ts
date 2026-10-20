@@ -2,7 +2,7 @@
  * Pre-run guardrails client (FF-108) — POST /optimize/validate, plus helpers to
  * turn infeasibility hints into shortfall tables.
  */
-import { DEFAULT_API_BASE } from './optimizeApi'
+import { DEFAULT_API_BASE } from './apiBase'
 
 export type ValidationIssue = {
   code: string

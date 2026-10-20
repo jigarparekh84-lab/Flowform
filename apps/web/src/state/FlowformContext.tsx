@@ -186,6 +186,7 @@ import {
 } from '../data/stochasticOptimize'
 import type { StochasticObjective, StochasticScenarioInput } from '../data/optimizeApi'
 import { blockingReason, postValidate } from '../data/validation'
+import { isRunCancelled } from '../data/jobsApi'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -1515,6 +1516,10 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
               : `API ${api.solver} · ${api.status}${timeMsg} · ${api.model ?? 'MIP'} · service ${api.kpis.servicePct.toFixed(1)}%${bdMsg}${skuMsg}${modeMsg}${laneMsg}`,
           })
         } catch (apiErr) {
+          if (isRunCancelled(apiErr)) {
+            setOptimizeStatus({ phase: 'error', message: 'Run cancelled.' })
+            return null
+          }
           const msg =
             apiErr instanceof Error ? apiErr.message : 'API optimize failed'
           setOptimizeStatus({
