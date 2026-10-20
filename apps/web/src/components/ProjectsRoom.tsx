@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { downloadProjectFile } from '../data/projects'
 import { DecisionLogPanel } from './DecisionLogPanel'
+import { WorkspaceSyncPanel } from './WorkspaceSyncPanel'
 import { useFlowform } from '../state/FlowformContext'
 
 function formatWhen(iso: string): string {
@@ -29,6 +30,7 @@ export function ProjectsRoom() {
     exportActiveProject,
     importProjectFile,
     importEnterprisePack,
+    refreshProjects,
   } = useFlowform()
 
   const [renameId, setRenameId] = useState<string | null>(null)
@@ -104,6 +106,7 @@ export function ProjectsRoom() {
 
   return (
     <div className="studio-room projects-room">
+      <WorkspaceSyncPanel onChanged={refreshProjects} />
       <header className="studio-header">
         <div>
           <p className="map-kicker">Projects</p>
@@ -111,7 +114,7 @@ export function ProjectsRoom() {
           <p className="studio-sub">
             Create, rename, duplicate, or delete footprint studies. Full state
             (network, scenarios, constraints, data, optional theme) persists in
-            localStorage keyed by project id. Export / import JSON to share.
+            this browser and syncs to your workspace when the API is reachable. Export / import JSON to share.
             Load stress-120 / stress-200 enterprise packs into the Active
             project for large MIP benchmarks (also available under Data).
           </p>

@@ -30,3 +30,13 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Workspace projects (FF-107)
+
+Projects stay in localStorage as the working copy and are mirrored to the API
+(`/v1/projects`) on every save. Run the API with `AUTH_MODE=dev` (plus
+`DATABASE_URL`, see `apps/api/README.md`) to enable it. If the API is down or
+returns 401, the Projects room shows a banner and edits queue locally;
+"Move my N local projects to my workspace" pushes them and pulls workspace
+projects this browser doesn't have. `VITE_PROJECT_STORE=local` turns sync off.
+Auth seam: `src/data/apiAuth.ts` (`setAuthTokenProvider` for WorkOS, FF-106).

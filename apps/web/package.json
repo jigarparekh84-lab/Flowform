@@ -12,7 +12,8 @@
     "test:enterprise": "npx --yes tsx src/data/enterprisePack.test.ts",
     "test:cts": "npx --yes tsx src/data/costToServe.test.ts",
     "test:defects": "npx --yes tsx src/data/defectFixes.test.ts",
-    "test:data": "npm run test:enterprise && npm run test:cts && npm run test:defects"
+    "test:data": "npm run test:enterprise && npm run test:cts && npm run test:defects && npm run test:sync",
+    "test:sync": "npx --yes tsx src/data/workspaceSync.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.11.2",

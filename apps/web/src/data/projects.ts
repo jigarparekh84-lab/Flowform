@@ -28,6 +28,38 @@ export const PROJECT_STATE_PREFIX = 'flowform-project-'
 
 export const DEFAULT_PROJECT_NAME = 'NA Footprint 2027'
 
+/** Storage hooks (FF-107): the workspace sync layer mirrors local writes to the API. */
+export type ProjectStorageListener = {
+  saved?: (id: string) => void
+  renamed?: (id: string) => void
+  deleted?: (id: string) => void
+}
+let storageListener: ProjectStorageListener | null = null
+let listenerMuted = 0
+
+export function setProjectStorageListener(l: ProjectStorageListener | null) {
+  storageListener = l
+}
+
+/** Run fn without notifying the listener (e.g. when importing from the server). */
+export function withoutStorageListener<T>(fn: () => T): T {
+  listenerMuted++
+  try {
+    return fn()
+  } finally {
+    listenerMuted--
+  }
+}
+
+function notify(kind: keyof ProjectStorageListener, id: string) {
+  if (listenerMuted) return
+  try {
+    storageListener?.[kind]?.(id)
+  } catch {
+    /* sync must never break local saves */
+  }
+}
+
 export type ProjectMeta = {
   id: string
   name: string
@@ -155,6 +187,7 @@ export function saveProjectState(id: string, state: ProjectSnapshot) {
     p.id === id ? { ...p, updatedAt: now } : p,
   )
   writeIndex(next)
+  notify('saved', id)
 }
 
 export function createProject(
@@ -189,6 +222,7 @@ export function renameProject(id: string, name: string): ProjectMeta | null {
   }
   list[ix] = updated
   writeIndex(list)
+  notify('renamed', id)
   return updated
 }
 
@@ -207,6 +241,7 @@ export function deleteProject(id: string): boolean {
     if (list[0]) setActiveProjectId(list[0].id)
     else localStorage.removeItem(ACTIVE_PROJECT_KEY)
   }
+  notify('deleted', id)
   return true
 }
 

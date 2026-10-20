@@ -67,6 +67,9 @@ def test_crud_and_versioning(client):
     assert client.get(f"/v1/projects/{pid}/snapshot?version=1", headers=_h(t)).json()["name"] == "Alpha"
 
     assert client.post("/v1/projects", content=b"[1,2]", headers=_h(t)).status_code == 422
+    # web export format names the project from meta.name (FF-107)
+    r = client.post("/v1/projects", content=b'{"format": "flowform-project", "meta": {"name": "From web"}, "state": {}}', headers=_h(t))
+    assert r.json()["name"] == "From web"
     assert client.delete(f"/v1/projects/{pid}", headers=_h(t)).status_code == 204
     assert client.get(f"/v1/projects/{pid}", headers=_h(t)).status_code == 404
 

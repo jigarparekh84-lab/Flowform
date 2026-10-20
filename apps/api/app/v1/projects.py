@@ -29,7 +29,8 @@ async def _snapshot(request: Request) -> tuple[str, dict[str, Any]]:
 
 
 def _name(doc: dict[str, Any], fallback: str = "Untitled project") -> str:
-    meta = (doc.get("state") or {}).get("projectMeta") or doc.get("projectMeta") or {}
+    meta = doc.get("meta") if isinstance(doc.get("meta"), dict) else None
+    meta = meta or (doc.get("state") or {}).get("projectMeta") or doc.get("projectMeta") or {}
     return str(doc.get("name") or meta.get("name") or fallback)[:300]
 
 
