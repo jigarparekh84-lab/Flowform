@@ -23,7 +23,7 @@ from ..db.models import AuditEvent, Run, Scenario
 from ..db.session import tenant_session
 from ..jobs.queue import get_queue
 from ..jobs.runner import TERMINAL, input_hash, versions
-from .auth import Identity, current_identity
+from .auth import Identity, editor, viewer
 from .projects import get_project_or_404
 from .scenarios import run_out
 
@@ -65,7 +65,7 @@ def _run(s, ident: Identity, project_id: uuid.UUID, run_id: uuid.UUID) -> Run:
 
 
 @router.post("", status_code=202)
-def create_run(project_id: uuid.UUID, body: RunIn, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def create_run(project_id: uuid.UUID, body: RunIn, ident: Identity = Depends(editor)) -> dict[str, Any]:
     engine_v, solver_v = versions()
     payload = normalize_request(body.kind, body.payload)
     with tenant_session(ident.tenant_id) as s:
@@ -88,14 +88,14 @@ def create_run(project_id: uuid.UUID, body: RunIn, ident: Identity = Depends(cur
 
 
 @router.get("/{run_id}")
-def get_run(project_id: uuid.UUID, run_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def get_run(project_id: uuid.UUID, run_id: uuid.UUID, ident: Identity = Depends(viewer)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         r = _run(s, ident, project_id, run_id)
         return run_out(r, with_result=r.status in TERMINAL)
 
 
 @router.post("/{run_id}/cancel")
-def cancel_run(project_id: uuid.UUID, run_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def cancel_run(project_id: uuid.UUID, run_id: uuid.UUID, ident: Identity = Depends(editor)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         r = _run(s, ident, project_id, run_id)
         if r.status not in TERMINAL:
@@ -108,7 +108,7 @@ def cancel_run(project_id: uuid.UUID, run_id: uuid.UUID, ident: Identity = Depen
 
 @router.get("/{run_id}/events")
 async def run_events(project_id: uuid.UUID, run_id: uuid.UUID, poll_s: float = 0.5,
-                     ident: Identity = Depends(current_identity)) -> StreamingResponse:
+                     ident: Identity = Depends(viewer)) -> StreamingResponse:
     def snap() -> dict[str, Any]:
         with tenant_session(ident.tenant_id) as s:
             return run_out(_run(s, ident, project_id, run_id))

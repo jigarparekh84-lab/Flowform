@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from ..db.models import AuditEvent, Project, ProjectVersion
 from ..db.session import tenant_session
-from .auth import Identity, current_identity
+from .auth import Identity, admin, editor, viewer
 
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
 
@@ -52,7 +52,7 @@ def get_project_or_404(s, ident: Identity, pid: uuid.UUID) -> Project:
 
 
 @router.get("")
-def list_projects(ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def list_projects(ident: Identity = Depends(viewer)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         rows = s.execute(
             select(Project).where(Project.tenant_id == ident.tenant_id).order_by(Project.updated_at.desc())
@@ -61,7 +61,7 @@ def list_projects(ident: Identity = Depends(current_identity)) -> dict[str, Any]
 
 
 @router.post("", status_code=201)
-async def create_project(request: Request, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+async def create_project(request: Request, ident: Identity = Depends(editor)) -> dict[str, Any]:
     raw, doc = await _snapshot(request)
     with tenant_session(ident.tenant_id) as s:
         p = Project(tenant_id=ident.tenant_id, name=_name(doc), current_version=1, created_by=ident.user_id)
@@ -75,13 +75,13 @@ async def create_project(request: Request, ident: Identity = Depends(current_ide
 
 
 @router.get("/{project_id}")
-def get_project(project_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def get_project(project_id: uuid.UUID, ident: Identity = Depends(viewer)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         return _out(get_project_or_404(s, ident, project_id))
 
 
 @router.get("/{project_id}/snapshot")
-def get_snapshot(project_id: uuid.UUID, version: int | None = None, ident: Identity = Depends(current_identity)) -> Response:
+def get_snapshot(project_id: uuid.UUID, version: int | None = None, ident: Identity = Depends(viewer)) -> Response:
     with tenant_session(ident.tenant_id) as s:
         p = get_project_or_404(s, ident, project_id)
         v = s.execute(
@@ -96,7 +96,7 @@ def get_snapshot(project_id: uuid.UUID, version: int | None = None, ident: Ident
 
 
 @router.put("/{project_id}")
-async def update_project(project_id: uuid.UUID, request: Request, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+async def update_project(project_id: uuid.UUID, request: Request, ident: Identity = Depends(editor)) -> dict[str, Any]:
     raw, doc = await _snapshot(request)
     with tenant_session(ident.tenant_id) as s:
         p = get_project_or_404(s, ident, project_id)
@@ -110,7 +110,7 @@ async def update_project(project_id: uuid.UUID, request: Request, ident: Identit
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(project_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> Response:
+def delete_project(project_id: uuid.UUID, ident: Identity = Depends(admin)) -> Response:
     with tenant_session(ident.tenant_id) as s:
         p = get_project_or_404(s, ident, project_id)
         s.delete(p)

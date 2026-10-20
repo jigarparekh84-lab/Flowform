@@ -303,3 +303,23 @@ Queue backend via `QUEUE_BACKEND`: `inline` (default, in-process threads — loc
 dev and CI), `arq` (Redis; `docker compose up -d redis`, `REDIS_URL=redis://127.0.0.1:6380/0`,
 worker `arq app.jobs.worker.WorkerSettings`), `manual` (tests). The Run row is the
 state of record; cancel flips its status and late results are discarded.
+
+## Auth + roles (FF-106)
+
+`AUTH_MODE`: `dev` (headers `X-Dev-Tenant`, `X-Dev-User`, `X-Dev-Role`), `jwt`
+(Bearer JWT; `AUTH_JWKS_URL` or `AUTH_JWT_PUBLIC_KEY`, optional `AUTH_JWT_ISSUER`,
+`AUTH_JWT_AUDIENCE`; `AUTH_JWT_SECRET` HS256 for tests), `workos` (AuthKit tokens,
+JWKS `https://api.workos.com/sso/jwks/$WORKOS_CLIENT_ID`; needs `WORKOS_API_KEY`,
+`WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI` — inert/401 until set). Anything else → 401.
+
+Tenant = token `org_id`; role = `role` claim (`member`→editor). Tenants/users
+auto-provision on first request. RBAC on every /v1 route:
+
+| Role | Allowed |
+|---|---|
+| viewer | read projects, snapshots, scenarios, runs, run events |
+| editor | + create/update projects & scenarios, start/cancel runs |
+| admin | + delete projects & scenarios |
+| owner | + WorkOS Admin Portal link (`POST /v1/auth/admin-portal`), future billing |
+
+`/v1/auth/config` (public), `/v1/auth/login`, `/v1/auth/callback`, `/v1/auth/me`.

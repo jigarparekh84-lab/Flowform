@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from ..db.models import AuditEvent, Run, Scenario
 from ..db.session import tenant_session
-from .auth import Identity, current_identity
+from .auth import Identity, admin, editor, viewer
 from .projects import get_project_or_404
 
 router = APIRouter(prefix="/v1/projects/{project_id}", tags=["scenarios"])
@@ -52,7 +52,7 @@ def _scenario(s, ident: Identity, project_id: uuid.UUID, sid: uuid.UUID) -> Scen
 
 
 @router.get("/scenarios")
-def list_scenarios(project_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def list_scenarios(project_id: uuid.UUID, ident: Identity = Depends(viewer)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         get_project_or_404(s, ident, project_id)
         rows = s.execute(select(Scenario).where(
@@ -62,7 +62,7 @@ def list_scenarios(project_id: uuid.UUID, ident: Identity = Depends(current_iden
 
 
 @router.post("/scenarios", status_code=201)
-def create_scenario(project_id: uuid.UUID, body: ScenarioIn, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def create_scenario(project_id: uuid.UUID, body: ScenarioIn, ident: Identity = Depends(editor)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         get_project_or_404(s, ident, project_id)
         sc = Scenario(tenant_id=ident.tenant_id, project_id=project_id, name=body.name, spec=body.spec)
@@ -75,13 +75,13 @@ def create_scenario(project_id: uuid.UUID, body: ScenarioIn, ident: Identity = D
 
 
 @router.get("/scenarios/{scenario_id}")
-def get_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def get_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, ident: Identity = Depends(viewer)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         return scenario_out(_scenario(s, ident, project_id, scenario_id))
 
 
 @router.put("/scenarios/{scenario_id}")
-def update_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, body: ScenarioIn, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def update_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, body: ScenarioIn, ident: Identity = Depends(editor)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         sc = _scenario(s, ident, project_id, scenario_id)
         sc.name, sc.spec = body.name, body.spec
@@ -90,7 +90,7 @@ def update_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, body: Scenari
 
 
 @router.delete("/scenarios/{scenario_id}", status_code=204)
-def delete_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> Response:
+def delete_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, ident: Identity = Depends(admin)) -> Response:
     with tenant_session(ident.tenant_id) as s:
         s.delete(_scenario(s, ident, project_id, scenario_id))
         s.add(AuditEvent(tenant_id=ident.tenant_id, actor_id=ident.user_id, action="scenario.delete", target=str(scenario_id)))
@@ -98,7 +98,7 @@ def delete_scenario(project_id: uuid.UUID, scenario_id: uuid.UUID, ident: Identi
 
 
 @router.get("/runs")
-def list_runs(project_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
+def list_runs(project_id: uuid.UUID, ident: Identity = Depends(viewer)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
         get_project_or_404(s, ident, project_id)
         rows = s.execute(select(Run).where(
