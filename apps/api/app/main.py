@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from flowform_engine import solve_multi_period, solve_optimize, solve_stochastic
+from .v1.projects import router as projects_router
 
 app = FastAPI(
     title="Flowform Optimize API",
@@ -38,6 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Server persistence (FF-104); DB is only touched when /v1 is called.
+app.include_router(projects_router)
 
 
 class FacilityConstraintIn(BaseModel):

@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   web:
@@ -39,6 +39,19 @@ jobs:
     name: API (lint, pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: flowform
+          POSTGRES_PASSWORD: flowform
+          POSTGRES_DB: flowform
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U flowform -d flowform"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://flowform:flowform@127.0.0.1:5433/flowform
     defaults:
       run:
         working-directory: apps/api
@@ -54,6 +67,8 @@ jobs:
       - run: pip install -r requirements.txt ruff
       - name: Lint (ruff — syntax errors and undefined names)
         run: ruff check --select E9,F63,F7,F82 .
+      - name: Migrations (upgrade + drift check)
+        run: alembic upgrade head && alembic check
       - name: Pytest
         run: pytest -q
 

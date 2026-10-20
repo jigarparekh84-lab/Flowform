@@ -273,3 +273,18 @@ pytest -q tests/test_depth7_lane_modes.py
 ```bash
 pytest -q tests/test_depth8_explain.py
 ```
+
+## Server persistence (FF-104)
+
+    docker compose up -d db          # Postgres 16 + PostGIS on 127.0.0.1:5433
+    export DATABASE_URL=postgresql+psycopg://flowform:flowform@127.0.0.1:5433/flowform
+    .venv/bin/alembic upgrade head
+    AUTH_MODE=dev .venv/bin/uvicorn app.main:app --port 5182
+
+`/v1/projects` (list, create, get, `GET /{id}/snapshot[?version=]`, update →
+new version, delete) stores ProjectSnapshot JSON verbatim. `AUTH_MODE=dev`
+takes identity from `X-Dev-Tenant` (UUID) / `X-Dev-User` headers; any other
+mode returns 401 until WorkOS (FF-106). Tenant isolation is enforced twice:
+every query filters `tenant_id`, and Postgres RLS (FORCEd, via the
+`flowform_app` role + `app.tenant_id`) hides other tenants' rows.
+DB tests skip when `DATABASE_URL` is unset.

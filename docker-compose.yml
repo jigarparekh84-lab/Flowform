@@ -1,8 +1,25 @@
 # Flowform — one-command local stack
 # Web UI :5180  |  Optimize API :5182
 # Usage:  docker compose up --build
+# DB only (local dev / tests):  docker compose up -d db   → postgres://flowform:flowform@127.0.0.1:5433/flowform
 
 services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: flowform
+      POSTGRES_PASSWORD: flowform  # local dev only
+      POSTGRES_DB: flowform
+    ports:
+      - "5433:5432"  # 5433 so it never collides with a host Postgres on 5432
+    volumes:
+      - flowform-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowform -d flowform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -27,3 +44,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+volumes:
+  flowform-db:
