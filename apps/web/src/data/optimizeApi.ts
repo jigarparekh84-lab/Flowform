@@ -131,12 +131,15 @@ export type ApiInfeasibilityHint = {
   message: string
   entities?: string[]
   hint?: string
+  rootCause?: boolean
+  shortfalls?: Record<string, unknown>[]
 }
 
 export type ApiInfeasibilityReport = {
   status: string
   summary: string
   hints: ApiInfeasibilityHint[]
+  rootCauses?: string[]
   metrics?: Record<string, number | boolean | string>
   method?: string
   note?: string

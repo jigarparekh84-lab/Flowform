@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from flowform_engine import solve_multi_period, solve_optimize, solve_stochastic
+from flowform_engine import solve_multi_period, solve_optimize, solve_stochastic, validate_optimize
 from .v1.projects import router as projects_router
 from .v1.runs import router as runs_router
 from .v1.scenarios import router as scenarios_router
@@ -294,6 +294,13 @@ def optimize(body: OptimizeRequest) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Optimize failed: {e}") from e
+
+
+@app.post("/optimize/validate")
+def optimize_validate(body: OptimizeRequest, deep: bool = False) -> dict[str, Any]:
+    """Pre-run guardrails (FF-108): blocking errors + warnings + shortfall tables.
+    ``?deep=true`` also runs the solve and reports Infeasible root causes."""
+    return validate_optimize(_optimize_payload(body), deep=deep)
 
 
 @app.post("/optimize/multi-period")

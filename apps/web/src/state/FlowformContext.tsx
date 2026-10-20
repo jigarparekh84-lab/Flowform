@@ -185,6 +185,7 @@ import {
   type StochasticOptimizeResult,
 } from '../data/stochasticOptimize'
 import type { StochasticObjective, StochasticScenarioInput } from '../data/optimizeApi'
+import { blockingReason, postValidate } from '../data/validation'
 import { readStoredTheme, type ThemeMode } from './theme'
 
 export type SelectKind = 'node' | 'lane'
@@ -1408,6 +1409,16 @@ export function FlowformProvider({ children }: { children: ReactNode }) {
       const mipPayload = packToOptimizePayload(pack, scorecard)
 
       if (apiUp) {
+        // FF-108: server-side guardrails — block Run with a reason instead of a cryptic Infeasible.
+        try {
+          const v = await postValidate({ network: mipPayload.network, constraints: mipPayload.constraints })
+          if (v.blocking) {
+            setOptimizeStatus({ phase: 'error', message: blockingReason(v), validation: v })
+            return null
+          }
+        } catch {
+          /* older API without /optimize/validate — run anyway */
+        }
         setOptimizeStatus({
           phase: 'running',
           progress: 35,

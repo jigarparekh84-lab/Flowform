@@ -103,6 +103,22 @@ export function TopChrome({
               {optimizeStatus.phase === 'done' && optimizeStatus.message}
               {optimizeStatus.phase === 'error' && optimizeStatus.message}
             </span>
+            {optimizeStatus.phase === 'error' && optimizeStatus.validation && (
+              <span className="run-meta" aria-label="Pre-run checks">
+                {optimizeStatus.validation.issues
+                  .filter((i) => i.level === 'error')
+                  .slice(0, 3)
+                  .map((i) => (
+                    <span
+                      key={i.code + i.entities.join()}
+                      className="run-chip danger"
+                      title={`${i.message}${i.fix ? `\nFix: ${i.fix}` : ''}`}
+                    >
+                      {i.code}
+                    </span>
+                  ))}
+              </span>
+            )}
             {optimizeStatus.phase === 'done' && (
               <span className="run-meta" aria-label="Last solve metadata">
                 {optimizeStatus.model && (

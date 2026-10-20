@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { CommentsPanel } from './CommentsPanel'
 import { DecisionLogPanel } from './DecisionLogPanel'
 import { MipLaneModePanel } from './MipLaneModes'
+import { ShortfallTables } from './ShortfallTables'
+import { shortfallTables } from '../data/validation'
 import { EmptyState } from './ui/EmptyState'
 import { RoomHeader } from './ui/RoomHeader'
 import {
@@ -543,6 +545,7 @@ function MatrixView({
   selected: Scenario[]
   reference: Scenario
 }) {
+  const { network: ffNetwork } = useFlowform()
   if (selected.length === 0) {
     return (
       <EmptyState
@@ -688,6 +691,10 @@ function MatrixView({
                       </li>
                     ))}
                   </ul>
+                  <ShortfallTables
+                    {...shortfallTables(rep.hints)}
+                    nameOf={(id) => ffNetwork.nodes.find((n) => n.id === id)?.name ?? id}
+                  />
                 </div>
               )
             })}

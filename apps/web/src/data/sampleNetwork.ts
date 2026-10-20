@@ -308,7 +308,10 @@ export type OptimizeMeta = {
       message: string
       entities?: string[]
       hint?: string
+      rootCause?: boolean
+      shortfalls?: Record<string, unknown>[]
     }[]
+    rootCauses?: string[]
     metrics?: Record<string, number | boolean | string>
     method?: string
     note?: string
@@ -493,6 +496,8 @@ export type OptimizeRunStatus =
   | {
       phase: 'error'
       message: string
+      /** FF-108: pre-run guardrail result when Run was blocked. */
+      validation?: import('./validation').ValidationResult
       infeasibilityReport?: OptimizeMeta['infeasibilityReport']
       log?: string[]
     }
