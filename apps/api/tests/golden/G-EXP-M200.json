@@ -1,0 +1,95 @@
+{
+  "baseCostM": 176.8116,
+  "facilities": {
+    "dc-1": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 7.9687,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it raises cost by $8.0M (4.5%); service holds at 100.0%"
+    },
+    "dc-2": {
+      "capacityDual": -6.5e-05,
+      "cfDeltaM": 139.0427,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 9.8M units of demand (service drops to 95.0%); operating cost falls $8.3M only because that demand goes unserved"
+    },
+    "dc-3": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 14.6886,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it raises cost by $14.7M (8.3%); service holds at 100.0%"
+    },
+    "dc-4": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 38.4953,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 2.2M units of demand (service drops to 98.9%) and adds $5.7M operating cost"
+    },
+    "dc-5": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 7.4074,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it raises cost by $7.4M (4.2%); service holds at 100.0%"
+    },
+    "dc-6": {
+      "capacityDual": -5e-05,
+      "cfDeltaM": 138.1723,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 9.8M units of demand (service drops to 95.0%); operating cost falls $9.2M only because that demand goes unserved"
+    },
+    "dc-7": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 6.6312,
+      "cfStatus": "optimal",
+      "decision": "kept-closed",
+      "headline": "Opening it raises cost by $6.6M (3.8%); service holds at 100.0%"
+    },
+    "dc-8": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 4.9847,
+      "cfStatus": "optimal",
+      "decision": "kept-closed",
+      "headline": "Opening it raises cost by $5.0M (2.8%); service holds at 100.0%"
+    },
+    "plt-1": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 489.7062,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 37.5M units of demand (service drops to 81.0%); operating cost falls $72.8M only because that demand goes unserved"
+    },
+    "plt-2": {
+      "capacityDual": -0.001223,
+      "cfDeltaM": 595.6922,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 37.5M units of demand (service drops to 81.0%) and adds $33.2M operating cost"
+    },
+    "plt-3": {
+      "capacityDual": -0.001245,
+      "cfDeltaM": 598.2532,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 37.5M units of demand (service drops to 81.0%) and adds $35.8M operating cost"
+    }
+  },
+  "headline": "The MIP kept 9 existing site(s) open. Costliest flip: closing Ontario Plant strands 37.5M units (service 81.0%).",
+  "topClosedIds": [
+    "dc-7",
+    "dc-8"
+  ],
+  "topOpenedIds": [
+    "plt-3",
+    "plt-2",
+    "plt-1",
+    "dc-2",
+    "dc-6",
+    "dc-4"
+  ]
+}

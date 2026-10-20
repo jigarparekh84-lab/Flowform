@@ -1,0 +1,50 @@
+{
+  "cvar_lite": {
+    "expectedCostM": 101.14067,
+    "firstStageOpenIds": [
+      "n1",
+      "n2",
+      "n3"
+    ],
+    "modelBasis": "full",
+    "objectiveValueM": 107.454929,
+    "scenarioCostM": {
+      "base": 98.2706,
+      "soft": 83.9199,
+      "surge": 122.1882
+    },
+    "worstCostM": 122.1882
+  },
+  "expected": {
+    "expectedCostM": 101.14067,
+    "firstStageOpenIds": [
+      "n1",
+      "n2",
+      "n3"
+    ],
+    "modelBasis": "full",
+    "objectiveValueM": 101.14067,
+    "scenarioCostM": {
+      "base": 98.2706,
+      "soft": 83.9199,
+      "surge": 122.1882
+    },
+    "worstCostM": 122.1882
+  },
+  "minimax": {
+    "expectedCostM": 101.14067,
+    "firstStageOpenIds": [
+      "n1",
+      "n2",
+      "n3"
+    ],
+    "modelBasis": "full",
+    "objectiveValueM": 122.1882,
+    "scenarioCostM": {
+      "base": 98.2706,
+      "soft": 83.9199,
+      "surge": 122.1882
+    },
+    "worstCostM": 122.1882
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "l9Cap1000": {
+    "laneCustomers": [
+      "n6"
+    ],
+    "laneEntities": [
+      "l9"
+    ],
+    "laneShortfalls": [
+      {
+        "capacityUnits": 1000.0,
+        "from": "n2",
+        "laneId": "l9",
+        "requiredFlow": 2280.0,
+        "shortBy": 1280.0,
+        "to": "n6"
+      }
+    ],
+    "rootCauses": [
+      "LANE_CAPACITY_CONFLICT",
+      "MIN_THROUGHPUT_CONFLICT"
+    ],
+    "status": "Infeasible"
+  },
+  "noL9": {
+    "firstShortfall": {
+      "capacityMin": 10800.0,
+      "facilityId": "n2",
+      "feasibleThroughput": 9200.0,
+      "gap": 1600.0
+    },
+    "rootCauses": [
+      "MIN_THROUGHPUT_CONFLICT"
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "baseCostM": 98.2706,
+  "facilities": {
+    "n1": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 317.2294,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it strands 27.7M units of demand (service drops to 0.0%); operating cost falls $98.3M only because that demand goes unserved"
+    },
+    "n2": {
+      "capacityDual": 0.0,
+      "cfDeltaM": null,
+      "cfStatus": "infeasible",
+      "decision": "kept-open",
+      "headline": "Required: closing it makes the network infeasible"
+    },
+    "n3": {
+      "capacityDual": 0.0,
+      "cfDeltaM": 0.8504,
+      "cfStatus": "optimal",
+      "decision": "kept-open",
+      "headline": "Closing it raises cost by $850k (0.9%); service holds at 100.0%"
+    },
+    "n8": {
+      "capacityDual": null,
+      "cfDeltaM": 0.7,
+      "cfStatus": "optimal",
+      "decision": "closed",
+      "headline": "No customers within service radius / lead-time limits"
+    }
+  },
+  "headline": "The MIP closed Reno DC; kept 3 existing site(s) open. Costliest flip: closing Austin Plant strands 27.7M units (service 0.0%).",
+  "topClosedIds": [
+    "n8"
+  ],
+  "topOpenedIds": [
+    "n2",
+    "n1",
+    "n3"
+  ]
+}

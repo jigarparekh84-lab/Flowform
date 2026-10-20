@@ -1,0 +1,122 @@
+{
+  "choose_timing": {
+    "eventTiming": [
+      {
+        "eventId": "ev-expand-columbus",
+        "year": 5
+      },
+      {
+        "eventId": "ev-open-kc",
+        "year": 5
+      },
+      {
+        "eventId": "ev-expand-reno",
+        "year": 5
+      },
+      {
+        "eventId": "ev-close-atlanta",
+        "year": 5
+      },
+      {
+        "eventId": "ev-expand-plant",
+        "year": 5
+      }
+    ],
+    "model": "multi-period-run-basis-v2",
+    "npvTotalM": 489.8862,
+    "status": "Optimal",
+    "yearOpenIds": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "roadmap-kc-dc"
+      ]
+    ]
+  },
+  "force_timeline": {
+    "eventTiming": [
+      {
+        "eventId": "ev-expand-columbus",
+        "year": 1
+      },
+      {
+        "eventId": "ev-open-kc",
+        "year": 2
+      },
+      {
+        "eventId": "ev-expand-reno",
+        "year": 3
+      },
+      {
+        "eventId": "ev-close-atlanta",
+        "year": 4
+      },
+      {
+        "eventId": "ev-expand-plant",
+        "year": 5
+      }
+    ],
+    "model": "multi-period-run-basis-v2",
+    "npvTotalM": 496.3199,
+    "status": "Optimal",
+    "yearOpenIds": [
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3",
+        "roadmap-kc-dc"
+      ],
+      [
+        "n1",
+        "n2",
+        "n3",
+        "roadmap-kc-dc"
+      ],
+      [
+        "n1",
+        "n2",
+        "roadmap-kc-dc"
+      ],
+      [
+        "n1",
+        "n2",
+        "roadmap-kc-dc"
+      ]
+    ]
+  }
+}

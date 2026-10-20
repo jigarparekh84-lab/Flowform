@@ -1,0 +1,41 @@
+{
+  "bindingLaneCapacities": [
+    "ln-1",
+    "ln-10",
+    "ln-11",
+    "ln-20",
+    "ln-21",
+    "ln-22"
+  ],
+  "closedIds": [],
+  "kpis": {
+    "bindingLaneCount": 6,
+    "objectiveTotalM": 176.8118,
+    "servicePct": 100.0,
+    "transportCo2Kt": 50.996,
+    "transportCostM": 168.4818,
+    "uncoveredDemand": 0.0
+  },
+  "model": "fixed-charge-multi-echelon-v1",
+  "objectiveBreakdown": {
+    "carbonM": 0.0,
+    "fixedCapexM": 0.0,
+    "fixedOpexM": 7.8,
+    "laneFixedM": 0.53,
+    "totalM": 176.8118,
+    "transportM": 168.4818,
+    "uncoveredPenaltyM": 0.0
+  },
+  "openIds": [
+    "dc-1",
+    "dc-2",
+    "dc-3",
+    "dc-4",
+    "dc-5",
+    "dc-6",
+    "plt-1",
+    "plt-2",
+    "plt-3"
+  ],
+  "status": "Optimal"
+}
