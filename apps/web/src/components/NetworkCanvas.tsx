@@ -8,6 +8,7 @@ import { LayerRail } from './LayerRail'
 import { NetworkMap } from './NetworkMap'
 import { ScenarioFooter } from './ScenarioFooter'
 import { EmptyState } from './ui/EmptyState'
+import { START_WIZARD_EVENT } from '../data/onboarding'
 
 function initialLayers(): Record<string, boolean> {
   const out: Record<string, boolean> = {}
@@ -49,9 +50,18 @@ export function NetworkCanvas() {
           title="No network loaded"
           body="Upload sites, demand, and lanes in Data, or restore the built-in sample network to start designing."
           action={
-            <p className="muted tiny" style={{ margin: 0 }}>
-              Esc clears selection · ? for shortcuts
-            </p>
+            <>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => window.dispatchEvent(new Event(START_WIZARD_EVENT))}
+              >
+                Start with 4 questions
+              </button>
+              <p className="muted tiny" style={{ margin: 0 }}>
+                Esc clears selection · ? for shortcuts
+              </p>
+            </>
           }
         />
         <ScenarioFooter

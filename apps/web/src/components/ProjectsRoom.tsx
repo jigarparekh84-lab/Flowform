@@ -17,7 +17,7 @@ function formatWhen(iso: string): string {
   }
 }
 
-export function ProjectsRoom() {
+export function ProjectsRoom({ onStartWizard }: { onStartWizard?: () => void } = {}) {
   const {
     projectMeta,
     projects,
@@ -120,6 +120,11 @@ export function ProjectsRoom() {
           </p>
         </div>
         <div className="projects-header-actions">
+          {onStartWizard && (
+            <button type="button" className="btn" onClick={onStartWizard}>
+              Start with 4 questions
+            </button>
+          )}
           <button
             type="button"
             className="btn primary"

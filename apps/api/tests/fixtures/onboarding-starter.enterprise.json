@@ -1,0 +1,635 @@
+{
+  "format": "flowform-enterprise-pack",
+  "schemaVersion": "enterprise-data-v1",
+  "name": "Wizard starter",
+  "sites": [
+    {
+      "id": "plt-supply",
+      "name": "Supply source (assumed)",
+      "kind": "plant",
+      "lat": 37.38,
+      "lng": -95.06,
+      "capacityMin": 0,
+      "capacityMax": 51400,
+      "fixedCostM": 0,
+      "fixedOpexM": 0,
+      "status": "open"
+    },
+    {
+      "id": "dc-1",
+      "name": "Columbus, OH DC",
+      "kind": "dc",
+      "lat": 39.96,
+      "lng": -83,
+      "capacityMin": 0,
+      "capacityMax": 12000,
+      "fixedCostM": 0,
+      "fixedOpexM": 0.7,
+      "status": "open"
+    },
+    {
+      "id": "dc-2",
+      "name": "Reno, NV DC",
+      "kind": "dc",
+      "lat": 39.53,
+      "lng": -119.81,
+      "capacityMin": 0,
+      "capacityMax": 15420,
+      "fixedCostM": 0,
+      "fixedOpexM": 0.7,
+      "status": "open"
+    },
+    {
+      "id": "dc-3",
+      "name": "Atlanta, GA DC (candidate)",
+      "kind": "candidate",
+      "lat": 33.75,
+      "lng": -84.39,
+      "capacityMin": 0,
+      "capacityMax": 9000,
+      "fixedCostM": 5,
+      "fixedOpexM": 0.7,
+      "status": "candidate"
+    },
+    {
+      "id": "cust-1",
+      "name": "10001 (New York, NY)",
+      "kind": "demand",
+      "lat": 40.71,
+      "lng": -74.01,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-2",
+      "name": "60601 (Chicago, IL)",
+      "kind": "demand",
+      "lat": 41.88,
+      "lng": -87.63,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-3",
+      "name": "90012 (Los Angeles, CA)",
+      "kind": "demand",
+      "lat": 34.05,
+      "lng": -118.24,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-4",
+      "name": "75201 (Dallas, TX)",
+      "kind": "demand",
+      "lat": 32.78,
+      "lng": -96.8,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-5",
+      "name": "30303 (Atlanta, GA)",
+      "kind": "demand",
+      "lat": 33.75,
+      "lng": -84.39,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-6",
+      "name": "98101 (Seattle, WA)",
+      "kind": "demand",
+      "lat": 47.61,
+      "lng": -122.33,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-7",
+      "name": "33101 (Miami, FL)",
+      "kind": "demand",
+      "lat": 25.76,
+      "lng": -80.19,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-8",
+      "name": "80202 (Denver, CO)",
+      "kind": "demand",
+      "lat": 39.74,
+      "lng": -104.99,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-9",
+      "name": "02108 (Boston, MA)",
+      "kind": "demand",
+      "lat": 42.36,
+      "lng": -71.06,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    },
+    {
+      "id": "cust-10",
+      "name": "85004 (Phoenix, AZ)",
+      "kind": "demand",
+      "lat": 33.45,
+      "lng": -112.07,
+      "capacityMin": 0,
+      "capacityMax": 0,
+      "fixedCostM": 0,
+      "status": "open"
+    }
+  ],
+  "skus": [
+    {
+      "id": "sku-ambient-goods",
+      "name": "Ambient goods",
+      "code": "AMBIEN",
+      "groupId": "grp-ambient-goods",
+      "unitWeightKg": 8
+    },
+    {
+      "id": "sku-chilled",
+      "name": "Chilled",
+      "code": "CHILLE",
+      "groupId": "grp-chilled",
+      "unitWeightKg": 10
+    }
+  ],
+  "productGroups": [
+    {
+      "id": "grp-ambient-goods",
+      "name": "Ambient goods",
+      "code": "AMBIEN",
+      "unitWeightKg": 8
+    },
+    {
+      "id": "grp-chilled",
+      "name": "Chilled",
+      "code": "CHILLE",
+      "unitWeightKg": 10
+    }
+  ],
+  "demand": [
+    {
+      "id": "d-1-1",
+      "customerId": "cust-1",
+      "skuId": "sku-ambient-goods",
+      "volume": 2000
+    },
+    {
+      "id": "d-1-2",
+      "customerId": "cust-1",
+      "skuId": "sku-chilled",
+      "volume": 2000
+    },
+    {
+      "id": "d-2-1",
+      "customerId": "cust-2",
+      "skuId": "sku-ambient-goods",
+      "volume": 1750
+    },
+    {
+      "id": "d-2-2",
+      "customerId": "cust-2",
+      "skuId": "sku-chilled",
+      "volume": 1750
+    },
+    {
+      "id": "d-3-1",
+      "customerId": "cust-3",
+      "skuId": "sku-ambient-goods",
+      "volume": 2500
+    },
+    {
+      "id": "d-3-2",
+      "customerId": "cust-3",
+      "skuId": "sku-chilled",
+      "volume": 2500
+    },
+    {
+      "id": "d-4-1",
+      "customerId": "cust-4",
+      "skuId": "sku-ambient-goods",
+      "volume": 1500
+    },
+    {
+      "id": "d-4-2",
+      "customerId": "cust-4",
+      "skuId": "sku-chilled",
+      "volume": 1500
+    },
+    {
+      "id": "d-5-1",
+      "customerId": "cust-5",
+      "skuId": "sku-ambient-goods",
+      "volume": 1250
+    },
+    {
+      "id": "d-5-2",
+      "customerId": "cust-5",
+      "skuId": "sku-chilled",
+      "volume": 1250
+    },
+    {
+      "id": "d-6-1",
+      "customerId": "cust-6",
+      "skuId": "sku-ambient-goods",
+      "volume": 750
+    },
+    {
+      "id": "d-6-2",
+      "customerId": "cust-6",
+      "skuId": "sku-chilled",
+      "volume": 750
+    },
+    {
+      "id": "d-7-1",
+      "customerId": "cust-7",
+      "skuId": "sku-ambient-goods",
+      "volume": 500
+    },
+    {
+      "id": "d-7-2",
+      "customerId": "cust-7",
+      "skuId": "sku-chilled",
+      "volume": 500
+    },
+    {
+      "id": "d-8-1",
+      "customerId": "cust-8",
+      "skuId": "sku-ambient-goods",
+      "volume": 600
+    },
+    {
+      "id": "d-8-2",
+      "customerId": "cust-8",
+      "skuId": "sku-chilled",
+      "volume": 600
+    },
+    {
+      "id": "d-9-1",
+      "customerId": "cust-9",
+      "skuId": "sku-ambient-goods",
+      "volume": 1100
+    },
+    {
+      "id": "d-9-2",
+      "customerId": "cust-9",
+      "skuId": "sku-chilled",
+      "volume": 1100
+    },
+    {
+      "id": "d-10-1",
+      "customerId": "cust-10",
+      "skuId": "sku-ambient-goods",
+      "volume": 900
+    },
+    {
+      "id": "d-10-2",
+      "customerId": "cust-10",
+      "skuId": "sku-chilled",
+      "volume": 900
+    }
+  ],
+  "lanes": [
+    {
+      "id": "ln-1",
+      "from": "plt-supply",
+      "to": "dc-1",
+      "mode": "Truck",
+      "costPerUnit": 0.8087,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-2",
+      "from": "plt-supply",
+      "to": "dc-2",
+      "mode": "Truck",
+      "costPerUnit": 1.6117,
+      "leadDays": 3,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-3",
+      "from": "plt-supply",
+      "to": "dc-3",
+      "mode": "Truck",
+      "costPerUnit": 0.7794,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-4",
+      "from": "dc-1",
+      "to": "cust-1",
+      "mode": "Truck",
+      "costPerUnit": 0.857,
+      "leadDays": 1,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-5",
+      "from": "dc-1",
+      "to": "cust-2",
+      "mode": "Truck",
+      "costPerUnit": 0.4962,
+      "leadDays": 1,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-6",
+      "from": "dc-1",
+      "to": "cust-3",
+      "mode": "Truck",
+      "costPerUnit": 3.5522,
+      "leadDays": 4,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-7",
+      "from": "dc-1",
+      "to": "cust-4",
+      "mode": "Truck",
+      "costPerUnit": 1.6424,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-8",
+      "from": "dc-1",
+      "to": "cust-5",
+      "mode": "Truck",
+      "costPerUnit": 0.7846,
+      "leadDays": 1,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-9",
+      "from": "dc-1",
+      "to": "cust-6",
+      "mode": "Truck",
+      "costPerUnit": 3.6149,
+      "leadDays": 5,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-10",
+      "from": "dc-1",
+      "to": "cust-7",
+      "mode": "Truck",
+      "costPerUnit": 1.79,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-11",
+      "from": "dc-1",
+      "to": "cust-8",
+      "mode": "Truck",
+      "costPerUnit": 2.0945,
+      "leadDays": 3,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-12",
+      "from": "dc-1",
+      "to": "cust-9",
+      "mode": "Truck",
+      "costPerUnit": 1.156,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-13",
+      "from": "dc-1",
+      "to": "cust-10",
+      "mode": "Truck",
+      "costPerUnit": 2.9946,
+      "leadDays": 4,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-14",
+      "from": "dc-2",
+      "to": "cust-1",
+      "mode": "Truck",
+      "costPerUnit": 4.3082,
+      "leadDays": 5,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-15",
+      "from": "dc-2",
+      "to": "cust-2",
+      "mode": "Truck",
+      "costPerUnit": 3.0302,
+      "leadDays": 4,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-16",
+      "from": "dc-2",
+      "to": "cust-3",
+      "mode": "Truck",
+      "costPerUnit": 0.6992,
+      "leadDays": 1,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-17",
+      "from": "dc-2",
+      "to": "cust-4",
+      "mode": "Truck",
+      "costPerUnit": 2.45,
+      "leadDays": 3,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-18",
+      "from": "dc-2",
+      "to": "cust-5",
+      "mode": "Truck",
+      "costPerUnit": 3.583,
+      "leadDays": 4,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-19",
+      "from": "dc-2",
+      "to": "cust-6",
+      "mode": "Truck",
+      "costPerUnit": 1.0301,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-20",
+      "from": "dc-2",
+      "to": "cust-7",
+      "mode": "Truck",
+      "costPerUnit": 4.4448,
+      "leadDays": 5,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-21",
+      "from": "dc-2",
+      "to": "cust-8",
+      "mode": "Truck",
+      "costPerUnit": 1.4181,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-22",
+      "from": "dc-2",
+      "to": "cust-9",
+      "mode": "Truck",
+      "costPerUnit": 4.5302,
+      "leadDays": 6,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-23",
+      "from": "dc-2",
+      "to": "cust-10",
+      "mode": "Truck",
+      "costPerUnit": 1.0812,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-24",
+      "from": "dc-3",
+      "to": "cust-1",
+      "mode": "Truck",
+      "costPerUnit": 1.3421,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-25",
+      "from": "dc-3",
+      "to": "cust-2",
+      "mode": "Truck",
+      "costPerUnit": 1.0598,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-26",
+      "from": "dc-3",
+      "to": "cust-3",
+      "mode": "Truck",
+      "costPerUnit": 3.4783,
+      "leadDays": 4,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-27",
+      "from": "dc-3",
+      "to": "cust-4",
+      "mode": "Truck",
+      "costPerUnit": 1.2954,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-28",
+      "from": "dc-3",
+      "to": "cust-5",
+      "mode": "Truck",
+      "costPerUnit": 0.15,
+      "leadDays": 1,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-29",
+      "from": "dc-3",
+      "to": "cust-6",
+      "mode": "Truck",
+      "costPerUnit": 3.9207,
+      "leadDays": 5,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-30",
+      "from": "dc-3",
+      "to": "cust-7",
+      "mode": "Truck",
+      "costPerUnit": 1.092,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-31",
+      "from": "dc-3",
+      "to": "cust-8",
+      "mode": "Truck",
+      "costPerUnit": 2.1778,
+      "leadDays": 3,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-32",
+      "from": "dc-3",
+      "to": "cust-9",
+      "mode": "Truck",
+      "costPerUnit": 1.6849,
+      "leadDays": 2,
+      "capacity": 51400
+    },
+    {
+      "id": "ln-33",
+      "from": "dc-3",
+      "to": "cust-10",
+      "mode": "Truck",
+      "costPerUnit": 2.8589,
+      "leadDays": 4,
+      "capacity": 51400
+    }
+  ],
+  "bom": [],
+  "costFactors": {
+    "emissionKgPerTonMileByMode": {
+      "Truck": 0.161,
+      "Rail": 0.022,
+      "Intermodal": 0.065,
+      "Ocean": 0.01,
+      "Air": 0.98
+    },
+    "transportCostScale": 1,
+    "offLanePremium": 1.35,
+    "uncoveredPenaltyPerUnit": 15
+  },
+  "globals": {
+    "serviceTargetPct": 95,
+    "serviceRadiusMiles": 600,
+    "capexBudgetM": 50,
+    "maxFacilities": 3
+  }
+}

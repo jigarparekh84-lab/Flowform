@@ -15,6 +15,8 @@ import { ProjectsRoom } from './components/ProjectsRoom'
 import { ScenariosLibrary } from './components/ScenariosLibrary'
 import { TopChrome } from './components/TopChrome'
 import { KeyboardHelp } from './components/ui/KeyboardHelp'
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard'
+import { START_WIZARD_EVENT } from './data/onboarding'
 import { useFlowform } from './state/FlowformContext'
 import { useTheme } from './state/theme'
 
@@ -29,8 +31,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
 function App() {
   const [room, setRoom] = useState<NavItem>('Network')
   const [helpOpen, setHelpOpen] = useState(false)
+  const [wizardOpen, setWizardOpen] = useState(false)
   const { activeScenario, horizon, setHorizon, clearSelection } = useFlowform()
   const { theme, toggleTheme } = useTheme()
+
+  useEffect(() => {
+    const open = () => setWizardOpen(true)
+    window.addEventListener(START_WIZARD_EVENT, open)
+    return () => window.removeEventListener(START_WIZARD_EVENT, open)
+  }, [])
 
   const closeHelp = useCallback(() => setHelpOpen(false), [])
   const toggleHelp = useCallback(() => setHelpOpen((v) => !v), [])
@@ -73,7 +82,7 @@ function App() {
       <div className="app-body">
         <LeftNav active={room} onSelect={setRoom} />
         <main className="main-stage" aria-label={room}>
-          {room === 'Projects' && <ProjectsRoom />}
+          {room === 'Projects' && <ProjectsRoom onStartWizard={() => setWizardOpen(true)} />}
           {room === 'Network' && <NetworkCanvas />}
           {room === 'Greenfield' && <GreenfieldStudio />}
           {room === 'Hubs' && <HubSpokeStudio />}
@@ -90,6 +99,7 @@ function App() {
         </main>
       </div>
       <KeyboardHelp open={helpOpen} onClose={closeHelp} />
+      <OnboardingWizard open={wizardOpen} onClose={() => setWizardOpen(false)} onDone={() => setRoom('Compare')} />
     </div>
   )
 }
