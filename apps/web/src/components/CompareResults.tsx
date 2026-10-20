@@ -3,6 +3,7 @@ import { CommentsPanel } from './CommentsPanel'
 import { DecisionLogPanel } from './DecisionLogPanel'
 import { MipLaneModePanel } from './MipLaneModes'
 import { ShortfallTables } from './ShortfallTables'
+import { RunNarrativeCard } from './RunNarrativeCard'
 import { shortfallTables } from '../data/validation'
 import { EmptyState } from './ui/EmptyState'
 import { RoomHeader } from './ui/RoomHeader'
@@ -210,6 +211,15 @@ export function CompareResults() {
     clearStochasticResult,
   } = useFlowform()
 
+  // FF-115: summarise the active scenario's Run, else the most recent Run.
+  const narrativeScenario = activeScenario?.optimizeMeta
+    ? activeScenario
+    : [...scenarios].reverse().find((s) => s.optimizeMeta)
+  const nameOfNode = useMemo(() => {
+    const m = new Map(network.nodes.map((n) => [n.id, n.name]))
+    return (id: string) => m.get(id) ?? id
+  }, [network.nodes])
+
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
     defaultSelection(scenarios, activeScenarioId),
   )
@@ -306,6 +316,14 @@ export function CompareResults() {
         title="Results"
         tip="Side-by-side KPIs, map diffs, and sensitivity vs a Reference scenario (defaults: Active + Baseline)."
       />
+
+      {narrativeScenario?.optimizeMeta && (
+        <RunNarrativeCard
+          meta={narrativeScenario.optimizeMeta}
+          nameOf={nameOfNode}
+          title={`What this Run says — ${narrativeScenario.name}`}
+        />
+      )}
 
       {scenarios.length < 2 ? (
         <EmptyState

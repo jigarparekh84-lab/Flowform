@@ -7,6 +7,7 @@ import {
 } from '../../data/onboarding'
 import type { Scenario } from '../../data/sampleNetwork'
 import { useFlowform } from '../../state/FlowformContext'
+import { RunNarrativeCard } from '../RunNarrativeCard'
 
 const EXAMPLE: OnboardingAnswers = {
   projectName: 'My first network',
@@ -166,6 +167,13 @@ export function OnboardingWizard({
                 {om.status ?? 'Solved'} · total cost {om.objectiveBreakdown ? `$${om.objectiveBreakdown.totalM.toFixed(2)}M` : '—'} ·
                 service {om.servicePct.toFixed(1)}% · opens {om.openedIds.length} · closes {om.closedIds.length}
               </p>
+            )}
+            {om && (
+              <RunNarrativeCard
+                meta={om}
+                title="In plain words"
+                nameOf={(id) => network.nodes.find((n) => n.id === id)?.name ?? id}
+              />
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" className="btn ghost" onClick={onClose}>Stay here</button>

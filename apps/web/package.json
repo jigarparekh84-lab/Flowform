@@ -12,10 +12,11 @@
     "test:enterprise": "npx --yes tsx src/data/enterprisePack.test.ts",
     "test:cts": "npx --yes tsx src/data/costToServe.test.ts",
     "test:defects": "npx --yes tsx src/data/defectFixes.test.ts",
-    "test:data": "npm run test:enterprise && npm run test:cts && npm run test:defects && npm run test:sync && npm run test:validation && npm run test:onboarding",
+    "test:data": "npm run test:enterprise && npm run test:cts && npm run test:defects && npm run test:sync && npm run test:validation && npm run test:onboarding && npm run test:narrative",
     "test:sync": "npx --yes tsx src/data/workspaceSync.test.ts",
     "test:validation": "npx --yes tsx src/data/validation.test.ts",
-    "test:onboarding": "npx --yes tsx src/data/onboarding.test.ts"
+    "test:onboarding": "npx --yes tsx src/data/onboarding.test.ts",
+    "test:narrative": "npx --yes tsx src/data/narrative.test.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.11.2",
