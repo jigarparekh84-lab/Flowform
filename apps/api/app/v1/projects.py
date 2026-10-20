@@ -41,7 +41,7 @@ def _out(p: Project) -> dict[str, Any]:
     }
 
 
-def _get(s, ident: Identity, pid: uuid.UUID) -> Project:
+def get_project_or_404(s, ident: Identity, pid: uuid.UUID) -> Project:
     p = s.execute(
         select(Project).where(Project.id == pid, Project.tenant_id == ident.tenant_id)
     ).scalar_one_or_none()
@@ -76,13 +76,13 @@ async def create_project(request: Request, ident: Identity = Depends(current_ide
 @router.get("/{project_id}")
 def get_project(project_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
     with tenant_session(ident.tenant_id) as s:
-        return _out(_get(s, ident, project_id))
+        return _out(get_project_or_404(s, ident, project_id))
 
 
 @router.get("/{project_id}/snapshot")
 def get_snapshot(project_id: uuid.UUID, version: int | None = None, ident: Identity = Depends(current_identity)) -> Response:
     with tenant_session(ident.tenant_id) as s:
-        p = _get(s, ident, project_id)
+        p = get_project_or_404(s, ident, project_id)
         v = s.execute(
             select(ProjectVersion).where(
                 ProjectVersion.project_id == p.id, ProjectVersion.version == (version or p.current_version)
@@ -98,7 +98,7 @@ def get_snapshot(project_id: uuid.UUID, version: int | None = None, ident: Ident
 async def update_project(project_id: uuid.UUID, request: Request, ident: Identity = Depends(current_identity)) -> dict[str, Any]:
     raw, doc = await _snapshot(request)
     with tenant_session(ident.tenant_id) as s:
-        p = _get(s, ident, project_id)
+        p = get_project_or_404(s, ident, project_id)
         p.current_version += 1
         p.name = _name(doc, p.name)
         s.add(ProjectVersion(tenant_id=ident.tenant_id, project_id=p.id, version=p.current_version, snapshot_raw=raw, created_by=ident.user_id))
@@ -111,7 +111,7 @@ async def update_project(project_id: uuid.UUID, request: Request, ident: Identit
 @router.delete("/{project_id}", status_code=204)
 def delete_project(project_id: uuid.UUID, ident: Identity = Depends(current_identity)) -> Response:
     with tenant_session(ident.tenant_id) as s:
-        p = _get(s, ident, project_id)
+        p = get_project_or_404(s, ident, project_id)
         s.delete(p)
         s.add(AuditEvent(tenant_id=ident.tenant_id, actor_id=ident.user_id, action="project.delete", target=str(project_id)))
     return Response(status_code=204)

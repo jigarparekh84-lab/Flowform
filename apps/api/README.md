@@ -288,3 +288,6 @@ mode returns 401 until WorkOS (FF-106). Tenant isolation is enforced twice:
 every query filters `tenant_id`, and Postgres RLS (FORCEd, via the
 `flowform_app` role + `app.tenant_id`) hides other tenants' rows.
 DB tests skip when `DATABASE_URL` is unset.
+
+Scenarios: `/v1/projects/{id}/scenarios` (list, create, get, update, delete;
+`{name, spec}`). Runs: `GET /v1/projects/{id}/runs` (creation via the job API, FF-105).

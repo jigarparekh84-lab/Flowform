@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -92,7 +92,10 @@ class Run(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
     scenario_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("scenarios.id", ondelete="SET NULL"))
     kind: Mapped[str] = mapped_column(String(30), nullable=False)  # optimize|multi-period|stochastic
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")  # queued|running|succeeded|failed|cancelled
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    message: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
     input_hash: Mapped[str | None] = mapped_column(String(64))
     engine_version: Mapped[str | None] = mapped_column(String(40))
     solver_version: Mapped[str | None] = mapped_column(String(80))
