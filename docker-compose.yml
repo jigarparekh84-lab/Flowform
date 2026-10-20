@@ -20,7 +20,36 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # 6380 so it never collides with a host Redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["arq", "app.jobs.worker.WorkerSettings"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://flowform:flowform@db:5432/flowform
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   api:
+    environment:
+      DATABASE_URL: postgresql+psycopg://flowform:flowform@db:5432/flowform
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_BACKEND: arq
+      AUTH_MODE: dev
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -32,6 +61,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web:
     build:

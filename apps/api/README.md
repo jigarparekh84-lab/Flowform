@@ -291,3 +291,15 @@ DB tests skip when `DATABASE_URL` is unset.
 
 Scenarios: `/v1/projects/{id}/scenarios` (list, create, get, update, delete;
 `{name, spec}`). Runs: `GET /v1/projects/{id}/runs` (creation via the job API, FF-105).
+
+## Async solve jobs (FF-105)
+
+`POST /v1/projects/{id}/runs` `{kind: optimize|multi-period|stochastic, payload, scenarioId?}`
+→ 202 queued run (input hash + engine/solver versions stored). Then
+`GET .../runs/{rid}` (result when terminal), `GET .../runs/{rid}/events` (SSE),
+`POST .../runs/{rid}/cancel`. The sync `/optimize*` endpoints are unchanged.
+
+Queue backend via `QUEUE_BACKEND`: `inline` (default, in-process threads — local
+dev and CI), `arq` (Redis; `docker compose up -d redis`, `REDIS_URL=redis://127.0.0.1:6380/0`,
+worker `arq app.jobs.worker.WorkerSettings`), `manual` (tests). The Run row is the
+state of record; cancel flips its status and late results are discarded.

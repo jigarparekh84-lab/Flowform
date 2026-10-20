@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from flowform_engine import solve_multi_period, solve_optimize, solve_stochastic
 from .v1.projects import router as projects_router
+from .v1.runs import router as runs_router
 from .v1.scenarios import router as scenarios_router
 
 app = FastAPI(
@@ -44,6 +45,7 @@ app.add_middleware(
 # Server persistence (FF-104); DB is only touched when /v1 is called.
 app.include_router(projects_router)
 app.include_router(scenarios_router)
+app.include_router(runs_router)
 
 
 class FacilityConstraintIn(BaseModel):

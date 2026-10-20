@@ -50,8 +50,15 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U flowform -d flowform"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
     env:
       DATABASE_URL: postgresql+psycopg://flowform:flowform@127.0.0.1:5433/flowform
+      REDIS_URL: redis://127.0.0.1:6380/0
     defaults:
       run:
         working-directory: apps/api
