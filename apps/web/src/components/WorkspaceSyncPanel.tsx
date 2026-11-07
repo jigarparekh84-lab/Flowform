@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  getQuotaMessage,
   getSyncStatus,
   localOnlyProjects,
   migrateLocalProjects,
@@ -13,11 +14,13 @@ const LABEL: Record<SyncStatus, string> = {
   online: 'Saved to your workspace.',
   offline: 'Workspace unreachable — saving in this browser; changes sync when it is back.',
   unauthorized: 'Not signed in to a workspace — saving in this browser only.',
+  quota: 'Workspace limit reached — saving in this browser; free up space to sync.',
 }
 
 /** FF-107: sync status banner + one-click "move my local projects". */
 export function WorkspaceSyncPanel({ onChanged }: { onChanged: () => void }) {
   const [status, setStatus] = useState<SyncStatus>(getSyncStatus())
+  const [quota, setQuota] = useState<string | null>(getQuotaMessage())
   const [localCount, setLocalCount] = useState(() => localOnlyProjects().length)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -26,6 +29,7 @@ export function WorkspaceSyncPanel({ onChanged }: { onChanged: () => void }) {
     () =>
       subscribeSyncStatus((s) => {
         setStatus(s)
+        setQuota(getQuotaMessage())
         setLocalCount(localOnlyProjects().length)
       }),
     [],
@@ -37,15 +41,16 @@ export function WorkspaceSyncPanel({ onChanged }: { onChanged: () => void }) {
     setBusy(false)
     setLocalCount(localOnlyProjects().length)
     onChanged()
+    const why = r.status === 'quota' ? 'workspace limit reached' : 'workspace unreachable'
     setMsg(
       r.failed
-        ? `Moved ${r.pushed}; ${r.failed} still local (workspace unreachable).`
+        ? `Moved ${r.pushed}; ${r.failed} still local (${why}).`
         : `Moved ${r.pushed} project(s) to your workspace${r.pulled ? `; added ${r.pulled} from it` : ''}.`,
     )
   }
 
   if (status === 'disabled') return null
-  const warn = status === 'offline' || status === 'unauthorized'
+  const warn = status === 'offline' || status === 'unauthorized' || status === 'quota'
   return (
     <div
       className={`workspace-sync ${warn ? 'is-warn' : ''}`}
@@ -57,6 +62,7 @@ export function WorkspaceSyncPanel({ onChanged }: { onChanged: () => void }) {
       }}
     >
       <span>{LABEL[status]}</span>
+      {status === 'quota' && quota && <span className="muted">{quota}</span>}
       {status === 'online' && localCount > 0 && (
         <button type="button" className="btn" disabled={busy} onClick={() => void migrate()}>
           {busy ? 'Moving…' : `Move my ${localCount} local project(s) to my workspace`}

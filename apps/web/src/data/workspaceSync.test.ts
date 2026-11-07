@@ -15,6 +15,7 @@ const mem = new Map<string, string>()
 type Row = { id: string; body: string; version: number }
 const server = new Map<string, Row>()
 let online = true
+let quota = false
 let seq = 0
 ;(globalThis as { fetch?: unknown }).fetch = async (url: string, init: RequestInit = {}) => {
   if (!online) throw new TypeError('fetch failed')
@@ -27,6 +28,12 @@ let seq = 0
   const [, id, snap] = m
   if (!id && method === 'GET') return json(200, { projects: [...server.values()].map((r) => ({ id: r.id })) })
   if (!id && method === 'POST') {
+    if (quota) {
+      return new Response(
+        JSON.stringify({ detail: 'at its 2-project limit (MAX_PROJECTS_PER_TENANT)' }),
+        { status: 403, headers: { 'Content-Type': 'application/json', 'X-Quota-Limit': 'projects' } },
+      )
+    }
     const r = { id: `srv-${++seq}`, body: String(init.body), version: 1 }
     server.set(r.id, r)
     return json(201, { id: r.id, version: 1 })
@@ -112,5 +119,19 @@ assert.equal(await S.pullWorkspaceProjects(), 0)
 P.deleteProject(a.id)
 await new Promise((res) => setTimeout(res, 20))
 assert.ok(![...server.values()].some((row) => JSON.parse(row.body).meta?.name === 'Alpha 2'))
+
+// 8. A quota refusal (403 + X-Quota-Limit) is not reported as "not signed in".
+quota = true
+const g = P.createProject('Gamma', snap('g'))
+await new Promise((res) => setTimeout(res, 20))
+assert.equal(S.getSyncStatus(), 'quota')
+assert.match(S.getQuotaMessage() ?? '', /MAX_PROJECTS_PER_TENANT/)
+assert.ok(S.localOnlyProjects().includes(g.id), 'the project stays local, not lost')
+
+quota = false
+assert.equal(await S.pushProject(g.id), true)
+assert.equal(S.getSyncStatus(), 'online')
+assert.equal(S.getQuotaMessage(), null)
+assert.ok(!S.localOnlyProjects().includes(g.id))
 
 console.log('workspaceSync: ok')

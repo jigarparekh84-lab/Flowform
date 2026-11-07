@@ -74,6 +74,40 @@ def test_crud_and_versioning(client):
     assert client.get(f"/v1/projects/{pid}", headers=_h(t)).status_code == 404
 
 
+def test_put_if_match_guards_against_a_stale_base_version(client):
+    """Two tabs saving the same project must not silently clobber each other."""
+    t = uuid.uuid4()
+    r = client.post("/v1/projects", content=b'{"name": "Concurrent", "state": {}}', headers=_h(t))
+    pid, v1 = r.json()["id"], r.json()["version"]
+
+    ok = client.put(
+        f"/v1/projects/{pid}",
+        content=b'{"name": "Tab A", "state": {}}',
+        headers={**_h(t), "If-Match": f'"{v1}"'},
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["version"] == v1 + 1
+    assert ok.headers["etag"] == f'"{v1 + 1}"'
+
+    stale = client.put(
+        f"/v1/projects/{pid}",
+        content=b'{"name": "Tab B", "state": {}}',
+        headers={**_h(t), "If-Match": f'"{v1}"'},
+    )
+    assert stale.status_code == 409, stale.text
+    assert "reload" in stale.json()["detail"].lower()
+    assert client.get(f"/v1/projects/{pid}", headers=_h(t)).json()["name"] == "Tab A"
+
+    # A malformed If-Match is a client error, not a silent overwrite.
+    assert client.put(
+        f"/v1/projects/{pid}", content=b"{}", headers={**_h(t), "If-Match": "abc"}
+    ).status_code == 400
+
+    # Absent If-Match keeps the legacy last-write-wins behaviour.
+    last = client.put(f"/v1/projects/{pid}", content=b'{"name": "Tab C", "state": {}}', headers=_h(t))
+    assert last.status_code == 200 and last.json()["version"] == v1 + 2
+
+
 def test_sample_flowform_json_round_trips_byte_equal(client):
     t = uuid.uuid4()
     raw = SAMPLE_PROJECT.read_bytes()

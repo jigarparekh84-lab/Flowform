@@ -7,7 +7,7 @@
  * VITE_PROJECT_STORE=local disables server sync entirely.
  */
 
-import { authHeaders } from './apiAuth'
+import { authFetch } from './apiAuth'
 import { DEFAULT_API_BASE } from './apiBase'
 import {
   exportProjectJson,
@@ -22,7 +22,7 @@ import {
 export const LINKS_KEY = 'flowform-server-links'
 export const PENDING_KEY = 'flowform-sync-pending'
 
-export type SyncStatus = 'disabled' | 'unknown' | 'online' | 'offline' | 'unauthorized'
+export type SyncStatus = 'disabled' | 'unknown' | 'online' | 'offline' | 'unauthorized' | 'quota'
 
 type Env = { VITE_PROJECT_STORE?: string }
 const env: Env =
@@ -31,6 +31,8 @@ const env: Env =
 let base = DEFAULT_API_BASE
 let enabled = (env.VITE_PROJECT_STORE ?? 'api') !== 'local'
 let status: SyncStatus = enabled ? 'unknown' : 'disabled'
+/** Server explanation for the last quota refusal (CR-005), if any. */
+let quotaMessage: string | null = null
 let debounceMs = 1500
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const subs = new Set<(s: SyncStatus) => void>()
@@ -47,6 +49,10 @@ export function configureWorkspaceSync(opts: { base?: string; enabled?: boolean;
 
 export function getSyncStatus(): SyncStatus {
   return status
+}
+
+export function getQuotaMessage(): string | null {
+  return quotaMessage
 }
 
 export function subscribeSyncStatus(fn: (s: SyncStatus) => void): () => void {
@@ -100,21 +106,38 @@ export function localOnlyProjects(): string[] {
     .filter((id) => !links[id] || p.has(id))
 }
 
+async function detailFrom(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.clone().json()) as { detail?: unknown }
+    return typeof body.detail === 'string' ? body.detail : null
+  } catch {
+    return null
+  }
+}
+
 async function api(path: string, init: RequestInit = {}): Promise<Response> {
   let res: Response
   try {
-    res = await fetch(`${base}${path}`, {
+    res = await authFetch(`${base}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...authHeaders(), ...(init.headers ?? {}) },
+      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
     })
   } catch (e) {
     setStatus('offline')
     throw e
   }
+  if (res.status === 403 && res.headers.get('x-quota-limit')) {
+    // A quota is not an auth failure: the session is fine, the workspace is
+    // full (CR-005). Keep the server's explanation for the banner.
+    quotaMessage = await detailFrom(res)
+    setStatus('quota')
+    throw new Error(quotaMessage ?? 'workspace quota reached')
+  }
   if (res.status === 401 || res.status === 403) {
     setStatus('unauthorized')
     throw new Error(`unauthorized (${res.status})`)
   }
+  quotaMessage = null
   setStatus('online')
   return res
 }
