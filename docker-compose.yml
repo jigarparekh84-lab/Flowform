@@ -50,11 +50,15 @@ services:
       REDIS_URL: redis://redis:6379/0
       QUEUE_BACKEND: arq
       AUTH_MODE: dev
+      # CR-012: the dev bypass normally accepts loopback peers only; inside a
+      # container every peer is the Docker gateway. This is safe because the
+      # published ports below are bound to 127.0.0.1 — never expose this stack.
+      DEV_AUTH_ALLOW_REMOTE: "1"
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     ports:
-      - "5182:5182"
+      - "127.0.0.1:5182:5182"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5182/health')"]
       interval: 10s
@@ -74,7 +78,7 @@ services:
       args:
         VITE_API_URL: http://127.0.0.1:5182
     ports:
-      - "5180:5180"
+      - "127.0.0.1:5180:5180"
     depends_on:
       api:
         condition: service_healthy

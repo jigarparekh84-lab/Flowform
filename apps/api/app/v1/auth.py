@@ -3,6 +3,13 @@
 ``AUTH_MODE``:
   * ``dev``    — local/CI bypass: ``X-Dev-Tenant`` (UUID), ``X-Dev-User`` (email),
                  ``X-Dev-Role`` (owner|admin|editor|viewer, default owner).
+                 **Local only** (CR-012): the socket peer must be loopback (or an
+                 in-process test client) and the request must not arrive through a
+                 proxy, because these headers are trivially forged. A startup
+                 warning and ``/v1/auth/config.warning`` keep it visible.
+                 ``DEV_AUTH_ALLOW_REMOTE=1`` is the explicit escape hatch for a
+                 deliberate container/tunnel setup where the port is already
+                 loopback-bound.
   * ``jwt``    — verify a Bearer JWT (RS256/ES256 via ``AUTH_JWKS_URL`` or
                  ``AUTH_JWT_PUBLIC_KEY``; HS256 via ``AUTH_JWT_SECRET`` for tests).
                  ``AUTH_JWT_ISSUER`` / ``AUTH_JWT_AUDIENCE`` are enforced when set.
@@ -14,10 +21,17 @@
 Claims → identity: tenant = ``org_id`` (WorkOS organization; also
 ``tenant_id``/``tid``), user = ``sub``, role = ``role`` (or first of ``roles``).
 Tenants and users are provisioned on first sight (self-serve).
+
+WorkOS tokens are additionally checked against this application's
+``WORKOS_CLIENT_ID``: the ``client_id`` (or ``azp``) claim must match, so a
+session minted for a different WorkOS client cannot be replayed here. There is
+no documented ``aud`` claim for AuthKit access tokens, so the client id is the
+audience check (``WORKOS_ENFORCE_CLIENT_CLAIM=0`` relaxes it).
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -46,6 +60,8 @@ class Identity:
     role: str
     email: str | None = None
     subject: str | None = None
+    #: WorkOS session id (``sid`` claim) — needed to revoke the session on logout.
+    session_id: str | None = None
 
     def can(self, role: str) -> bool:
         return RANK.get(self.role, -1) >= RANK[role]
@@ -53,6 +69,58 @@ class Identity:
 
 def auth_mode() -> str:
     return os.environ.get("AUTH_MODE", "off").lower()
+
+
+# ---------------------------------------------------------------- dev-mode guard
+
+#: Peers that are the same machine (or the in-process test transport).
+LOCAL_PEERS = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost", "testclient"}
+#: If any of these is present the request came through a proxy, so the socket
+#: peer is the proxy — not the client — and dev headers must not be trusted.
+PROXY_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip", "x-forwarded-host", "cf-connecting-ip")
+
+
+def dev_auth_allow_remote() -> bool:
+    return os.environ.get("DEV_AUTH_ALLOW_REMOTE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_local_request(request: Request) -> bool:
+    """True when accepting the dev bypass cannot expose a shared deployment."""
+    if dev_auth_allow_remote():
+        return True
+    if any(h in request.headers for h in PROXY_HEADERS):
+        return False
+    host = (request.client.host if request.client else "") or ""
+    return host in LOCAL_PEERS
+
+
+def dev_auth_warning() -> str | None:
+    """Loud, user-visible description of the active dev bypass (None otherwise)."""
+    if auth_mode() != "dev":
+        return None
+    scope = (
+        "ANY client that can reach this port (DEV_AUTH_ALLOW_REMOTE=1)"
+        if dev_auth_allow_remote()
+        else "loopback clients only"
+    )
+    return (
+        f"AUTH_MODE=dev is a header-based authentication bypass ({scope}). "
+        "X-Dev-Role defaults to owner and X-Dev-Tenant picks the workspace, so "
+        "this must only run on a developer machine. Set AUTH_MODE=workos or jwt "
+        "for any shared deployment."
+    )
+
+
+def warn_dev_auth(logger: logging.Logger | None = None) -> None:
+    """Call once at startup so an exposed dev bypass is impossible to miss."""
+    msg = dev_auth_warning()
+    if not msg:
+        return
+    log = logger or logging.getLogger("flowform.api")
+    if dev_auth_allow_remote():
+        log.critical("DEV AUTH EXPOSED — %s", msg)
+    else:
+        log.warning("DEV AUTH — %s", msg)
 
 
 def normalize_role(raw: Any) -> str:
@@ -122,6 +190,7 @@ def jwt_settings() -> dict[str, Any]:
 
 def verify_token(token: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
     import jwt
+    from jwt.types import Options
 
     cfg = settings or jwt_settings()
     try:
@@ -134,13 +203,27 @@ def verify_token(token: str, settings: dict[str, Any] | None = None) -> dict[str
             key, algs = cfg["secret"], ["HS256"]
         else:
             raise TokenError("no verification key configured")
-        opts = {"require": ["exp", "sub"], "verify_aud": bool(cfg.get("audience"))}
-        return jwt.decode(token, key, algorithms=algs, issuer=cfg.get("issuer") or None,
-                          audience=cfg.get("audience") or None, options=opts, leeway=30)
+        opts: Options = {"require": ["exp", "sub"], "verify_aud": bool(cfg.get("audience"))}
+        claims = jwt.decode(token, key, algorithms=algs, issuer=cfg.get("issuer") or None,
+                            audience=cfg.get("audience") or None, options=opts, leeway=30)
     except TokenError:
         raise
     except Exception as e:  # jwt.PyJWTError and key fetch errors
         raise TokenError(str(e)) from e
+    _check_client_claim(claims, cfg)
+    return claims
+
+
+def _check_client_claim(claims: dict[str, Any], cfg: dict[str, Any]) -> None:
+    """The token must have been minted for *this* WorkOS application."""
+    cid = cfg.get("client_id")
+    if not cid or not cfg.get("enforce_client_claim"):
+        return
+    azp = claims.get("azp")
+    if azp and azp != cid:
+        raise TokenError("token authorized party does not match this application")
+    if claims.get("client_id") != cid and azp != cid:
+        raise TokenError("token was issued for a different client")
 
 
 def identity_from_claims(claims: dict[str, Any]) -> Identity:
@@ -151,7 +234,11 @@ def identity_from_claims(claims: dict[str, Any]) -> Identity:
     role = normalize_role(raw_role) if raw_role else None
     tid, uid, eff = _provision(str(org), by_external=True, email=claims.get("email"),
                                subject=str(claims["sub"]), role=role)
-    return Identity(tenant_id=tid, user_id=uid, role=eff, email=claims.get("email"), subject=str(claims["sub"]))
+    sid = claims.get("sid")
+    return Identity(
+        tenant_id=tid, user_id=uid, role=eff, email=claims.get("email"),
+        subject=str(claims["sub"]), session_id=str(sid) if sid else None,
+    )
 
 
 # ---------------------------------------------------------------- dependencies
@@ -165,6 +252,16 @@ def current_identity(
 ) -> Identity:
     mode = auth_mode()
     if mode == "dev":
+        if not is_local_request(request):
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "AUTH_MODE=dev only accepts local requests; use a real identity "
+                    "provider for a shared deployment (DEV_AUTH_ALLOW_REMOTE=1 "
+                    "overrides this for an isolated dev container)"
+                ),
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         try:
             tenant_id = uuid.UUID(x_dev_tenant) if x_dev_tenant else DEV_TENANT
         except ValueError:

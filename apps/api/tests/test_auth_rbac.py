@@ -132,9 +132,14 @@ def test_workos_mode_uses_jwks_and_is_inert_without_keys(monkeypatch):
     monkeypatch.delenv("WORKOS_API_KEY", raising=False)
     monkeypatch.delenv("WORKOS_CLIENT_ID", raising=False)
     c = TestClient(app)
-    assert c.get("/v1/auth/config").json() == {"mode": "workos", "workosEnabled": False, "roles": list(A.ROLES)}
+    cfg = c.get("/v1/auth/config").json()
+    assert cfg["mode"] == "workos" and cfg["workosEnabled"] is False
+    assert cfg["redirectUri"] is None and cfg["allowLoopbackRedirect"] is True
+    assert cfg["roles"] == list(A.ROLES)
     assert c.get("/v1/projects", headers=H(tok(iss="https://api.workos.com"))).status_code == 401
-    assert c.get("/v1/auth/login?redirect_uri=http://x").status_code == 503
+    # A bad redirect is always a 400; a valid one is a 503 while WorkOS is inert.
+    assert c.get("/v1/auth/login?redirect_uri=http://x").status_code == 400
+    assert c.get("/v1/auth/login?redirect_uri=http://localhost:5180/auth/callback").status_code == 503
 
     monkeypatch.setenv("WORKOS_CLIENT_ID", "client_123")
     monkeypatch.setenv("WORKOS_API_KEY", "sk_test_x")
