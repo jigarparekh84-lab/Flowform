@@ -139,3 +139,11 @@ groups:
         annotations:
           summary: "A run was failed after exhausting its retry"
           runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  # DELIBERATE FAILURE: this group exists only to prove the `master-gates`
+  # ruleset blocks a red required check. Removed once verified.
+  - name: gate-verification-deliberate-failure
+    rules:
+      - alert: GateVerificationDeliberateFailure
+        expr: rate(flowform_runs_total[5m]
+        for: 5m
