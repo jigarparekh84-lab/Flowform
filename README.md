@@ -63,6 +63,7 @@ Flowform/
 │   ├── MASTER_BLUEPRINT.md     # Architecture, model, API, limits, limitations
 │   ├── MANUAL_TEST_WORKBOOK.md # Full manual QA (WF00–WF20) + defect log
 │   ├── IMPLEMENTATION_PLAN.md  # Plan of record / phased roadmap
+│   ├── CI_GATES.md             # CI check names + how to make them blocking
 │   ├── adr/                    # ADR-001 … ADR-007
 │   ├── UX_BRIEF.md
 │   ├── PRODUCT_BLUEPRINT.md
