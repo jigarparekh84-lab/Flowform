@@ -29,13 +29,19 @@ def scenario_out(sc: Scenario) -> dict[str, Any]:
 
 
 def run_out(r: Run, *, with_result: bool = False) -> dict[str, Any]:
-    out = {
+    out: dict[str, Any] = {
         "id": str(r.id), "projectId": str(r.project_id),
         "scenarioId": str(r.scenario_id) if r.scenario_id else None,
         "kind": r.kind, "status": r.status, "progress": r.progress, "message": r.message,
         "inputHash": r.input_hash, "engineVersion": r.engine_version, "solverVersion": r.solver_version,
         "createdAt": r.created_at.isoformat() if r.created_at else None,
         "finishedAt": r.finished_at.isoformat() if r.finished_at else None,
+        # Recovery lease (CR-004): attempt count and worker liveness are visible
+        # so a retried run is explainable in the UI and in support tickets.
+        "attempts": r.attempts or 0,
+        "startedAt": r.started_at.isoformat() if r.started_at else None,
+        "heartbeatAt": r.heartbeat_at.isoformat() if r.heartbeat_at else None,
+        "dispatchedAt": r.dispatched_at.isoformat() if r.dispatched_at else None,
     }
     if with_result:
         out["result"] = r.result

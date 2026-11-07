@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -87,6 +87,11 @@ class Scenario(Base):
 
 class Run(Base):
     __tablename__ = "runs"
+    # The reaper's two scans (stale `running`, lost `queued`).
+    __table_args__ = (
+        Index("ix_runs_status_heartbeat_at", "status", "heartbeat_at"),
+        Index("ix_runs_status_dispatched_at", "status", "dispatched_at"),
+    )
     id: Mapped[uuid.UUID] = _id()
     tenant_id: Mapped[uuid.UUID] = _tenant()
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=False)
@@ -102,6 +107,14 @@ class Run(Base):
     result: Mapped[dict[str, Any] | None] = mapped_column(JsonB)
     created_at: Mapped[datetime] = _created()
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Recovery lease (CR-004): a claim bumps `attempts`, the running worker
+    # refreshes `heartbeat_at`, and the reaper uses the pair to tell a live run
+    # from one whose process died. `dispatched_at` records the last hand-off to
+    # the queue so a lost job can be re-sent without a tight loop.
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AuditEvent(Base):
