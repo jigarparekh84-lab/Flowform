@@ -326,10 +326,30 @@ function weightIssue(w: unknown): 'invalid' | 'implausible' | null {
   return null
 }
 
+/**
+ * Validators have to survive the packs people actually paste in. A missing
+ * optional array is treated as empty instead of throwing: a crash reports
+ * nothing, while `[]` still reports every real issue.
+ */
+function normalizePack(
+  pack: EnterprisePack | null | undefined,
+): EnterprisePack | null | undefined {
+  if (!pack || typeof pack !== 'object') return pack
+  return {
+    ...pack,
+    demand: Array.isArray(pack.demand) ? pack.demand : [],
+    lanes: Array.isArray(pack.lanes) ? pack.lanes : [],
+    skus: Array.isArray(pack.skus) ? pack.skus : [],
+    productGroups: Array.isArray(pack.productGroups) ? pack.productGroups : [],
+    bom: Array.isArray(pack.bom) ? pack.bom : [],
+  }
+}
+
 /** Strict validation with actionable error codes + fix-it hints. */
 export function validateEnterprisePack(
-  pack: EnterprisePack | null | undefined,
+  packInput: EnterprisePack | null | undefined,
 ): EnterpriseValidationScorecard {
+  const pack = normalizePack(packInput)
   const issues: EnterpriseValidationIssue[] = []
 
   if (!pack || !Array.isArray(pack.sites)) {
@@ -630,7 +650,9 @@ export function validateEnterprisePack(
         hint: 'Set a positive volume or remove the row.',
       })
     } else {
-      demandVolumeTotal += d.volume
+      // `+=` on a string volume would concatenate ("400" + "250" = "400250"),
+      // so coerce: this is a numeric roll-up, not text.
+      demandVolumeTotal += Number(d.volume)
     }
   }
 
@@ -915,6 +937,9 @@ function scorecardFromIssues(
   const errorCount = issues.filter((i) => i.level === 'error').length
   const warnCount = issues.filter((i) => i.level === 'warn').length
   const infoCount = issues.filter((i) => i.level === 'info').length
+  // Counts must be array-safe: `'nope'.length` is 4, and a garbage pack should
+  // report zero sites rather than the length of whatever string it contained.
+  const count = (v: unknown): number => (Array.isArray(v) ? v.length : 0)
   const geocodeTotal = extra?.geocodeTotal ?? 0
   const geocodeHits = extra?.geocodeHits ?? 0
   const geocodeCoveragePct =
@@ -929,18 +954,18 @@ function scorecardFromIssues(
 
   return {
     schemaVersion: pack?.schemaVersion ?? ENTERPRISE_SCHEMA_VERSION,
-    ok: errorCount === 0 && (pack?.sites?.length ?? 0) > 0,
+    ok: errorCount === 0 && count(pack?.sites) > 0,
     score,
     errorCount,
     warnCount,
     infoCount,
     geocodeCoveragePct,
-    siteCount: pack?.sites?.length ?? 0,
-    demandRowCount: pack?.demand?.length ?? 0,
+    siteCount: count(pack?.sites),
+    demandRowCount: count(pack?.demand),
     demandVolumeTotal: Math.round(extra?.demandVolumeTotal ?? 0),
-    laneCount: pack?.lanes?.length ?? 0,
-    skuCount: pack?.skus?.length ?? 0,
-    bomRowCount: pack?.bom?.length ?? 0,
+    laneCount: count(pack?.lanes),
+    skuCount: count(pack?.skus),
+    bomRowCount: count(pack?.bom),
     orphanDemandCount: extra?.orphanDemandCount ?? 0,
     missingEndpointCount: extra?.missingEndpointCount ?? 0,
     capacityIssues: extra?.capacityIssues ?? 0,
