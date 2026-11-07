@@ -11,7 +11,7 @@ why the steps live in a document instead of in a config file.
 
 ---
 
-## 1. The five jobs
+## 1. The gate jobs
 
 A required status check is matched by the job's **displayed `name:`**, not its
 job id. Renaming a job therefore detaches the gate without any error: the check
@@ -24,6 +24,18 @@ simply never reports and the PR waits (or merges if the rule was removed).
 | `E2E (Playwright critical path)` | `e2e` | identity → project → async run → compare → brief export → share, in both themes | 20 min |
 | `Prometheus rules (promtool check + unit tests)` | `prometheus` | `promtool check rules` and the firing/quiet unit tests for the 10 SLO alerts | 5 min |
 | `Benchmark (stress-200 budget)` | `benchmark` | stress-120/200 solver benchmark within `vars.STRESS_TIMEOUT_S` | 10 min |
+| `Analyze (python)` | `analyze` (`python`) | CodeQL security queries over `apps/api` and `apps/engine`, `build-mode: none` | 20 min |
+| `Analyze (javascript-typescript)` | `analyze` (`javascript-typescript`) | CodeQL security queries over `apps/web` | 20 min |
+| `Dependency review` | `review` | a pull request that introduces a high or critical advisory fails | 10 min |
+
+The last three come from their own workflows — [`codeql.yml`](../.github/workflows/codeql.yml)
+and [`dependency-review.yml`](../.github/workflows/dependency-review.yml) — rather
+than from `ci.yml`, because they need different permissions and triggers.
+
+`github-advanced-security` also publishes a `CodeQL` summary check alongside the
+two `Analyze (…)` jobs. Do not require it: the per-language jobs are strictly
+finer-grained, so requiring the summary only adds a way for the gate to detach
+if a language is ever removed from the matrix.
 
 The benchmark name is deliberately **static**. It used to interpolate
 `vars.STRESS_TIMEOUT_S`, which meant changing that variable silently renamed the
@@ -31,10 +43,12 @@ check and detached it from the ruleset.
 
 ### What to require
 
-Require the first four. Treat `Benchmark (stress-200 budget)` as advisory until
-you have timings you trust on shared runners — a solver benchmark on a noisy
-2-core runner is the one gate likely to flake, and a flaky gate gets bypassed,
-which costs more than it buys.
+All eight are currently required (see §3). `Benchmark (stress-200 budget)` was
+meant to stay advisory until its timings on shared runners were trusted, and it
+is the one gate likely to flake — a solver benchmark on a noisy 2-core runner
+can miss its budget for reasons unrelated to the change. If it starts flaking,
+demote it to advisory rather than bypassing it: a flaky gate gets bypassed
+routinely, which costs more than it buys.
 
 ---
 
@@ -61,7 +75,7 @@ check names are not yet offered in the picker.
 2. **Require a pull request before merging** — 1 approval, *Dismiss stale pull
    request approvals when new commits are pushed*, *Require conversation
    resolution before merging*.
-3. **Require status checks to pass** — add the four names from §1 verbatim, then
+3. **Require status checks to pass** — add the names from §1 verbatim, then
    tick **Require branches to be up to date before merging**. Without that tick a
    PR can pass on a base that has since broken.
 4. **Block force pushes** and **Restrict deletions**.
@@ -156,7 +170,7 @@ ruleset was created and exercised.
 | Ruleset | `master-gates`, id `26768673`, enforcement `active` |
 | Target | `refs/heads/master` |
 | Bypass list | **empty** — no admin escape hatch |
-| Required checks | all five from §1, `strict` (branch must be up to date) |
+| Required checks | all eight from §1, `strict` (branch must be up to date) |
 | Pull-request rule | required, 0 approvals, stale reviews dismissed, threads resolved |
 
 Verified on 2026-11-07 with a throwaway PR carrying one unparseable Prometheus
@@ -185,10 +199,22 @@ before it exists blocks every PR:
 
 | Missing | Needs |
 |---|---|
-| Code scanning | a CodeQL workflow |
-| Dependency alerts | Dependabot config / GitHub security settings |
-| Container scanning | an image-build job |
-| Secret scanning | GitHub security settings (push protection) |
+| Container scanning | an image-build job — the Dockerfiles are built outside CI today |
+| Secret scanning | GitHub security settings (push protection); free on public repositories |
+
+Code scanning and dependency review are now gates (§1). Dependabot itself keeps
+two separate roles that are easy to confuse:
+
+- **Version updates** — [`.github/dependabot.yml`](../.github/dependabot.yml),
+  npm + pip + the action pins, weekly and grouped. The pip entry relies on
+  Dependabot recognising `requirements.in` and re-running pip-compile, so the
+  hashed lock stays generated rather than hand-edited. `pulp` and `highspy` are
+  ignored: they are exact pins for solver reproducibility, not lag.
+- **Alerts and security updates** — repository settings, not files. Enabled for
+  this repository via `PUT /repos/{owner}/{repo}/vulnerability-alerts` and
+  `PUT /repos/{owner}/{repo}/automated-security-fixes`. Alerts produce **no
+  check run**, so they can never be a required status check; that is exactly why
+  `Dependency review` exists.
 
 They are the "security baseline" line in [COMMERCIAL_READINESS_PLAN.md §6](COMMERCIAL_READINESS_PLAN.md#week-3--make-it-observable-and-testable).
 
