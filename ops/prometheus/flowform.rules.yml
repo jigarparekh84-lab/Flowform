@@ -1,0 +1,141 @@
+# Flowform SLO alert rules (CR-006).
+#
+# Load with `rule_files: [flowform.rules.yml]`, or paste the group into a
+# Grafana Cloud / Mimir ruler. Every expression is backed by a metric exported
+# by the API (`/metrics`) or by Prometheus itself (`up`), so there is nothing to
+# derive from logs or the database at alert time.
+#
+# Each alert carries a short `summary` plus a runbook link; the diagnosis and
+# remediation steps live in docs/OBSERVABILITY.md §5 so the alert text and the
+# runbook cannot drift apart.
+#
+# Expressions are unit-tested in `flowform.rules.test.yml`:
+#   promtool test rules flowform.rules.test.yml
+
+groups:
+  - name: flowform-availability
+    rules:
+      - alert: FlowformApiDown
+        expr: up{job="flowform-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: flowform-api
+        annotations:
+          summary: "Flowform API {{ $labels.instance }} is not being scraped"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformNotReady
+        # The gauge starts at 0 until the first probe, so require a real failure
+        # in the same window: an unprobed instance must not page.
+        expr: |
+          flowform_readyz_status == 0
+          and on (instance) increase(flowform_readyz_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: flowform-api
+        annotations:
+          summary: "Flowform API {{ $labels.instance }} is not ready (dependency down)"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformReadyzProbeFailing
+        expr: increase(flowform_readyz_failures_total[5m]) > 0
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "Intermittent readiness failures on {{ $labels.instance }}"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  - name: flowform-slo
+    rules:
+      - alert: FlowformHighErrorRate
+        expr: |
+          (
+            sum(rate(flowform_http_requests_total{route=~"/v1.*",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(flowform_http_requests_total{route=~"/v1.*"}[5m])), 0.01)
+          ) > 0.005
+          and
+          sum(rate(flowform_http_requests_total{route=~"/v1.*"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "5xx rate on /v1 is above the 0.1 % error budget"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(flowform_http_request_duration_seconds_bucket{route=~"/v1.*"}[5m]))
+          ) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "/v1 p95 latency above 300 ms"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformSolveSuccessLow
+        expr: |
+          (
+            sum(increase(flowform_runs_total{status="failed"}[1h]))
+            /
+            clamp_min(sum(increase(flowform_runs_total{status=~"succeeded|failed"}[1h])), 1)
+          ) > 0.01
+          and
+          sum(increase(flowform_runs_total{status=~"succeeded|failed"}[1h])) > 10
+        for: 15m
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "Solve success rate below 99 % over the last hour"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformQueueWaitHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(flowform_run_queue_wait_seconds_bucket[10m]))
+          ) > 300
+        for: 15m
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "Runs wait more than 5 minutes for a worker"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformStuckRuns
+        expr: flowform_stuck_runs > 0
+        for: 15m
+        labels:
+          severity: critical
+          service: flowform-api
+        annotations:
+          summary: "{{ $value }} runs are stuck outside a worker"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformRunRecoverySpike
+        expr: increase(flowform_runs_reaped_total{outcome="requeued"}[1h]) > 0
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "A worker died mid-solve and its run was requeued"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+      - alert: FlowformRunInterrupted
+        expr: increase(flowform_runs_reaped_total{outcome="failed"}[1h]) > 0
+        labels:
+          severity: warning
+          service: flowform-api
+        annotations:
+          summary: "A run was failed after exhausting its retry"
+          runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"

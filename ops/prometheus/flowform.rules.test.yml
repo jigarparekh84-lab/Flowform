@@ -1,0 +1,216 @@
+# Unit tests for flowform.rules.yml (CR-006).
+#
+#   promtool test rules flowform.rules.test.yml
+#
+# Synthetic series only: no API, database or Prometheus server required. Each
+# case checks that a breached SLO fires (with the right labels and rendered
+# summary) and that healthy series stay quiet.
+
+rule_files:
+  - flowform.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # ------------------------------------------------------------ availability
+  - interval: 1m
+    input_series:
+      - series: 'up{job="flowform-api", instance="api:5182"}'
+        values: "1 1 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: FlowformApiDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: FlowformApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: flowform-api
+              job: flowform-api
+              instance: "api:5182"
+            exp_annotations:
+              summary: "Flowform API api:5182 is not being scraped"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  - interval: 1m
+    input_series:
+      - series: 'flowform_readyz_status{job="flowform-api", instance="api:5182"}'
+        values: "1 1 0 0 0 0"
+      - series: 'flowform_readyz_failures_total{job="flowform-api", instance="api:5182"}'
+        values: "0 0 30 60 90 120"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: FlowformNotReady
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: FlowformNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: flowform-api
+              job: flowform-api
+              instance: "api:5182"
+            exp_annotations:
+              summary: "Flowform API api:5182 is not ready (dependency down)"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  # An instance that has never been probed reports 0; with no failures it must
+  # stay quiet.
+  - interval: 1m
+    input_series:
+      - series: 'flowform_readyz_status{job="flowform-api", instance="api:5199"}'
+        values: "0 0 0 0 0 0"
+      - series: 'flowform_readyz_failures_total{job="flowform-api", instance="api:5199"}'
+        values: "0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FlowformNotReady
+        exp_alerts: []
+
+  # A single failed probe inside a healthy window is only a warning.
+  - interval: 1m
+    input_series:
+      - series: 'flowform_readyz_failures_total{job="flowform-api", instance="api:5182"}'
+        values: "0 0 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlowformReadyzProbeFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: flowform-api
+              job: flowform-api
+              instance: "api:5182"
+            exp_annotations:
+              summary: "Intermittent readiness failures on api:5182"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  # ------------------------------------------------------------ SLO breaches
+  - interval: 1m
+    input_series:
+      # 2 failures/s of 5xx against 10 requests/s of /v1 traffic.
+      - series: 'flowform_http_requests_total{job="flowform-api", instance="api:5182", route="/v1/projects", status="500"}'
+        values: "0+120x12"
+      - series: 'flowform_http_requests_total{job="flowform-api", instance="api:5182", route="/v1/projects", status="200"}'
+        values: "0+480x12"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: FlowformHighErrorRate
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: FlowformHighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: flowform-api
+            exp_annotations:
+              summary: "5xx rate on /v1 is above the 0.1 % error budget"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  # A handful of 5xx in a large, healthy window must not page.
+  - interval: 1m
+    input_series:
+      - series: 'flowform_http_requests_total{job="flowform-api", instance="api:5182", route="/v1/projects", status="500"}'
+        values: "0+1x12"
+      - series: 'flowform_http_requests_total{job="flowform-api", instance="api:5182", route="/v1/projects", status="200"}'
+        values: "0+5999x12"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlowformHighErrorRate
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'flowform_runs_total{job="flowform-api", instance="api:5182", kind="optimize", status="failed"}'
+        values: "0+2x60"
+      - series: 'flowform_runs_total{job="flowform-api", instance="api:5182", kind="optimize", status="succeeded"}'
+        values: "0+8x60"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: FlowformSolveSuccessLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: flowform-api
+            exp_annotations:
+              summary: "Solve success rate below 99 % over the last hour"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  # Cancelled runs are excluded from the ratio, so a cancel-heavy hour is quiet.
+  - interval: 1m
+    input_series:
+      - series: 'flowform_runs_total{job="flowform-api", instance="api:5182", kind="optimize", status="cancelled"}'
+        values: "0+50x60"
+      - series: 'flowform_runs_total{job="flowform-api", instance="api:5182", kind="optimize", status="succeeded"}'
+        values: "0+10x60"
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: FlowformSolveSuccessLow
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
+      - series: 'flowform_run_queue_wait_seconds_bucket{job="flowform-api", instance="api:5182", kind="optimize", le="300"}'
+        values: "0+10x30"
+      - series: 'flowform_run_queue_wait_seconds_bucket{job="flowform-api", instance="api:5182", kind="optimize", le="600"}'
+        values: "0+20x30"
+      - series: 'flowform_run_queue_wait_seconds_bucket{job="flowform-api", instance="api:5182", kind="optimize", le="+Inf"}'
+        values: "0+20x30"
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: FlowformQueueWaitHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: flowform-api
+            exp_annotations:
+              summary: "Runs wait more than 5 minutes for a worker"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  # ------------------------------------------------------------ recovery
+  - interval: 5m
+    input_series:
+      - series: 'flowform_stuck_runs{job="flowform-api", instance="api:5182"}'
+        values: "0 0 3 3 3 3"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlowformStuckRuns
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: FlowformStuckRuns
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: flowform-api
+              job: flowform-api
+              instance: "api:5182"
+            exp_annotations:
+              summary: "3 runs are stuck outside a worker"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+
+  - interval: 5m
+    input_series:
+      - series: 'flowform_runs_reaped_total{job="flowform-api", instance="api:5182", outcome="failed"}'
+        values: "0 0 0 1 1 1"
+      - series: 'flowform_runs_reaped_total{job="flowform-api", instance="api:5182", outcome="requeued"}'
+        values: "0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FlowformRunInterrupted
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: FlowformRunInterrupted
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: flowform-api
+              job: flowform-api
+              instance: "api:5182"
+              outcome: failed
+            exp_annotations:
+              summary: "A run was failed after exhausting its retry"
+              runbook_url: "docs/OBSERVABILITY.md#52-alert-playbook"
+      - eval_time: 25m
+        alertname: FlowformRunRecoverySpike
+        exp_alerts: []

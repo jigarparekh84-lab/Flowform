@@ -2,19 +2,69 @@
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+import os
+import threading
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, AsyncIterator, Iterator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from flowform_engine import solve_multi_period, solve_optimize, solve_stochastic, validate_optimize
+from .health import router as health_router
+from .metrics import AVAILABLE as METRICS_AVAILABLE, router as metrics_router
+from .observability import (
+    RequestContextMiddleware,
+    configure_logging,
+    init_sentry,
+    init_tracing,
+    shutdown_tracing,
+)
+from .v1.auth import warn_dev_auth
 from .v1.projects import router as projects_router
 from .v1.runs import router as runs_router
 from .v1.workos import router as auth_router
 from .v1.scenarios import router as scenarios_router
+from .jobs.reaper import start_background_reaper
+
+log = logging.getLogger("flowform.api")
+# CR-006: request ids in every log line, then the error reporter (which must be
+# initialised before the app is constructed so its ASGI middleware is installed).
+configure_logging()
+_SENTRY_ENABLED = init_sentry()
+# CR-012: the dev bypass can only serve loopback clients, but it still deserves a
+# startup warning whenever it is on at all.
+warn_dev_auth(log)
+
+#: Solve endpoints are expensive and unauthenticated in the current deployment
+#: mode, so at most this many MIPs run at once per worker process. Extra
+#: requests wait briefly, then get 429 instead of queueing behind each other
+#: and starving the thread pool.
+MAX_CONCURRENT_SOLVES = max(1, int(os.environ.get("MAX_CONCURRENT_SOLVES", "2")))
+SOLVE_QUEUE_WAIT_S = max(0.0, float(os.environ.get("SOLVE_QUEUE_WAIT_S", "5")))
+_SOLVE_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_SOLVES)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Recover runs orphaned by a crashed process (CR-004).
+
+    The reaper is a daemon thread with its own DB sessions; a database outage
+    at boot is logged and retried, never fatal to the API itself.
+    """
+    stop = start_background_reaper()
+    try:
+        yield
+    finally:
+        if stop is not None:
+            stop.set()
+        shutdown_tracing()
+
 
 app = FastAPI(
+    lifespan=lifespan,
     title="Flowform Optimize API",
     description=(
         "Fixed-charge multi-echelon MIP (PuLP + HiGHS/CBC): "
@@ -41,13 +91,30 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Let the browser read the support id off an error response (CR-006).
+    expose_headers=["X-Request-ID"],
 )
+
+# Outermost middleware: every response (including 401/500 and CORS preflight)
+# carries X-Request-ID, and logs inside the request carry the same id.
+app.add_middleware(RequestContextMiddleware)
+
+# Health probes (CR-006): /livez is dependency-free, /readyz checks DB + queue.
+app.include_router(health_router)
+# Prometheus scrape (CR-006). Aggregates only: no tenant, user or run ids.
+app.include_router(metrics_router)
 
 # Server persistence (FF-104); DB is only touched when /v1 is called.
 app.include_router(projects_router)
 app.include_router(scenarios_router)
 app.include_router(runs_router)
 app.include_router(auth_router)
+
+_TRACING_ENABLED = init_tracing(app)
+log.info(
+    "observability ready: request_ids=on sentry=%s tracing=%s metrics=%s",
+    _SENTRY_ENABLED, _TRACING_ENABLED, METRICS_AVAILABLE,
+)
 
 
 class FacilityConstraintIn(BaseModel):
@@ -72,7 +139,7 @@ class BomRowIn(BaseModel):
 
 
 class BomIn(BaseModel):
-    rows: list[BomRowIn] | list[dict[str, Any]] = Field(default_factory=list)
+    rows: list[BomRowIn | dict[str, Any]] = Field(default_factory=list)
 
 
 class BomDemandIn(BaseModel):
@@ -112,7 +179,7 @@ class CapexRoadmapIn(BaseModel):
         default="choose_timing",
         description="choose_timing | force_timeline",
     )
-    events: list[CapexRoadmapEventIn] | list[dict[str, Any]] = Field(
+    events: list[CapexRoadmapEventIn | dict[str, Any]] = Field(
         default_factory=list
     )
     demandScaleByYear: list[float] | None = None
@@ -213,7 +280,7 @@ class ScenarioTreeIn(BaseModel):
         description="Weight on worst-case for cvar_lite (0–1)",
     )
     computeEvpi: bool | None = True
-    scenarios: list[StochasticScenarioIn] | list[dict[str, Any]] = Field(
+    scenarios: list[StochasticScenarioIn | dict[str, Any]] = Field(
         default_factory=list
     )
 
@@ -273,36 +340,68 @@ def _optimize_payload(body: OptimizeRequest, force_explain: bool = False) -> dic
     }
 
 
+@contextmanager
+def _solve_slot() -> Iterator[None]:
+    """Reserve one of this worker's solve slots, or fail fast with 429."""
+    if not _SOLVE_SLOTS.acquire(timeout=SOLVE_QUEUE_WAIT_S):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many concurrent solves on this worker; retry shortly.",
+            headers={"Retry-After": "2"},
+        )
+    try:
+        yield
+    finally:
+        _SOLVE_SLOTS.release()
+
+
+def _run_solve(fn: Any, payload: dict[str, Any], label: str) -> dict[str, Any]:
+    """Run one solve with slot limiting and a single error mapping.
+
+    User-fixable problems (bad or oversized payload) are 400s; solver limits are
+    503s; anything else is logged server-side and reported generically so
+    internals never reach the response body.
+    """
+    with _solve_slot():
+        try:
+            return fn(payload)
+        except HTTPException:
+            raise
+        except ValueError as e:  # includes PayloadTooLarge from the engine guards
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except RuntimeError as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        except Exception:  # noqa: BLE001
+            log.exception("%s failed", label)
+            raise HTTPException(
+                status_code=500,
+                detail=f"{label} failed; the error was logged on the server.",
+            ) from None
+
+
 @app.post("/optimize/explain")
 def optimize_explain(body: OptimizeRequest) -> dict[str, Any]:
     """Optimize + explain block (same response as /optimize with explain=true)."""
-    try:
-        return solve_optimize(_optimize_payload(body, force_explain=True))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Explain failed: {e}") from e
+    return _run_solve(
+        solve_optimize, _optimize_payload(body, force_explain=True), "Explain"
+    )
 
 
 @app.post("/optimize")
 def optimize(body: OptimizeRequest) -> dict[str, Any]:
-    try:
-        return solve_optimize(_optimize_payload(body))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"Optimize failed: {e}") from e
+    return _run_solve(solve_optimize, _optimize_payload(body), "Optimize")
 
 
 @app.post("/optimize/validate")
 def optimize_validate(body: OptimizeRequest, deep: bool = False) -> dict[str, Any]:
     """Pre-run guardrails (FF-108): blocking errors + warnings + shortfall tables.
     ``?deep=true`` also runs the solve and reports Infeasible root causes."""
-    return validate_optimize(_optimize_payload(body), deep=deep)
+    payload = _optimize_payload(body)
+    if not deep:
+        return validate_optimize(payload, deep=False)
+    return _run_solve(
+        lambda p: validate_optimize(p, deep=True), payload, "Deep validation"
+    )
 
 
 def multi_period_payload(body: "MultiPeriodOptimizeRequest") -> dict[str, Any]:
@@ -368,27 +467,13 @@ def stochastic_payload(body: "StochasticOptimizeRequest") -> dict[str, Any]:
 
 @app.post("/optimize/multi-period")
 def optimize_multi_period(body: MultiPeriodOptimizeRequest) -> dict[str, Any]:
-    try:
-        return solve_multi_period(multi_period_payload(body))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Multi-period optimize failed: {e}"
-        ) from e
+    return _run_solve(
+        solve_multi_period, multi_period_payload(body), "Multi-period optimize"
+    )
 
 
 @app.post("/optimize/stochastic")
 def optimize_stochastic(body: StochasticOptimizeRequest) -> dict[str, Any]:
-    try:
-        return solve_stochastic(stochastic_payload(body))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"Stochastic optimize failed: {e}"
-        ) from e
+    return _run_solve(
+        solve_stochastic, stochastic_payload(body), "Stochastic optimize"
+    )
