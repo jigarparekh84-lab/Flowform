@@ -7,7 +7,11 @@ name = "flowform-engine"
 version = "0.1.0"
 description = "Flowform network-design optimization engine (PuLP + HiGHS)"
 requires-python = ">=3.11"
-dependencies = ["pulp>=2.8,<3", "highspy>=1.7"]
+# Solver versions are pinned exactly (CR-034): a PuLP/HiGHS upgrade can change
+# branching order and therefore objective values, duals and the chosen network.
+# apps/api/tests/test_solver_pins.py enforces that these match the API lock and
+# the installed versions.
+dependencies = ["pulp==2.9.0", "highspy==1.15.1"]
 
 [tool.setuptools]
 packages = ["flowform_engine"]

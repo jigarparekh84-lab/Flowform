@@ -1,0 +1,12 @@
+# Tooling for the API quality gate (CR-034). Pinned and hashed exactly like the
+# application lock so a linter or type-checker release cannot turn CI red on an
+# unrelated pull request. Regenerate with:
+#
+#   ./scripts/lock-requirements.sh requirements-dev
+#
+# pip-tools is deliberately absent: locking happens inside the container that
+# scripts/lock-requirements.sh starts, which installs its own pinned pip-tools
+# (and needs setuptools, which a hash-checked lock cannot express cleanly).
+
+mypy==1.14.1
+ruff==0.17.1

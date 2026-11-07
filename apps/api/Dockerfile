@@ -6,9 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-COPY apps/engine /engine
+# Application dependencies come from the pinned, hashed lock (CR-034): the
+# solver version in the image is the one the lock names, not whatever resolves.
 COPY apps/api/requirements.txt .
-RUN grep -v '^-e ../engine' requirements.txt > req.txt && pip install -r req.txt /engine
+RUN pip install -r requirements.txt
+
+# The engine is a local package, so it cannot live in a hashed lock; install it
+# with --no-deps so the lock stays the only source of third-party versions.
+COPY apps/engine /engine
+RUN pip install --no-deps /engine
 
 COPY apps/api/app ./app
 

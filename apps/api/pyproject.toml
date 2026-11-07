@@ -1,0 +1,23 @@
+# Tooling configuration for the API. The app is not a distributable package
+# (it runs from the source tree), so there is no [build-system] table here.
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+
+# pulp, highspy, prometheus_client and some OpenTelemetry packages ship without
+# type information; a missing stub must not fail the gate.
+ignore_missing_imports = true
+
+# Bodies of untyped functions are checked too — most of this codebase predates
+# annotations, and an untyped def still must not hide a type error.
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+# Third-party packages with partial or absent annotations.
+module = ["pulp", "pulp.*", "highspy", "highspy.*", "prometheus_client", "prometheus_client.*"]
+ignore_missing_imports = true
