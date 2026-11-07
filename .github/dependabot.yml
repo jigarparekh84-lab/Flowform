@@ -1,0 +1,66 @@
+# Dependabot version updates (CR-001 — security baseline).
+#
+# Three ecosystems only, each corresponding to a manifest a human edits:
+#
+#   npm            apps/web/package.json + package-lock.json (`npm ci` in CI)
+#   pip            apps/api/requirements.in  ->  requirements.txt (hashed lock)
+#   github-actions the `uses:` pins in .github/workflows
+#
+# Python is safe to automate because Dependabot recognises the `.in` source and
+# regenerates the lock with pip-compile, rather than hand-editing a file whose
+# header says "generated, do not edit by hand" (CR-034).
+#
+# The solver is the exception. pulp/highspy are pinned to an exact version on
+# purpose: an upgrade can change branching order and therefore objective values,
+# duals and the chosen network. apps/api/tests/test_solver_pins.py enforces the
+# pins and Run.solver_version records them, so those bumps stay manual.
+#
+# Dependabot *alerts* — the other half of the dependency story — are a
+# repository setting, not a config file. See .github/workflows/dependency-review.yml
+# for the part that can actually be a required status check.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for a week of minor/patch noise; majors stay separate so each
+      # gets the scrutiny a breaking change deserves.
+      web-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["dependencies", "web"]
+
+  - package-ecosystem: pip
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    groups:
+      api-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: pulp
+      - dependency-name: highspy
+    labels: ["dependencies", "api"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies", "ci"]
