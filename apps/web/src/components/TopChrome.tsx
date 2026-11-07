@@ -1,5 +1,7 @@
 import { HORIZON_OPTIONS, type Scenario } from '../data/sampleNetwork'
+import { useAuth } from '../state/auth'
 import { useFlowform } from '../state/FlowformContext'
+import { AccountMenu } from './AccountMenu'
 import { ActiveJobChip } from './ActiveJobChip'
 import type { ThemeMode } from '../state/theme'
 
@@ -25,7 +27,12 @@ export function TopChrome({
   onToggleTheme,
 }: Props) {
   const { optimizeStatus, runOptimize, projectName, shareProject } = useFlowform()
+  const { can, role } = useAuth()
   const running = optimizeStatus.phase === 'running'
+  // Role surface (CR-010): a signed-in viewer can read everything but not spend
+  // solver time or push a new project version.
+  const canEdit = can('editor')
+  const blocked = canEdit ? undefined : `Your role (${role ?? 'viewer'}) is read-only`
 
   async function onShare() {
     const result = await shareProject('both')
@@ -167,6 +174,7 @@ export function TopChrome({
 
       <div className="chrome-right">
         <ActiveJobChip />
+        <AccountMenu />
         <button
           type="button"
           className="theme-toggle"
@@ -182,17 +190,18 @@ export function TopChrome({
         <button
           type="button"
           className="btn ghost"
-          disabled={running}
+          disabled={running || !canEdit}
           onClick={() => void runOptimize()}
-          title="Calls optimize API (PuLP MIP) when available; else client heuristic v1"
+          title={blocked ?? 'Calls optimize API (PuLP MIP) when available; else client heuristic v1'}
         >
           {running ? 'Running…' : 'Run'}
         </button>
         <button
           type="button"
           className="btn ghost"
+          disabled={!canEdit}
           onClick={() => void onShare()}
-          title="Copy read-only deep-link stub and download share pack"
+          title={blocked ?? 'Copy read-only deep-link stub and download share pack'}
         >
           Share
         </button>

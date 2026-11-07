@@ -7,7 +7,7 @@
  *
  * VITE_RUN_MODE=sync forces the old path.
  */
-import { authHeaders } from './apiAuth'
+import { authFetch } from './apiAuth'
 import { getActiveProjectId } from './projects'
 import { pushProject, serverLinks } from './workspaceSync'
 
@@ -65,9 +65,9 @@ export async function cancelActiveRun(base: string): Promise<void> {
   const pid = serverProjectId()
   if (j?.runId && pid) {
     try {
-      await fetch(`${base}/v1/projects/${pid}/runs/${j.runId}/cancel`, {
+      await authFetch(`${base}/v1/projects/${pid}/runs/${j.runId}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        headers: { 'Content-Type': 'application/json' },
       })
     } catch {
       /* best effort */
@@ -89,10 +89,10 @@ async function viaJobs(base: string, kind: JobKind, body: unknown): Promise<Resp
   if (!local) throw new FallbackToSync('no project')
   if (!serverLinks()[local] && !(await pushProject(local))) throw new FallbackToSync('project not on server')
   const pid = serverLinks()[local]
-  const h = { 'Content-Type': 'application/json', ...authHeaders() }
+  const h = { 'Content-Type': 'application/json' }
   let res: Response
   try {
-    res = await fetch(`${base}/v1/projects/${pid}/runs`, { method: 'POST', headers: h, body: JSON.stringify({ kind, payload: body }) })
+    res = await authFetch(`${base}/v1/projects/${pid}/runs`, { method: 'POST', headers: h, body: JSON.stringify({ kind, payload: body }) })
   } catch {
     throw new FallbackToSync('network')
   }
@@ -109,7 +109,7 @@ async function viaJobs(base: string, kind: JobKind, body: unknown): Promise<Resp
     await sleep(pollMs)
     let r: { status: ActiveJob['status']; progress: number; message: string | null; result?: unknown }
     try {
-      const g = await fetch(`${base}/v1/projects/${pid}/runs/${run.id}`, { headers: h })
+      const g = await authFetch(`${base}/v1/projects/${pid}/runs/${run.id}`, { headers: h })
       if (!g.ok) continue
       r = await g.json()
     } catch {
