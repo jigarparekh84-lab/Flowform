@@ -8,5 +8,5 @@
 # scripts/lock-requirements.sh starts, which installs its own pinned pip-tools
 # (and needs setuptools, which a hash-checked lock cannot express cleanly).
 
-mypy==1.14.1
+mypy==2.4.1
 ruff==0.17.3
