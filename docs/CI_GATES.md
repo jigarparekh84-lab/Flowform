@@ -75,7 +75,14 @@ the `STRESS_TIMEOUT_S` variable as the benchmark budget.
 
 ### Automated equivalent
 
-Once the plan allows rulesets, the same policy can be applied without the UI:
+Once the plan allows rulesets, the same policy can be applied without the UI.
+It takes **two calls**, because the API rejects any `parameters` object on the
+`pull_request` rule at creation time — even an empty `{}` returns
+`422 Invalid property /rules/N: data matches no possible input`. Create the rule
+bare, then `PUT` the full rules array to set its options.
+
+**Step 1 — create.** The pull-request rule is deliberately parameterless here;
+`required_status_checks` does take parameters at create.
 
 ```bash
 gh api --method POST repos/:owner/:repo/rulesets --input - <<'JSON'
@@ -84,6 +91,34 @@ gh api --method POST repos/:owner/:repo/rulesets --input - <<'JSON'
   "target": "branch",
   "enforcement": "active",
   "conditions": { "ref_name": { "include": ["refs/heads/master"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request" },
+    { "type": "required_status_checks", "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "Web (data tests, lint, type-check, build)" },
+          { "context": "API (mypy, lint, pytest)" },
+          { "context": "E2E (Playwright critical path)" },
+          { "context": "Prometheus rules (promtool check + unit tests)" },
+          { "context": "Benchmark (stress-200 budget)" }
+        ] } }
+  ]
+}
+JSON
+```
+
+A bare `pull_request` rule resolves to `required_approving_review_count: 0` with
+`dismiss_stale_reviews_on_push` and `required_review_thread_resolution` both
+`false`, so step 2 is what turns those on.
+
+**Step 2 — configure the pull-request rule.** Re-send every rule unchanged;
+this endpoint replaces the whole array.
+
+```bash
+gh api --method PUT repos/:owner/:repo/rulesets/$RULESET_ID --input - <<'JSON'
+{
   "rules": [
     { "type": "deletion" },
     { "type": "non_fast_forward" },
@@ -110,6 +145,25 @@ GitHub never counts an author's approval of their own pull request, so `1` locks
 the owner out of their own branch; the only ways past it are an admin bypass
 (which defeats the gate) or a second maintainer. Drop the `Benchmark` entry if
 you decide to keep it advisory.
+
+### Applied to this repository
+
+The repository was made public to lift the Free-plan restriction, then the
+ruleset was created and exercised.
+
+| Setting | Value |
+|---|---|
+| Ruleset | `master-gates`, id `26768673`, enforcement `active` |
+| Target | `refs/heads/master` |
+| Bypass list | **empty** — no admin escape hatch |
+| Required checks | all five from §1, `strict` (branch must be up to date) |
+| Pull-request rule | required, 0 approvals, stale reviews dismissed, threads resolved |
+
+Verified on 2026-11-07 with a throwaway PR carrying one unparseable Prometheus
+expression: `promtool` failed with `unclosed left parenthesis` (exit 1), GitHub
+reported `mergeStateStatus: BLOCKED`, and an attempted merge was refused with
+*"the base branch policy prohibits the merge"*. The PR and its branch were then
+deleted; `master` was never touched.
 
 ### Verifying that it actually blocks
 
