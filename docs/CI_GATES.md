@@ -190,6 +190,20 @@ ruleset: a check name can be misspelled, the rule can target the wrong branch,
 or the job can be renamed later — all of which fail *open*. This is also the
 reason the benchmark job has a static name.
 
+### Adding a required check later
+
+A required check only ever attaches to a pull request that starts the workflow.
+A pull request opened *before* that workflow reached the default branch will
+never report the new context, so — the context being required — it can never
+merge. The gate fails closed against exactly the pull requests it was not
+applied to.
+
+Any new push fixes it. For an open Dependabot PR the fix is to comment
+`@dependabot rebase`, which is also what clears the `BEHIND` state that
+`strict_required_status_checks_policy` produces whenever `master` moves. Worth
+knowing when the security workflows are added: the dependency PRs already open
+at that moment are the ones that need it.
+
 ---
 
 ## 4. Not gates yet
