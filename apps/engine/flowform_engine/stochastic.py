@@ -20,6 +20,7 @@ from typing import Any
 
 import pulp
 
+from .limits import guard_payload, time_limit_sec
 from .solver import (
     UNCOVERED_PENALTY,
     _facility_status,
@@ -354,7 +355,7 @@ def _solve_stochastic_legacy(payload: dict[str, Any]) -> dict[str, Any]:
             f"costScale={s['costScale']:.2f} totalDem={sum(s['demandVolume'].values()):.0f}"
         )
 
-    solver, solver_name = _pick_solver(log)
+    solver, solver_name = _pick_solver(log, time_limit=time_limit_sec(payload))
     prob = pulp.LpProblem("flowform_stochastic", pulp.LpMinimize)
 
     open_v = {
@@ -796,6 +797,7 @@ def solve_stochastic(payload: dict[str, Any]) -> dict[str, Any]:
     in every scenario and the best design for the chosen objective wins.
     ``modelBasis: "legacy"`` keeps the old single-echelon two-stage MIP.
     """
+    guard_payload(payload, scenarios=True)
     if str(payload.get("modelBasis") or "full").lower() == "legacy":
         return _solve_stochastic_legacy(payload)
     from .solver import solve_optimize

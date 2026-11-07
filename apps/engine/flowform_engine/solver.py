@@ -43,6 +43,7 @@ from .diagnostics import diagnose_network_conflicts
 # for a flow of ``vol`` model units is co2KgPerUnit × vol × 1,000.
 PHYSICAL_UNITS_PER_MODEL_UNIT = 1000.0
 from .explain import CF_MIP_GAP_REL, build_explain, explain_options
+from .limits import DEFAULT_TIME_LIMIT_SEC, gap_rel, guard_payload, time_limit_sec
 from .solvers import default_adapter, get_adapter
 
 MILES_PER_UNIT = 12.0
@@ -76,6 +77,9 @@ DEFAULT_TRANSPORT_PER_MILE = DEFAULT_RATE_PER_UNIT_MILE / VOLUME_UNIT_SCALE
 UNCOVERED_PENALTY = DEFAULT_UNCOVERED_PENALTY_PER_UNIT / VOLUME_UNIT_SCALE
 DEFAULT_MAX_COMMODITIES = 8
 AGG_PRODUCT_ID = "__total__"
+# Tie-break discount ($M) applied to keeping an already-open site open. Excluded
+# from the reported cost; disclosed as objectiveBreakdown.keepBonusM.
+KEEP_BONUS_PER_OPEN_SITE_M = 0.02
 
 
 def _safe_name(*parts: object) -> str:
@@ -128,13 +132,28 @@ def _parse_money(raw: Any, fallback: float) -> float:
     return float(m.group(1)) if m else fallback
 
 
-def _pick_solver(log: list[str]) -> tuple[Any, str]:
+def _pick_solver(
+    log: list[str],
+    *,
+    time_limit: float | None = None,
+    gap_rel: float | None = None,
+) -> tuple[Any, str]:
+    """Build the preferred solver with a wall-clock budget.
+
+    A time limit is always set: without one an unlucky or adversarial model can
+    occupy a worker indefinitely. ``gap_rel`` stays at the solver default unless
+    a caller asks for something else, so results do not move.
+    """
     adapter = default_adapter()
+    limit = DEFAULT_TIME_LIMIT_SEC if time_limit is None else float(time_limit)
+    options: dict[str, Any] = {"msg": False, "timeLimit": limit}
+    if gap_rel is not None:
+        options["gapRel"] = float(gap_rel)
     if adapter.name == "pulp-highs":
-        log.append("Solver: PuLP + HiGHS (highspy).")
-        return adapter.make(msg=False), adapter.name
-    log.append("Solver: PuLP + CBC (bundled).")
-    return adapter.make(msg=False, timeLimit=60), adapter.name
+        log.append(f"Solver: PuLP + HiGHS (highspy), time limit {limit:g}s.")
+        return adapter.make(**options), adapter.name
+    log.append(f"Solver: PuLP + CBC (bundled), time limit {limit:g}s.")
+    return adapter.make(**options), adapter.name
 
 
 def _facility_status(f: dict[str, Any], cmap: dict[str, Any]) -> str:
@@ -1075,6 +1094,7 @@ def _capacity_by_product(
 
 def solve_optimize(payload: dict[str, Any]) -> dict[str, Any]:
     """Solve; optionally attach ``baseline`` (current network, no decisions)."""
+    guard_payload(payload)
     res = _solve_optimize_core(payload)
     if payload.get("computeBaseline") and not payload.get("_diagProbe"):
         try:
@@ -1148,6 +1168,10 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     log: list[str] = [
         "Flowform fixed-charge multi-echelon MIP (PuLP).",
     ]
+    # One wall-clock budget per solve of this payload; also used by the LP pass
+    # that reads capacity duals, so a slow model cannot run the clock twice.
+    solve_limit = time_limit_sec(payload)
+    solve_gap = gap_rel(payload)
     if payload.get("enterpriseSchemaVersion"):
         log.append(f"Enterprise pack schema: {payload['enterpriseSchemaVersion']}.")
     network = payload.get("network") or {}
@@ -1529,7 +1553,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
 
     lane_short = _lane_shortfalls()
 
-    solver, solver_name = _pick_solver(log)
+    solver, solver_name = _pick_solver(log, time_limit=solve_limit, gap_rel=solve_gap)
 
     def _capex_of(fid: str) -> float:
         return _open_capex(fid, fac_by_id, cmap)
@@ -1784,7 +1808,14 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     for f in decidable:
         fid = f["id"]
         c = cmap.get(fid, {})
-        cap_max = float(c.get("capacityMax") or _parse_volume(f.get("capacity"), 1e9))
+        # ``or`` would turn an explicit capacityMax of 0 into the 1e9 fallback
+        # (i.e. "unlimited"). Only a missing value may fall back.
+        cap_raw = c.get("capacityMax")
+        cap_max = (
+            float(cap_raw)
+            if cap_raw is not None
+            else _parse_volume(f.get("capacity"), 1e9)
+        )
         cap_min = float(c.get("capacityMin") or 0.0)
         outbound: list = []
         if f.get("kind") in ("dc", "candidate"):
@@ -1964,8 +1995,13 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
             uncovered_penalty * uncovered[k] for k in uncovered
         )
 
+    # A site that is already open carries a small discount in the solver
+    # objective so that, among near-equal designs, the incumbent footprint wins
+    # (no churn for churn's sake). Reported cost excludes it — see
+    # keep_bonus_used below — but it does mean the chosen design can be up to
+    # KEEP_BONUS_PER_OPEN_SITE_M per kept site worse than the strict optimum.
     keep_bonus = pulp.lpSum(
-        -0.02 * y[f["id"]]
+        -KEEP_BONUS_PER_OPEN_SITE_M * y[f["id"]]
         for f in decidable
         if _facility_status(f, cmap) == "open" and f["id"] in y
     )
@@ -2031,6 +2067,17 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
 
     if infeasible:
         return _infeasible(solve_seconds, pre=False)
+
+    if status_name == "Not Solved":
+        # Time limit reached. PuLP leaves variable values at 0.0, so continuing
+        # would report a complete, zero-cost network that does not exist.
+        # Refuse instead: the caller asked a question we could not answer.
+        raise RuntimeError(
+            f"Solver time limit ({solve_limit:g}s) reached before any solution was "
+            "proven. Simplify the network (fewer SKU/commodity combinations or "
+            "lane modes), raise constraints.solverTimeLimitSec, or relax "
+            "hardServiceConstraints."
+        )
 
     def _val(var: Any) -> float:
         v = pulp.value(var)
@@ -2175,6 +2222,13 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         transport_cost + capex_used + opex_used + uncovered_pen
         + lane_fixed_used + carbon_cost
     )
+    # Magnitude of the keep-open tie-break that actually applied, so the
+    # discount is disclosed rather than hidden inside the solve.
+    keep_bonus_used = KEEP_BONUS_PER_OPEN_SITE_M * sum(
+        1
+        for f in decidable
+        if _facility_status(f, cmap) == "open" and f["id"] in open_ids
+    )
 
     # Product / SKU breakdown
     transport_by_prod: dict[str, float] = {pid: 0.0 for pid in product_ids}
@@ -2208,7 +2262,14 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
     for fid in open_ids:
         f = fac_by_id[fid]
         c = cmap.get(fid, {})
-        cap_max = float(c.get("capacityMax") or _parse_volume(f.get("capacity"), 1e9))
+        # ``or`` would turn an explicit capacityMax of 0 into the 1e9 fallback
+        # (i.e. "unlimited"). Only a missing value may fall back.
+        cap_raw = c.get("capacityMax")
+        cap_max = (
+            float(cap_raw)
+            if cap_raw is not None
+            else _parse_volume(f.get("capacity"), 1e9)
+        )
         thr = sum(
             float(fl["volume"])
             for fl in flows
@@ -2332,7 +2393,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
             v.cat = pulp.LpContinuous
             v.lowBound = fixed
             v.upBound = fixed
-        lp_solver, _ = _pick_solver([])
+        lp_solver, _ = _pick_solver([], time_limit=solve_limit)
         lp_status = prob.solve(lp_solver)
         if pulp.LpStatus.get(lp_status) == "Optimal":
             row_duals = _highs_row_duals(prob)
@@ -2552,6 +2613,7 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         "uncoveredPenaltyM": round(uncovered_pen, 4),
         "laneFixedM": round(lane_fixed_used, 4),
         "carbonM": round(carbon_cost, 4),
+        "keepBonusM": round(keep_bonus_used, 4),
         "modeMix": mode_mix,
         "currency": "model-$M",
         "uncoveredPenaltyPerUnit": cost_scale["uncoveredPenaltyPerUnit"],
@@ -2565,6 +2627,13 @@ def _solve_optimize_core(payload: dict[str, Any]) -> dict[str, Any]:
         f"service {service_pct:.1f}% (target {target_pct}%) · "
         f"flows {len(flows)} · commodities={commodity_mode} · duals={dual_method}."
     )
+    if keep_bonus_used > 0:
+        log.append(
+            f"Tie-break: ${keep_bonus_used:.2f}M keep-open discount applied to "
+            f"{round(keep_bonus_used / KEEP_BONUS_PER_OPEN_SITE_M)} existing site(s) "
+            "inside the solver objective only — totalM is the true cost of the "
+            "chosen design."
+        )
     if mode_choice_on or lane_cap_rows:
         log.append(
             "Lanes: mode mix "

@@ -20,6 +20,7 @@ from typing import Any
 
 import pulp
 
+from .limits import guard_payload, time_limit_sec
 from .solver import (
     _facility_status,
     _open_opex,
@@ -130,6 +131,7 @@ def solve_multi_period(payload: dict[str, Any]) -> dict[str, Any]:
     """Roadmap optimize. Default basis "run": every period is the Run MIP
     (app.multi_period_run). ``roadmap.basis = "legacy-aggregate"`` keeps the
     previous single-commodity raw-network model below."""
+    guard_payload(payload, roadmap=True)
     basis = str((payload.get("roadmap") or {}).get("basis") or "run").lower()
     if basis in ("legacy", "legacy-aggregate", "aggregate"):
         return solve_multi_period_legacy(payload)
@@ -265,7 +267,7 @@ def solve_multi_period_legacy(payload: dict[str, Any]) -> dict[str, Any]:
         f"events={len(events)} · facilities={len(fac_by_id)} · arcs={len(arcs)}."
     )
 
-    solver, solver_name = _pick_solver(log)
+    solver, solver_name = _pick_solver(log, time_limit=time_limit_sec(payload))
     prob = pulp.LpProblem("flowform_multi_period_capex", pulp.LpMinimize)
 
     # Event timing binaries
