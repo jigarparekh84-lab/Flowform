@@ -1,0 +1,65 @@
+# Code scanning (CR-001 — security baseline).
+#
+# Advanced setup as a committed workflow rather than GitHub's "default setup":
+# default setup is repository configuration, so no reviewer sees it in a diff and
+# it cannot be reviewed or rolled back with the code.
+#
+# The two matrix jobs report as `Analyze (python)` and
+# `Analyze (javascript-typescript)`. Those are the contexts the `master-gates`
+# ruleset requires.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  schedule:
+    # Weekly: a new query release should be able to find something in code that
+    # has not changed, which a diff-only trigger can never do.
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege by default; the analyze job widens it for the upload only.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write # required to upload results
+      packages: read
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The API and engine are interpreted, and Vite compiles the web app at
+          # build time rather than through a compiler CodeQL must observe, so
+          # neither needs a build to extract a database. `build-mode: none` is
+          # faster and cannot fail on a build problem unrelated to the analysis.
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          # Distinct category per language, so the two result sets never
+          # overwrite each other on the Security tab.
+          category: "/language:${{ matrix.language }}"

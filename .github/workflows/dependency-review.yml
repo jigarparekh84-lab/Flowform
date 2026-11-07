@@ -1,0 +1,37 @@
+# Dependency review (CR-001 — security baseline).
+#
+# Dependabot alerts cannot be a required status check: they are a repository
+# setting with no check run attached, so a branch ruleset has nothing to wait
+# for. This workflow is the piece that *can* be required — it diffs the
+# dependency graph of every pull request against GitHub's Advisory Database and
+# fails when the change introduces a known-vulnerable package.
+#
+# Free on public repositories; it needs the dependency graph, which npm
+# (package-lock.json) and pip (requirements.txt) both populate automatically.
+
+name: Dependency review
+
+on:
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+  # Only to post the failure summary as a PR comment; the gate is the exit code.
+  pull-requests: write
+
+jobs:
+  review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          # Anything high or critical in the introduced dependencies fails the
+          # job. Lower severities are reported without blocking, because a
+          # transitive moderate advisory with no fixed release would otherwise
+          # make every pull request red.
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
