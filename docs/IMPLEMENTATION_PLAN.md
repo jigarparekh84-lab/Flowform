@@ -100,6 +100,8 @@ Flowform is **not** an APS, scheduler, MRP, or TMS. Day-to-day planning stays in
 
 ## 2. Current state (verified at `0878ad0`)
 
+> **Historical snapshot.** This section describes `0878ad0` and predates FF-101…FF-119 and the hardening pass. Current state, endpoints, tests and limits are in [`MASTER_BLUEPRINT.md`](MASTER_BLUEPRINT.md) §3.3, §6 and §9. Where the two disagree, the blueprint wins.
+
 ### 2.1 Stack and layout
 
 | Area | Verified state |
@@ -737,7 +739,7 @@ gantt
 | Golden | Source | Locks |
 |---|---|---|
 | G-S | Built-in sample "NA Footprint 2027" | $98.2706M, 100 %, Reno closed, explain headline, Atlanta flip +$0.8504M |
-| G-M120 / G-M200 | stress-120 / stress-200 | $89.1208M (3 binding lanes) / $176.8117M (9 open, 6 binding lanes) |
+| G-M120 / G-M200 | stress-120 / stress-200 | $89.1312M (3 binding lanes) / $176.8118M (9 open, 6 binding lanes) |
 | G-INF | No-l9, l9 cap 1000 | `MIN_THROUGHPUT_CONFLICT`, `LANE_CAPACITY_CONFLICT` details |
 | G-RMP / G-ROB | Roadmap, robust built-in shocks | choose $489.89M / force $496.32M; E $101.14M / worst $122.19M |
 | G-GF | Greenfield, 30 candidates | Matches exhaustive search |
@@ -775,7 +777,7 @@ gantt
 
 ### 10.5 UAT using the existing manual test workbook
 
-- `MANUAL_TEST_WORKBOOK.md` / `.xlsx` (20 workflows, 199 cases, REG-01…REG-16) stays the **UAT backbone**. Each phase adds workflows (e.g. WF20 Sign-up and trial, WF21 Wizard, WF22 Import auto-mapping, WF23 Billing, WF24 Tariffs, WF25 Pareto, WF26 Simulation, WF27 SSO/SCIM, WF28 Handoff v2).
+- `MANUAL_TEST_WORKBOOK.md` / `.xlsx` stays the **UAT backbone**; it now has 21 workflows (WF20 is the platform workflow) and 20 regression checks. Each phase adds workflows after WF20 (Sign-up and trial, import auto-mapping, billing, tariffs, Pareto, simulation, SSO/SCIM, Handoff v2).
 - Expected values stay **captured from running code**, as today. Re-capture happens only on intentional model changes, with a changelog entry.
 - Automation target: ≥ 60 % of workbook cases automated in Playwright/pytest by GA. The rest remain exploratory/manual each release.
 - **Self-serve UAT:** each playbook is completed by first-time external testers with no help; success and time are recorded against SS-11/SS-12.
@@ -923,7 +925,7 @@ GitHub (repo, Actions, Projects for backlog), Terraform, Kubernetes (EKS or AKS)
 | 2 | **FF-102** | Golden harness: move REG-01…REG-08 expected values into `tests/golden/*.json` with a comparison helper (objective to the cent, decisions, KPIs, explain headline) | S1 | M | `apps/api/tests/golden/`, `tests/test_golden.py` | Goldens for G-S, G-M120, G-M200, G-INF, G-RMP, G-ROB pass; drift > 0.01 % fails |
 | 3 | **FF-103** | Extract `flowform_engine` package from `apps/api/app/{solver,explain,diagnostics,multi_period,multi_period_run,stochastic}.py`; API imports it; no logic change | S1 | M | new `apps/engine/`, `apps/api/app/main.py` | All 79 pytest + goldens identical; engine installable with `pip install -e apps/engine` |
 | 4 | **FF-104** | Server persistence: Postgres + PostGIS in `docker-compose.yml`; SQLAlchemy 2 + Alembic; tables `tenants, users, projects, project_versions, scenarios, runs, audit_events` with RLS on `tenant_id`; `/v1/projects` CRUD storing `ProjectSnapshot` JSON + version | S1 | L | `apps/api/app/db/`, `apps/api/alembic/` | CRUD tests; a `*.flowform.json` sample round-trips byte-equal (ignoring timestamps); RLS test denies cross-tenant reads |
-| 5 | **FF-105** | Async job API + worker: Redis + Arq; `POST /v1/runs` (kind = optimize / multi-period / stochastic), `GET /v1/runs/{id}`, SSE progress, cancel; input snapshot hash + engine/solver versions stored; sync endpoints unchanged | S2 | L | `apps/api/app/jobs/`, `apps/worker/` | stress-200 via job API returns the same $176.8117M; cancel < 5 s; 5 parallel runs complete |
+| 5 | **FF-105** | Async job API + worker: Redis + Arq; `POST /v1/runs` (kind = optimize / multi-period / stochastic), `GET /v1/runs/{id}`, SSE progress, cancel; input snapshot hash + engine/solver versions stored; sync endpoints unchanged | S2 | L | `apps/api/app/jobs/`, `apps/worker/` | stress-200 via job API returns the same $176.8118M; cancel < 5 s; 5 parallel runs complete |
 | 6 | **FF-106** | Auth + tenancy skeleton: OIDC login (chosen IdP), JWT validation middleware, tenant resolution, roles Owner/Modeler/Viewer; `AUTH_MODE=dev` bypass for local and CI | S1→S2 | M | `apps/api/app/auth/`, `apps/web/src/state/` | Unauthenticated `/v1/*` → 401; role matrix tests; local dev works with no IdP |
 | 7 | **FF-107** | Web `ProjectStore` interface with `LocalStorageStore` (today) and `ApiStore`; one-click "move my local projects to my workspace" | S2 | L | `apps/web/src/data/projects.ts`, `FlowformContext.tsx` | Workbook WF00, WF01, WF17 pass in both modes; offline falls back to local with a banner |
 | 8 | **FF-108** | Guardrails v1: server-side port of `validateEnterprisePack` (same 38 codes and levels, parity test) + pre-solve checks (reachability, capacity ≥ demand, unit sanity); Run button shows the blocking reason; show `MIN_THROUGHPUT_CONFLICT` / `LANE_CAPACITY_CONFLICT` shortfall tables in the Run results panel (blueprint roadmap item 2) | S2 | M | `apps/api/app/validation/`, `TopChrome.tsx`, `CompareResults.tsx` | Parity with `enterprisePack.test.ts`; INF-* workbook cases show a table and a fix-it |

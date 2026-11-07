@@ -1,8 +1,10 @@
 # Flowform — manual smoke checklist
 
-> **Quick smoke only (~10 min).** For full manual QA, use the **[Manual Test Workbook](MANUAL_TEST_WORKBOOK.md)** (20 workflows, 199 cases with captured expected values, a regression suite, and a defect log). An Excel copy with Pass/Fail dropdowns and status counts is at [`Flowform_Manual_Test_Workbook.xlsx`](Flowform_Manual_Test_Workbook.xlsx). The product and architecture reference is the **[Master Blueprint](MASTER_BLUEPRINT.md)** ([`.docx`](Flowform_Master_Blueprint.docx)). Workbook case IDs are shown as *(→ RUN-02)*.
+> **Quick smoke only (~10 min).** For full manual QA, use the **[Manual Test Workbook](MANUAL_TEST_WORKBOOK.md)** (21 workflows, 199 original + 28 platform cases with captured expected values, a 20-check regression suite, and a defect log). An Excel copy with Pass/Fail dropdowns and status counts is at [`Flowform_Manual_Test_Workbook.xlsx`](Flowform_Manual_Test_Workbook.xlsx) (a point-in-time export; the Markdown is authoritative). **How to use the product:** [User Workflows](USER_WORKFLOWS.md). **Architecture and limits:** [Master Blueprint](MASTER_BLUEPRINT.md). Workbook case IDs are shown as *(→ RUN-02)*.
 
 Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional API on **5182**). Use a fresh browser profile or clear Flowform `localStorage` keys if state looks stale.
+
+The core path (identity → project → run → compare → brief → share, plus light/dark) is automated in CI: `cd apps/web && npm run test:e2e` (CR-032). This checklist still covers what a script should not judge — copy, layout, and the judgement calls.
 
 **Default basemap:** OpenFreeMap (no API key). Do not require Carto for smoke.
 
@@ -20,7 +22,7 @@ Room-by-room pass for a healthy local build (`npm run dev` on **5180**, optional
    - Or, while the app is running, download http://localhost:5180/samples/na-footprint-2027.flowform.json then Import that file.
 4. Confirm status shows imported **“NA Footprint 2027 (sample)”** and it becomes Active.
 5. Optional: regenerate the pack after sample-builder changes:  
-   `cd apps/web && npx vite-node ../../scripts/export-sample-project.mts`
+   `cd apps/web && npx tsx ../../scripts/export-sample-project.mts`
 
 ---
 
@@ -150,6 +152,18 @@ Walk each view tab with Reference = Baseline and at least one other selected:
 
 ---
 
+## 14. Platform (optional — needs Postgres)
+
+- [ ] `docker compose up -d db` + `alembic upgrade head` succeeds; `alembic check` reports no drift *(→ PLT-01)*.
+- [ ] API `AUTH_MODE=dev`, web `VITE_DEV_TENANT`/`VITE_DEV_USER` → Projects banner **Saved to your workspace** *(→ PLT-02)*.
+- [ ] Stop the API, edit a project → banner warns and the edit survives; restart → the queued save drains and the version increments *(→ PLT-03/04)*.
+- [ ] **Move my N local project(s) to my workspace** pushes local projects and pulls server-only ones *(→ PLT-05)*.
+- [ ] Run: job chip shows `Run · queued/running %`; **Cancel** ends it as `cancelled` with no result *(→ PLT-09/10)*.
+- [ ] Set Columbus capacity min 30,000 / max 1,000 → Run is blocked with a reason and fix; no scenario is created *(→ PLT-15)*.
+- [ ] Projects → **Start with 4 questions** → example → Build & Run reaches a result card and Compare *(→ PLT-16)*.
+
+---
+
 ## Pass criteria
 
 All rooms above load without console errors that block interaction; sample import works; OpenFreeMap + theme + Esc/? behave; Compare tabs each render for the sample project; `npm run build` in `apps/web` stays green after related changes.
@@ -171,13 +185,13 @@ cd apps/api && source .venv/bin/activate
 pytest -q tests/test_stress_benchmark.py -s
 ```
 
-Expect Optimal, open = 9, `solveSeconds` ≪ 60s on stress-120 (objective 89.1208) and stress-200 (176.8117); **3 passed**.
+Expect Optimal, open = 9, `solveSeconds` ≪ 60s on stress-120 (objective 89.1312) and stress-200 (176.8118); **3 passed**.
 
-### Defect regression (a6d3fae)
+### Regression (defects a6d3fae + hardening pass)
 
 ```bash
-cd apps/api && .venv/bin/pytest -q            # 79 passed (54 + 11 defect + 8 test_unit_weights_co2 + 6 test_roadmap_run_basis)
-cd apps/web && npm run test:data && npm run build   # enterprise 12/12, CTS 2/2, defectFixes ok
+cd apps/api && .venv/bin/pytest -q            # 133 passed, 4 skipped without DATABASE_URL; the 4 Postgres/RLS modules run when it is set
+cd apps/web && npm run test:data && npm run build   # 8 suites (enterprise 15, CTS 2, defectFixes, sync, validation, onboarding, narrative, jobs) + build
 ```
 
 - [ ] Infeasible Run with l9 removed: message starts *Root cause: facility minimum throughput…* (D-02). With l9 `capacityUnits: 1000`: min-throughput **and** *l9 (n2→n6) cap 1000 vs needed 2280 (short 1280)* (D-03).

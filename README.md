@@ -33,7 +33,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 
 | Room | Role |
 |------|------|
-| **Projects** | Workspace home; create / rename / duplicate / delete design studies (localStorage) |
+| **Projects** | Workspace home; create / rename / duplicate / delete design studies (localStorage working copy, optional server sync) |
 | **Network** | Map canvas — nodes, sites, lanes, capacities, constraints inspector (primary surface) |
 | **Greenfield** | Blank-slate footprint design (site candidates, demand anchors) |
 | **Hubs** | Hub-and-spoke design — designate hubs, auto-assign spokes, draft scenario + before/after KPIs |
@@ -46,7 +46,7 @@ Supply chain leaders need a place to **draw and stress-test the footprint** befo
 | **Merge** | M&A merge studio — import acquired network, resolve conflicts, draft merged baseline |
 | **Handoff** | S&OP package: sites/lanes, preferred territory lanes, CapEx years, product mix, BOM RM, inventory targets, scenario meta — JSON + Markdown ops brief (Ritara intake stub) |
 
-Nav serves the map. See `docs/UX_BRIEF.md` and `docs/PRODUCT_BLUEPRINT.md`. Manual smoke: [`docs/SMOKE_CHECKLIST.md`](docs/SMOKE_CHECKLIST.md) (import sample pack from `apps/web/public/samples/`).
+Nav serves the map. **How to use every room and workflow:** [`docs/USER_WORKFLOWS.md`](docs/USER_WORKFLOWS.md). **How it is built and where the limits are:** [`docs/MASTER_BLUEPRINT.md`](docs/MASTER_BLUEPRINT.md). Manual smoke: [`docs/SMOKE_CHECKLIST.md`](docs/SMOKE_CHECKLIST.md); full QA: [`docs/MANUAL_TEST_WORKBOOK.md`](docs/MANUAL_TEST_WORKBOOK.md) (import sample pack from `apps/web/public/samples/`).
 
 ---
 
@@ -59,23 +59,36 @@ Flowform/
 ├── .dockerignore
 ├── .github/workflows/ci.yml
 ├── docs/
+│   ├── USER_WORKFLOWS.md       # How to use the product — every workflow end to end
+│   ├── MASTER_BLUEPRINT.md     # Architecture, model, API, limits, limitations
+│   ├── MANUAL_TEST_WORKBOOK.md # Full manual QA (WF00–WF20) + defect log
+│   ├── IMPLEMENTATION_PLAN.md  # Plan of record / phased roadmap
+│   ├── adr/                    # ADR-001 … ADR-007
 │   ├── UX_BRIEF.md
 │   ├── PRODUCT_BLUEPRINT.md
-│   └── SMOKE_CHECKLIST.md      # Manual room-by-room smoke + sample pack load
+│   └── SMOKE_CHECKLIST.md      # 10-minute room-by-room smoke + sample pack load
 └── apps/
+    ├── engine/                 # flowform_engine — pure-Python MIP (no web deps)
+    │   └── flowform_engine/    # solver, multi-period, stochastic, explain, limits
     ├── web/                    # Vite + React + TypeScript (port 5180)
     │   ├── Dockerfile
     │   ├── public/samples/     # *.flowform.json + stress-120/200 *.enterprise.json
+    │   ├── scripts/            # data-layer helpers (pack parity fixture)
     │   └── src/                # UI, state, DES-lite, optimize client
-    └── api/                    # FastAPI optimize (PuLP + HiGHS/CBC, port 5182)
+    └── api/                    # FastAPI optimize + /v1 (port 5182)
         ├── Dockerfile
+        ├── alembic/            # tenancy schema + RLS migrations
         ├── app/
-        └── tests/              # pytest smoke + stress-120/200 MIP benchmarks
+        │   ├── main.py         # /optimize, /optimize/multi-period, /optimize/stochastic
+        │   ├── v1/             # projects, scenarios, runs, auth/RBAC, WorkOS
+        │   ├── jobs/           # queue (inline | arq) + run worker
+        │   └── db/             # SQLAlchemy models, tenant-scoped sessions
+        └── tests/              # pytest, golden snapshots, RLS, stress benchmarks
 ```
 
 | Piece | Stack | Port | Role |
 |-------|-------|------|------|
-| **web** | Vite, React 19, TypeScript, MapLibre GL | **5180** | Studio UI; Projects persist in localStorage; Run prefers API then heuristic |
+| **web** | Vite, React 19, TypeScript, MapLibre GL | **5180** | Studio UI; Projects persist in localStorage and optionally sync to `/v1`; Run prefers async jobs → sync API → heuristic |
 | **api** | FastAPI, PuLP, HiGHS (highspy) / CBC | **5182** | `POST /optimize` MIP; `POST /optimize/multi-period` CapEx NPV; `POST /optimize/stochastic` scenario-tree |
 
 > Ports are **5180 / 5182**, not 5173 (Ritara). Preview build uses 5181 locally.
@@ -89,14 +102,14 @@ When the API is down, web **Run** falls back to the client heuristic with an exp
 Requires Docker Desktop (or Engine + Compose v2).
 
 ```bash
-cd /Users/jigar/Projects/Flowform
+# from the repository root
 docker compose up --build
 ```
 
 | Service | URL |
 |---------|-----|
 | Web | http://localhost:5180 |
-| API health | http://127.0.0.1:5182/health |
+| API readiness | http://127.0.0.1:5182/readyz |
 
 Stop with `Ctrl+C` or `docker compose down`.
 
@@ -108,27 +121,30 @@ Build args: web image bakes `VITE_API_URL=http://127.0.0.1:5182` so the browser 
 
 ### Prerequisites
 
-- Node.js 20+ (22 recommended) and npm
+- Node.js `^20.19.0` or `>=22.12.0` and npm (matches Vite 8 / `engines`)
 - Python 3.10+ (3.12 recommended) with venv
 
 ### 1. Optimize API (port 5182)
 
 ```bash
-cd /Users/jigar/Projects/Flowform/apps/api
+cd apps/api
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt          # pinned, hash-checked lock
+pip install --no-deps -e ../engine       # local engine package
 uvicorn app.main:app --reload --host 127.0.0.1 --port 5182
 ```
 
-Health: http://127.0.0.1:5182/health  
+Health: `/livez` (process) and `/readyz` (database/queue) on port 5182; `/health`
+still answers as a legacy liveness alias.  
 Smoke: `pytest -q` from `apps/api` (with venv active).  
-Contract details: `apps/api/README.md`.
+Contract details: `apps/api/README.md`. Observability, probes and alerting:
+`docs/OBSERVABILITY.md`.
 
 ### 2. Web (port 5180)
 
 ```bash
-cd /Users/jigar/Projects/Flowform/apps/web
+cd apps/web
 npm install
 npm run dev
 ```
@@ -141,6 +157,7 @@ Open http://localhost:5180.
 | `npm run build` | Typecheck + production build |
 | `npm run preview` | Serve production build on **5181** |
 | `npm run lint` | Lint (oxlint) |
+| `npm run gen:pack-parity` | Rewrite the pack-validator parity fixture after an intended change |
 
 Optional: `VITE_API_URL` (default `http://127.0.0.1:5182`) so **Run** can reach the API.
 
@@ -184,16 +201,19 @@ In **Compare → Sensitivity** (and a quick-run panel under **Scenarios → Sens
 
 GitHub Actions (`.github/workflows/ci.yml`):
 
-- **web** — `npm ci` + `npm run build`
-- **api** — `pip install -r requirements.txt` + `pytest` (health + optimize smoke)
+- **web** — `npm ci` → data tests → `oxlint` → `tsc -b` → `vite build`
+- **api** — `ruff` (syntax/undefined names) → `alembic upgrade head` + `alembic check` against PostGIS/Redis services → `pytest`
+- **benchmark** — stress-120/200 solve under `STRESS_TIMEOUT_S` (default 60 s), reported in the job summary
 
 ---
 
 ## MVP scope (in / out)
 
-**In:** Projects (localStorage), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Sensitivity tornado/MC, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory), Brief export + comments + decision log, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, Docker Compose, CI.
+**In:** Projects (localStorage working copy + optional `/v1` workspace sync), Network + MapLibre (+ capacity heat), Greenfield, Hubs (hub-spoke), Territory, Roadmap (CapEx + NPV timing), Scenarios + sensitivity (incl. tariff), Compare (DES-lite, Sensitivity tornado/MC, Inventory, Resilience, Mode mix, Products, Bids, BOM, Territory, Robust), Brief export + comments + decision log, Data CSV + CO₂ + BOM + rates, M&A Merge studio, Share stub, Handoff S&OP package (`flowform.handoff.v1`), PuLP optimize API, async jobs, onboarding wizard, pre-run guardrails, Docker Compose, CI.
 
-**Out (for now):** Paid map keys, auth / multi-tenant, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation.
+**Server side (in):** Postgres/PostGIS tenancy with RLS, JWT/WorkOS auth with owner→viewer RBAC on `/v1`, project/scenario/run persistence with versioned snapshots, async run jobs (inline or Redis/Arq) with SSE progress, pre-run guardrails, golden regression harness.
+
+**Out (for now):** Paid map keys, cloud deploy, direct Ritara API, APS / scheduling / MRP, full discrete-event simulation. The optimize endpoints stay unauthenticated and single-tenant; they are size-capped, time-limited and concurrency-limited instead (`constraints.solverTimeLimitSec`, `MAX_CONCURRENT_SOLVES`).
 
 ---
 
@@ -201,4 +221,5 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 - **Ritara** — APS / planning (downstream handoff target). Flowform does not embed or fork Ritara.
 - Prior aborted attempt **Sutra** (if present under Projects) is unrelated; leave it alone.
+- **Using it** — [`docs/USER_WORKFLOWS.md`](docs/USER_WORKFLOWS.md); **how it works** — [`docs/MASTER_BLUEPRINT.md`](docs/MASTER_BLUEPRINT.md).
 - **Smoke / sample** — [`docs/SMOKE_CHECKLIST.md`](docs/SMOKE_CHECKLIST.md); sample project JSON at [`apps/web/public/samples/na-footprint-2027.flowform.json`](apps/web/public/samples/na-footprint-2027.flowform.json) (Projects → Import JSON).

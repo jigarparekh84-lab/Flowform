@@ -14,26 +14,73 @@ Fixed-charge **multi-echelon MIP** (PuLP + HiGHS preferred, CBC fallback):
 
 ## Setup
 
-Requires Python 3.10+ (3.11–3.14 tested).
+Requires Python 3.12 — the version the lock, CI and the container image target.
 
 ```bash
-cd /Users/jigar/Projects/Flowform/apps/api
+cd "$(git rev-parse --show-toplevel)/apps/api"
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt          # pinned, hash-checked lock
+pip install --no-deps -e ../engine       # local engine package
+pip install -r requirements-dev.txt      # mypy and ruff, pinned
 ```
 
 `highspy` provides the HiGHS solver; PuLP also ships CBC as a fallback.
 
+### Dependencies, locks and the type gate (CR-034)
+
+| File | Role |
+|---|---|
+| [`requirements.in`](requirements.in) | Human-edited version ranges — the intent |
+| [`requirements.txt`](requirements.txt) | Generated lock: every package pinned with SHA-256 hashes |
+| [`requirements-dev.in`](requirements-dev.in) / [`requirements-dev.txt`](requirements-dev.txt) | The same for mypy and ruff |
+| [`scripts/lock-requirements.sh`](scripts/lock-requirements.sh) | Regenerates a lock inside `python:3.12-slim`, so the resolver sees CI's interpreter |
+
+pip puts a hashed requirements file in hash-checking mode automatically, so an
+unexpected version, or a tampered artifact, fails the install instead of
+shipping. After editing a `.in` file, regenerate and commit the lock:
+
+```bash
+./scripts/lock-requirements.sh                 # requirements.txt
+./scripts/lock-requirements.sh requirements-dev
+```
+
+A local editable package cannot appear in a hashed lock, which is why the engine
+is installed separately with `--no-deps`.
+
+Solver versions are pinned exactly (`pulp==2.9.0`, `highspy==1.15.1`) in both
+[`requirements.in`](requirements.in) and
+[`apps/engine/pyproject.toml`](../engine/pyproject.toml): a solver upgrade can
+change branching order, and with it objective values, duals and the facilities a
+plan opens, while `Run.solver_version` still claims a comparable result.
+[`tests/test_solver_pins.py`](tests/test_solver_pins.py) fails when a pin is a
+range, when the two declarations disagree, when the lock lags the `.in` file, or
+when the installed version is not the pinned one.
+
+Type-check the API with the config in [`pyproject.toml`](pyproject.toml):
+
+```bash
+mypy        # checks app/ (25 modules); CI runs this before pytest
+ruff check --select E9,F63,F7,F82 .
+```
+
+The gate covers `app/`. The engine is not type-checked yet — enabling it there
+starts from ~113 existing errors, which is its own piece of work.
+
 ## Run
 
 ```bash
-cd /Users/jigar/Projects/Flowform/apps/api
+cd "$(git rev-parse --show-toplevel)/apps/api"
 source .venv/bin/activate
 uvicorn app.main:app --reload --host 127.0.0.1 --port 5182
 ```
 
-Health check: http://127.0.0.1:5182/health
+Health checks: `GET /livez` (process only — a crash loop restarter should use
+this), `GET /readyz` (database reachable — load balancers should use this) and
+`GET /health`. `readyz` returns 503 with a per-check body when the database is
+down; `livez` stays 200 so a DB outage never triggers a restart storm.
+`/readyz` also reports `queue`, `reaper` and `authMode`. See
+[OBSERVABILITY.md](../../docs/OBSERVABILITY.md).
 
 ## `POST /optimize`
 
@@ -113,7 +160,7 @@ One convention for every objective term:
 ## Tests
 
 ```bash
-cd /Users/jigar/Projects/Flowform/apps/api
+cd "$(git rev-parse --show-toplevel)/apps/api"
 source .venv/bin/activate
 pytest -q
 ```
@@ -292,6 +339,38 @@ DB tests skip when `DATABASE_URL` is unset.
 Scenarios: `/v1/projects/{id}/scenarios` (list, create, get, update, delete;
 `{name, spec}`). Runs: `GET /v1/projects/{id}/runs` (creation via the job API, FF-105).
 
+### Quotas and snapshot retention (CR-005)
+
+A save stores a whole snapshot, so three limits bound one tenant's history.
+They are read per request — no restart to change one — and a non-integer or
+`< 1` value falls back to the default (a typo must not mean "unlimited"):
+
+| Setting | Default | Enforced on |
+|---|---|---|
+| `MAX_PROJECT_SNAPSHOT_BYTES` | 5 MiB | one request body → `413` |
+| `MAX_PROJECTS_PER_TENANT` | 100 | `POST /v1/projects` → `403` |
+| `MAX_VERSIONS_PER_PROJECT` | 50 | every save, by pruning older versions |
+| `MAX_TENANT_STORAGE_BYTES` | 512 MiB | every snapshot write → `403` |
+
+**Retention.** A save keeps the newest `MAX_VERSIONS_PER_PROJECT` versions of
+that project and deletes the rest in the same transaction. Saves are never
+rejected for being one version too many, the current version is always among
+the newest N, and a pruned version simply `404`s from
+`GET /{id}/snapshot?version=`. History of projects that are never saved again
+keeps its old rows until their next save (periodic compaction is CR-017).
+
+**Storage.** The check runs after the insert and after pruning, so a save that
+compacts history is allowed to succeed. Crossing the cap rolls back the whole
+write — version bump, version row and audit event — so the stored size never
+exceeds the limit.
+
+**Status codes** are distinct on purpose, because the client shows a different
+message for each: `413` this body is too large, `403` the tenant is at a quota
+(with `X-Quota-Limit: projects|storage` and the actionable detail), `409` the
+base version is stale, `429` (CR-007) too many requests. The workspace banner
+treats a `403` carrying `X-Quota-Limit` as "workspace limit reached", not as
+"not signed in", and keeps the unsaved project local.
+
 ## Async solve jobs (FF-105)
 
 `POST /v1/projects/{id}/runs` `{kind: optimize|multi-period|stochastic, payload, scenarioId?}`
@@ -304,6 +383,44 @@ dev and CI), `arq` (Redis; `docker compose up -d redis`, `REDIS_URL=redis://127.
 worker `arq app.jobs.worker.WorkerSettings`), `manual` (tests). The Run row is the
 state of record; cancel flips its status and late results are discarded.
 
+### Crash recovery (CR-004)
+
+Delivery is at-least-once, and a worker crash never leaves a run stuck. Each
+claim is a conditional `UPDATE … WHERE status='queued'` that bumps
+`runs.attempts`; the solving worker refreshes `runs.heartbeat_at` every
+`RUN_HEARTBEAT_S`, and its result is written with the attempt number in the
+`WHERE` clause. A duplicate queue message is therefore a no-op, and a
+partitioned worker that wakes up late cannot overwrite the attempt that
+replaced it.
+
+`app.jobs.reaper` reclaims both stuck states: a `running` row with no heartbeat
+for `RUN_STALE_AFTER_S` is requeued while `attempts < RUN_MAX_ATTEMPTS`, then
+failed with an explicit "interrupted" message; a `queued` row whose
+`dispatched_at` is older than `RUN_QUEUED_STALE_AFTER_S` is re-dispatched
+(lost queue message).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `RUN_HEARTBEAT_S` | `30` | Worker lease refresh interval |
+| `RUN_STALE_AFTER_S` | `180` | Silence before a run is considered dead |
+| `RUN_QUEUED_STALE_AFTER_S` | `120` | Silence before a queued run is re-dispatched |
+| `RUN_MAX_ATTEMPTS` | `2` | Claims per run before it is failed |
+| `RUN_REAPER_ENABLED` | `true` | Sweep thread in the API process |
+| `RUN_REAPER_INTERVAL_S` | `300` | Sweep cadence |
+
+It runs automatically on API startup (a daemon thread; skipped when
+`QUEUE_BACKEND=manual`), once when an Arq worker starts, and on demand:
+
+```bash
+python -m app.jobs.reaper --once            # cron / CronJob
+python -m app.jobs.reaper --interval 60     # standalone sweeper
+```
+
+`run_out` exposes `attempts`, `startedAt`, `heartbeatAt` and `dispatchedAt`, so
+a retried run is explainable in the UI and in support tickets. Every recovery
+action also writes an `AuditEvent` (`run.requeue`, `run.interrupted`,
+`run.dispatch_retry`).
+
 ## Auth + roles (FF-106)
 
 `AUTH_MODE`: `dev` (headers `X-Dev-Tenant`, `X-Dev-User`, `X-Dev-Role`), `jwt`
@@ -311,6 +428,15 @@ state of record; cancel flips its status and late results are discarded.
 `AUTH_JWT_AUDIENCE`; `AUTH_JWT_SECRET` HS256 for tests), `workos` (AuthKit tokens,
 JWKS `https://api.workos.com/sso/jwks/$WORKOS_CLIENT_ID`; needs `WORKOS_API_KEY`,
 `WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI` — inert/401 until set). Anything else → 401.
+
+**Dev mode is local-only (CR-012).** `X-Dev-*` headers are trivially forged, so
+they are honoured only when the socket peer is loopback (or the in-process test
+client) **and** no proxy header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP`, …)
+is present. Anything else is a 401 that names the guard. `DEV_AUTH_ALLOW_REMOTE=1`
+is the explicit escape hatch for the Docker Compose stack, whose published ports
+are bound to `127.0.0.1`. Startup logs `DEV AUTH — …` (or `DEV AUTH EXPOSED — …`
+with the override), and `/v1/auth/config` returns `devAuth` plus that `warning`
+so the web account menu can show it.
 
 Tenant = token `org_id`; role = `role` claim (`member`→editor). Tenants/users
 auto-provision on first request. RBAC on every /v1 route:
@@ -322,4 +448,73 @@ auto-provision on first request. RBAC on every /v1 route:
 | admin | + delete projects & scenarios |
 | owner | + WorkOS Admin Portal link (`POST /v1/auth/admin-portal`), future billing |
 
-`/v1/auth/config` (public), `/v1/auth/login`, `/v1/auth/callback`, `/v1/auth/me`.
+### Session surfaces (CR-010/CR-011)
+
+| Endpoint | Role | Purpose |
+|---|---|---|
+| `GET /v1/auth/config` | public | mode, WorkOS availability, redirect URI, roles |
+| `GET /v1/auth/login` | public | signed `state` + AuthKit URL (`redirect_uri`, `returnTo`, `organizationId`, `screenHint`) |
+| `POST /v1/auth/callback` | public | `{code, state}` → tokens + user + organisation (state is mandatory) |
+| `POST /v1/auth/refresh` | public (refresh token) | rotate tokens; `organizationId` switches the active organisation |
+| `POST /v1/auth/logout` | viewer | WorkOS session logout URL (uses the token's `sid`) |
+| `GET /v1/auth/organizations` | viewer | active memberships, current one flagged |
+| `GET /v1/auth/me` | viewer | tenant, user, role, session id |
+
+**Hardening.** `redirect_uri` must be `WORKOS_REDIRECT_URI`, an entry in
+`WORKOS_ALLOWED_REDIRECT_URIS`, or a loopback `/auth/callback` (RFC 8252 dev
+rule) — anything else is a 400 before WorkOS is called. `returnTo` is a relative
+path or a trusted origin (no open redirect). `/v1/auth/login` mints an
+HMAC-signed state bound to the redirect URI with a 10-minute TTL; the callback
+rejects missing, forged or expired state without spending the code. WorkOS
+access tokens must carry this app's `client_id` (or matching `azp`) — a token
+minted for another WorkOS client is a 401; `WORKOS_ENFORCE_CLIENT_CLAIM=0`
+relaxes that. Token responses are `Cache-Control: no-store`. States expire after 10 minutes and the authorization code itself is single-use at the provider.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `WORKOS_REDIRECT_URI` | — | the app's callback URL |
+| `WORKOS_ALLOWED_REDIRECT_URIS` | — | comma-separated extra allowlist entries |
+| `WORKOS_STATE_SECRET` | API key | HMAC key for the login state |
+| `WORKOS_ENFORCE_CLIENT_CLAIM` | `1` | require `client_id`/`azp` = `WORKOS_CLIENT_ID` |
+| `DEV_AUTH_ALLOW_REMOTE` | — | accept dev headers from any peer (isolated dev containers only) |
+
+The web client ([`data/session.ts`](../web/src/data/session.ts)) completes the
+redirect at `/auth/callback`, keeps the access token in memory and the refresh
+token in `sessionStorage` (never `localStorage`), refreshes ahead of expiry and
+once on a 401, and exposes sign-in / sign-out / organisation switching in the
+account menu.
+
+## Observability
+
+Every response carries `X-Request-ID` (an inbound value is reused only when it
+is a sane 8–128 char token, otherwise one is generated) and every log line
+written during that request includes `request_id=…`, so a customer's cited ID
+maps to lines. Runs log `run.create`, `run.start` and `run.finish` with the run
+ID and attempt, so one solve can be followed across queue, worker and reaper.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | level of the `flowform` logger |
+| `HTTP_REQUEST_LOG` | `1` | one line per request (health probes excluded) |
+| `SENTRY_DSN` | — | enable Sentry error reporting |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0` | Sentry performance traces |
+| `SENTRY_ENVIRONMENT` / `APP_ENV` | — | Sentry environment |
+| `SENTRY_RELEASE` / `APP_RELEASE` | — | release tag |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | enable OTLP/HTTP tracing |
+| `OTEL_SERVICE_NAME` | `flowform-api` | resource `service.name` |
+| `OTEL_TRACES_SAMPLE_RATE` | `0.1` | head sampling ratio |
+| `OTEL_SDK_DISABLED` | — | `1` forces tracing off |
+| `READYZ_TIMEOUT_S` / `READYZ_CACHE_S` | `2` / `2` | probe bound / cache |
+| `READYZ_REQUIRE_DB` | auto | `0`/`1` overrides deployment-aware readiness |
+| `METRICS_ENABLED` | `1` | `0` makes `GET /metrics` return 404 |
+| `METRICS_TOKEN` | — | when set, `/metrics` needs `Authorization: Bearer <token>` |
+
+`GET /metrics` exports Prometheus counters/histograms for HTTP traffic, run
+outcomes, queue wait, reaper actions and readiness. Labels are route templates
+and statuses only — never a tenant, user, project or run id. Alert rules and
+their unit tests live in [`ops/prometheus/`](../../ops/prometheus).
+
+Sentry and OTel are optional extras: unset DSN and endpoint mean no telemetry,
+no collector and no outbound network. `app/observability.py` owns setup, the
+request-ID middleware and the access log; [`docs/OBSERVABILITY.md`](../../docs/OBSERVABILITY.md)
+has the probe wiring, privacy defaults, metric catalogue and the alert playbook.
