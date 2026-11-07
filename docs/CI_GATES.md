@@ -73,6 +73,55 @@ Repository-side settings that back the workflow: Actions enabled with the
 default read-only `GITHUB_TOKEN` (the workflow needs no secrets), and optionally
 the `STRESS_TIMEOUT_S` variable as the benchmark budget.
 
+### Automated equivalent
+
+Once the plan allows rulesets, the same policy can be applied without the UI:
+
+```bash
+gh api --method POST repos/:owner/:repo/rulesets --input - <<'JSON'
+{
+  "name": "master-gates",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/heads/master"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "required_review_thread_resolution": true } },
+    { "type": "required_status_checks", "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [
+          { "context": "Web (data tests, lint, type-check, build)" },
+          { "context": "API (mypy, lint, pytest)" },
+          { "context": "E2E (Playwright critical path)" },
+          { "context": "Prometheus rules (promtool check + unit tests)" },
+          { "context": "Benchmark (stress-200 budget)" }
+        ] } }
+  ]
+}
+JSON
+```
+
+On a single-maintainer repository keep `required_approving_review_count` at `0`.
+GitHub never counts an author's approval of their own pull request, so `1` locks
+the owner out of their own branch; the only ways past it are an admin bypass
+(which defeats the gate) or a second maintainer. Drop the `Benchmark` entry if
+you decide to keep it advisory.
+
+### Verifying that it actually blocks
+
+Push a branch with one deliberately failing assertion, open a pull request and
+confirm the failing job appears as a **required** check and the merge button
+stays disabled. Then close the pull request and delete the branch.
+
+A ruleset that was never tried against a red build is indistinguishable from no
+ruleset: a check name can be misspelled, the rule can target the wrong branch,
+or the job can be renamed later — all of which fail *open*. This is also the
+reason the benchmark job has a static name.
+
 ---
 
 ## 4. Not gates yet
