@@ -46,7 +46,10 @@ class StubClient:
     def __init__(self) -> None:
         self.calls: list[tuple] = []
         self.memberships: list[dict] = []
+        #: Listings may be stale; the per-org lookup answers from this set.
+        self.real_memberships: list[dict] = []
         self.fail_memberships = False
+        self.fail_lookups = False
         self.refresh_error: Exception | None = None
 
     def authorization_url(self, redirect_uri, state=None, *, organization_id=None, screen_hint=None):
@@ -75,13 +78,17 @@ class StubClient:
             "organization_id": organization_id or "org_A",
         }
 
-    def list_memberships(self, user_id):
-        self.calls.append(("memberships", user_id))
-        if self.fail_memberships:
-            from fastapi import HTTPException
+    def list_memberships(self, user_id, organization_id=None):
+        self.calls.append(("memberships", user_id, organization_id))
+        from fastapi import HTTPException
 
+        if organization_id is None:
+            if self.fail_memberships:
+                raise HTTPException(status_code=502, detail="WorkOS /organization_memberships → 500")
+            return self.memberships
+        if self.fail_lookups:
             raise HTTPException(status_code=502, detail="WorkOS /organization_memberships → 500")
-        return self.memberships
+        return [m for m in self.real_memberships if m["organization_id"] == organization_id]
 
 
 @pytest.fixture()
@@ -93,6 +100,8 @@ def stub(monkeypatch):
     monkeypatch.setenv("WORKOS_ALLOWED_REDIRECT_URIS", "https://staging.flowform.test/auth/callback")
     monkeypatch.setenv("WORKOS_STATE_SECRET", "state_secret_for_tests")
     monkeypatch.delenv("WORKOS_ENFORCE_CLIENT_CLAIM", raising=False)
+    # Confirmations live in process memory; each test starts from a cold cache.
+    W.clear_confirmations()
     s = StubClient()
 
     class StubJWKS:
@@ -238,11 +247,13 @@ def test_logout_returns_the_workos_session_url(stub):
 
 def test_organizations_lists_memberships_and_flags_the_current_one(stub):
     org = f"org_{uuid.uuid4().hex[:8]}"
-    stub.memberships = [
+    listed = [
         {"organization_id": org, "organization_name": "Acme", "status": "active", "role": {"slug": "admin"}},
         {"organization_id": "org_other", "organization_name": "Beta", "status": "active", "role": {"slug": "member"}},
         {"organization_id": "org_gone", "organization_name": "Left", "status": "inactive", "role": {"slug": "member"}},
     ]
+    stub.memberships = listed
+    stub.real_memberships = listed
     r = _client().get("/v1/auth/organizations", headers=H(_token(org, "admin")))
     assert r.status_code == 200, r.text
     data = r.json()
@@ -252,6 +263,36 @@ def test_organizations_lists_memberships_and_flags_the_current_one(stub):
     assert by_id[org]["current"] is True and by_id["org_other"]["current"] is False
     assert by_id["org_other"]["role"] == "editor"
     assert "org_gone" not in by_id
+    # The current org is proven by the token; the switchable one had to be confirmed.
+    assert ("memberships", "user_1", "org_other") in stub.calls
+    assert ("memberships", "user_1", org) not in stub.calls
+
+
+def test_organizations_never_offer_a_membership_the_provider_will_not_confirm(stub):
+    """A stale listing entry must not become a switch the grant then refuses."""
+    org = f"org_{uuid.uuid4().hex[:8]}"
+    real = {"organization_id": org, "organization_name": "Acme", "status": "active", "role": {"slug": "owner"}}
+    stub.memberships = [
+        real,
+        {"organization_id": "org_phantom", "organization_name": "Phantom", "status": "active", "role": {"slug": "admin"}},
+    ]
+    stub.real_memberships = [real]
+    data = _client().get("/v1/auth/organizations", headers=H(_token(org, "owner"))).json()
+    assert [o["id"] for o in data["organizations"]] == [org]
+    assert data["degraded"] is False
+    assert ("memberships", "user_1", "org_phantom") in stub.calls, "the entry had to be checked"
+
+
+def test_organizations_hide_what_they_cannot_confirm_but_keep_the_rest(stub):
+    org = f"org_{uuid.uuid4().hex[:8]}"
+    stub.memberships = [
+        {"organization_id": org, "organization_name": "Acme", "status": "active", "role": {"slug": "owner"}},
+        {"organization_id": "org_other", "organization_name": "Beta", "status": "active", "role": {"slug": "member"}},
+    ]
+    stub.fail_lookups = True
+    data = _client().get("/v1/auth/organizations", headers=H(_token(org, "owner"))).json()
+    assert [o["id"] for o in data["organizations"]] == [org], "an unverifiable switch is not offered"
+    assert data["degraded"] is True, "the client is told the list is incomplete"
 
 
 def test_organizations_degrade_to_the_current_tenant(stub):
@@ -262,6 +303,67 @@ def test_organizations_degrade_to_the_current_tenant(stub):
     data = r.json()
     assert data["degraded"] is True
     assert data["organizations"] == [{"id": org, "name": org, "role": "owner", "active": True, "current": True}]
+
+
+def test_confirmed_memberships_are_cached_between_listings(stub):
+    """Opening the menu twice must not cost a provider call per organization."""
+    org = f"org_{uuid.uuid4().hex[:8]}"
+    stub.memberships = [
+        {"organization_id": org, "organization_name": "Acme", "status": "active", "role": {"slug": "owner"}},
+        {"organization_id": "org_other", "organization_name": "Beta", "status": "active", "role": {"slug": "member"}},
+    ]
+    stub.real_memberships = list(stub.memberships)
+    headers = H(_token(org, "owner"))
+    c = _client()
+
+    first = c.get("/v1/auth/organizations", headers=headers).json()
+    lookups = [call for call in stub.calls if call == ("memberships", "user_1", "org_other")]
+    assert len(lookups) == 1
+
+    second = c.get("/v1/auth/organizations", headers=headers).json()
+    assert second == first
+    assert [call for call in stub.calls if call == ("memberships", "user_1", "org_other")] == lookups
+    # The listing itself is still read fresh, and the current org is never looked up.
+    assert sum(1 for call in stub.calls if call[0] == "memberships" and call[2] is None) == 2
+    assert ("memberships", "user_1", org) not in stub.calls
+
+
+def test_a_denied_membership_is_never_cached(stub):
+    """Caching a refusal would keep a re-granted organization hidden; re-check it."""
+    org = f"org_{uuid.uuid4().hex[:8]}"
+    real = {"organization_id": org, "organization_name": "Acme", "status": "active", "role": {"slug": "owner"}}
+    stub.memberships = [
+        real,
+        {"organization_id": "org_phantom", "organization_name": "Phantom", "status": "active", "role": {"slug": "admin"}},
+    ]
+    stub.real_memberships = [real]
+    headers = H(_token(org, "owner"))
+    c = _client()
+
+    for _ in range(2):
+        data = c.get("/v1/auth/organizations", headers=headers).json()
+        assert [o["id"] for o in data["organizations"]] == [org]
+        assert data["degraded"] is False
+    assert len([call for call in stub.calls if call == ("memberships", "user_1", "org_phantom")]) == 2
+
+
+def test_confirmation_cache_can_be_switched_off(stub, monkeypatch):
+    monkeypatch.setenv("WORKOS_ORG_CONFIRM_CACHE_S", "0")
+    org = f"org_{uuid.uuid4().hex[:8]}"
+    stub.memberships = [
+        {"organization_id": org, "organization_name": "Acme", "status": "active", "role": {"slug": "owner"}},
+        {"organization_id": "org_other", "organization_name": "Beta", "status": "active", "role": {"slug": "member"}},
+    ]
+    stub.real_memberships = list(stub.memberships)
+    headers = H(_token(org, "owner"))
+    c = _client()
+
+    for _ in range(2):
+        assert len(c.get("/v1/auth/organizations", headers=headers).json()["organizations"]) == 2
+    assert len([call for call in stub.calls if call == ("memberships", "user_1", "org_other")]) == 2
+    # A malformed value falls back to the default rather than failing a request.
+    monkeypatch.setenv("WORKOS_ORG_CONFIRM_CACHE_S", "nonsense")
+    assert W.confirm_cache_ttl() == 60.0
 
 
 # ---------------------------------------------------------------- dev auth (CR-012)

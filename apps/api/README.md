@@ -455,9 +455,9 @@ auto-provision on first request. RBAC on every /v1 route:
 | `GET /v1/auth/config` | public | mode, WorkOS availability, redirect URI, roles |
 | `GET /v1/auth/login` | public | signed `state` + AuthKit URL (`redirect_uri`, `returnTo`, `organizationId`, `screenHint`) |
 | `POST /v1/auth/callback` | public | `{code, state}` → tokens + user + organisation (state is mandatory) |
-| `POST /v1/auth/refresh` | public (refresh token) | rotate tokens; `organizationId` switches the active organisation |
+| `POST /v1/auth/refresh` | public (refresh token) | rotate tokens; `organizationId` switches the active organisation (a refused switch is a 401 naming the cause, not a generic sign-in failure) |
 | `POST /v1/auth/logout` | viewer | WorkOS session logout URL (uses the token's `sid`) |
-| `GET /v1/auth/organizations` | viewer | active memberships, current one flagged |
+| `GET /v1/auth/organizations` | viewer | switchable organizations — every one except the active org (proven by the token) is confirmed with a single-membership provider lookup, so a stale listing entry is never offered; a confirmation is cached for `WORKOS_ORG_CONFIRM_CACHE_S` seconds so the menu costs one call, not one per organization; the current one is flagged |
 | `GET /v1/auth/me` | viewer | tenant, user, role, session id |
 
 **Hardening.** `redirect_uri` must be `WORKOS_REDIRECT_URI`, an entry in
@@ -476,7 +476,18 @@ relaxes that. Token responses are `Cache-Control: no-store`. States expire after
 | `WORKOS_ALLOWED_REDIRECT_URIS` | — | comma-separated extra allowlist entries |
 | `WORKOS_STATE_SECRET` | API key | HMAC key for the login state |
 | `WORKOS_ENFORCE_CLIENT_CLAIM` | `1` | require `client_id`/`azp` = `WORKOS_CLIENT_ID` |
+| `WORKOS_ORG_CONFIRM_CACHE_S` | `60` | remember a confirmed organization switch this long (max 300; `0` = verify every time) |
 | `DEV_AUTH_ALLOW_REMOTE` | — | accept dev headers from any peer (isolated dev containers only) |
+
+**Confirmation cache semantics.** `GET /v1/auth/organizations` still reads the
+provider listing fresh — names, roles and newly added organizations are current —
+but it does not re-prove the organizations it has already confirmed. Only a
+*positive* answer is cached: a denial is re-checked on every request, so a
+re-granted membership appears immediately and a stale listing entry is still
+filtered out. A membership revoked inside the window is caught by the grant
+itself: `/v1/auth/refresh` refuses the switch with a reason and the visitor stays
+in their current workspace. The cache is per process (so each API worker warms
+its own), bounded, and cleared on `0`.
 
 The web client ([`data/session.ts`](../web/src/data/session.ts)) completes the
 redirect at `/auth/callback`, keeps the access token in memory and the refresh
