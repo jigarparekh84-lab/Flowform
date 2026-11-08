@@ -137,6 +137,11 @@ jobs:
       - name: Critical path smoke
         working-directory: apps/web
         run: npm run test:e2e
+      # The identity round trip boots its own API in AUTH_MODE=workos plus a
+      # loopback WorkOS stand-in (scripts/stub_workos.py): no real tenant needed.
+      - name: WorkOS identity round trip
+        working-directory: apps/web
+        run: npm run test:e2e:auth
       - name: Upload traces and screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v7

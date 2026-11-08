@@ -13,6 +13,8 @@ import { API_PORT, API_URL, DEV_TENANT, DEV_USER, WEB_PORT, WEB_URL } from './e2
  */
 export default defineConfig({
   testDir: './e2e',
+  // The identity round trip needs its own servers (playwright.auth.config.ts).
+  testMatch: /critical-path\.spec\.ts$/,
   // A MIP solve plus a cold Vite boot is slower than a unit test.
   timeout: 120_000,
   expect: { timeout: 20_000 },

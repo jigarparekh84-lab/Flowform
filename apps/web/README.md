@@ -64,8 +64,33 @@ cd apps/api && source .venv/bin/activate && alembic upgrade head
 cd ../../apps/web && npx playwright install chromium && npm run test:e2e
 ```
 
-The suite uses `AUTH_MODE=dev` because WorkOS cannot be signed into unattended;
-every step after identity uses the same tenant-scoped API a real session does.
-Points and identity can be overridden with `E2E_WEB_PORT`, `E2E_API_PORT`,
-`E2E_TENANT`, and `E2E_USER`. Traces and screenshots land in `test-results/`.
-An existing dev server on 5180/5182 is reused outside CI.
+The suite uses `AUTH_MODE=dev` because a real WorkOS tenant cannot be signed into
+unattended; every step after identity uses the same tenant-scoped API a real
+session does. Points and identity can be overridden with `E2E_WEB_PORT`,
+`E2E_API_PORT`, `E2E_TENANT`, and `E2E_USER`. Traces and screenshots land in
+`test-results/`. An existing dev server on 5180/5182 is reused outside CI.
+
+### Sign-in round trip (CR-032)
+
+`npm run test:e2e:auth` covers the leg the dev bypass skips: the signed state from
+`/v1/auth/login`, the browser leaving for the authorization endpoint, the return
+through `/auth/callback`, the server-side code exchange, and RS256/JWKS
+verification of the token against its `client_id` claim. It then asserts the
+stored session holds no access token, a replayed code is refused, a forged state
+is refused without spending a code, a reload refreshes rather than re-signs in,
+and sign-out ends the WorkOS session. It also switches the active organization
+from the account menu: the refresh grant names the new org, the new token carries
+that org's `org_id` and role (`member` → editor), the workspace scope moves to the
+new tenant, and an owner-only route refuses the downgraded token. Two failure
+paths are covered as well. A stale listing entry — advertised by the provider but
+not a real membership — never becomes a button, because the API confirms every
+candidate with a single-membership lookup before offering it. And a switch
+refused *after* the list was read (the membership is revoked in between) shows
+the reason in the account menu, keeps the visitor in the workspace they were in
+with their session intact, and the next refresh still succeeds.
+
+Only the identity provider is local: `playwright.auth.config.ts` boots
+`apps/api/scripts/stub_workos.py` on 5184 and gives the API `WORKOS_API_BASE`
+pointing at it. No API or web code is mocked, and no real tenant is needed. The
+suite runs its own API (5183, `AUTH_MODE=workos`) and web (5181 — an origin
+already on the API's CORS allowlist) so it can run alongside `test:e2e`.

@@ -5,6 +5,11 @@
     "types": ["node", "vite/client"],
     "noEmit": true
   },
-  "include": ["src/**/*.test.ts", "e2e/**/*.ts", "playwright.config.ts"],
+  "include": [
+    "src/**/*.test.ts",
+    "e2e/**/*.ts",
+    "playwright.config.ts",
+    "playwright.auth.config.ts"
+  ],
   "exclude": []
 }

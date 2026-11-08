@@ -232,7 +232,18 @@ two separate roles that are easy to confuse:
 
 They are the "security baseline" line in [COMMERCIAL_READINESS_PLAN.md §6](COMMERCIAL_READINESS_PLAN.md#week-3--make-it-observable-and-testable).
 
-The E2E job runs with `AUTH_MODE=dev` because WorkOS cannot be signed into
-unattended. Everything after identity is the same tenant-scoped API a real
-session uses, but **WorkOS sign-in itself stays a staging or manual check** and
-is not covered by any gate above.
+The E2E job runs two suites. The critical path uses `AUTH_MODE=dev` because a
+real WorkOS tenant cannot be signed into unattended; everything after identity is
+the same tenant-scoped API a real session uses. The identity round trip
+(`npm run test:e2e:auth`) covers the provider leg that bypass skips — signed
+state, redirect, `/auth/callback`, code exchange, RS256/JWKS verification, the
+`client_id` claim check and switching the active organization (the new token's
+`org_id` and role, RBAC following it, plus both failure paths: a stale listing
+entry that is verified away before it can be offered, and a switch revoked
+mid-flight that leaves the visitor in their own workspace with the reason shown)
+— against a loopback WorkOS stand-in
+(`apps/api/scripts/stub_workos.py`), with no mock inside the API or the web
+session layer.
+
+What still stays a staging or manual check is the real tenant: AuthKit's own UI,
+the redirect allowlist in the WorkOS dashboard, and a live JWKS endpoint.
