@@ -24,7 +24,8 @@
     "test:jobs": "tsx src/data/jobsApi.test.ts",
     "test:auth": "tsx src/data/session.test.ts",
     "test:reporting": "tsx src/data/reporting.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:auth": "playwright test --config=playwright.auth.config.ts"
   },
   "dependencies": {
     "@sentry/browser": "^11.11.0",

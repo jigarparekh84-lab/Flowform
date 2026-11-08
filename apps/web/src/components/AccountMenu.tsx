@@ -166,7 +166,8 @@ export function AccountMenu() {
                 </ul>
                 {organizationsDegraded && (
                   <p className="auth-note warn">
-                    The identity provider could not list your organizations; showing the current workspace only.
+                    The identity provider could not confirm all of your organizations, so some are hidden. You can
+                    still work in the one shown here.
                   </p>
                 )}
               </div>

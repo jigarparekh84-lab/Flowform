@@ -9,6 +9,9 @@ inert until ``WORKOS_API_KEY`` and ``WORKOS_CLIENT_ID`` are set.
 * Logout:         GET  https://api.workos.com/user_management/sessions/logout
                   (session_id from the access token's ``sid`` claim, return_to)
 * Memberships:    GET  https://api.workos.com/user_management/organization_memberships?user_id=
+                  (+ organization_id = one authoritative membership, used to confirm
+                  a listed organization before offering a switch; a confirmed
+                  switch is cached for ``WORKOS_ORG_CONFIRM_CACHE_S`` seconds)
 * Access tokens:  JWT, iss https://api.workos.com, JWKS https://api.workos.com/sso/jwks/<client_id>,
                   claims sub, org_id, role, roles, permissions, sid, client_id
 * Admin Portal:   POST https://api.workos.com/portal/generate_link {organization, intent}
@@ -37,6 +40,7 @@ import hmac
 import json
 import os
 import secrets
+import threading
 import time
 from typing import Any
 from urllib.parse import urlencode, urlsplit
@@ -300,9 +304,17 @@ class WorkOSClient:
             body["organization_id"] = organization_id
         return self._authenticate(body)
 
-    def list_memberships(self, user_id: str) -> list[dict[str, Any]]:
-        """Active organizations for a user (GET /user_management/organization_memberships)."""
-        data = self._get("/user_management/organization_memberships", {"user_id": user_id})
+    def list_memberships(self, user_id: str, organization_id: str | None = None) -> list[dict[str, Any]]:
+        """Memberships for a user (GET /user_management/organization_memberships).
+
+        Naming ``organization_id`` asks the provider for that single membership
+        rather than the whole listing — the authoritative answer the API uses to
+        confirm a listing entry before it offers a switch.
+        """
+        params: dict[str, Any] = {"user_id": user_id}
+        if organization_id:
+            params["organization_id"] = organization_id
+        data = self._get("/user_management/organization_memberships", params)
         rows = data.get("data") if isinstance(data, dict) else None
         return [r for r in (rows or []) if isinstance(r, dict)]
 
@@ -346,6 +358,66 @@ def _expires_in(access_token: str | None) -> int | None:
     except Exception:  # noqa: BLE001 — malformed token is the caller's problem, not ours
         return None
     return max(0, exp - int(time.time()))
+
+
+# ------------------------------------------------- organization confirmation cache
+
+#: How long a *confirmed* switch is remembered (``WORKOS_ORG_CONFIRM_CACHE_S``;
+#: 0 disables the cache). Only positive answers are cached: a denial is re-checked
+#: every time, so a newly granted membership appears immediately and a stale
+#: listing entry is still filtered out. A membership revoked inside the window is
+#: caught at the grant — ``/v1/auth/refresh`` refuses that switch and says why.
+CONFIRM_CACHE_MAX_S = 300.0
+CONFIRM_CACHE_MAX_ENTRIES = 4096
+_CONFIRM_CACHE: dict[tuple[str, str], float] = {}
+_CONFIRM_LOCK = threading.Lock()
+
+
+def confirm_cache_ttl() -> float:
+    raw = os.environ.get("WORKOS_ORG_CONFIRM_CACHE_S")
+    if raw is None:
+        return 60.0
+    try:
+        return max(0.0, min(float(raw), CONFIRM_CACHE_MAX_S))
+    except ValueError:
+        return 60.0
+
+
+def confirmation_cached(subject: str, organization_id: str) -> bool:
+    if confirm_cache_ttl() <= 0:
+        return False
+    now = time.monotonic()
+    key = (subject, organization_id)
+    with _CONFIRM_LOCK:
+        expires = _CONFIRM_CACHE.get(key)
+        if expires is None:
+            return False
+        if expires <= now:
+            del _CONFIRM_CACHE[key]
+            return False
+        return True
+
+
+def cache_confirmation(subject: str, organization_id: str) -> None:
+    ttl = confirm_cache_ttl()
+    if ttl <= 0:
+        return
+    now = time.monotonic()
+    with _CONFIRM_LOCK:
+        if len(_CONFIRM_CACHE) >= CONFIRM_CACHE_MAX_ENTRIES:
+            for key, expires in list(_CONFIRM_CACHE.items()):
+                if expires <= now:
+                    del _CONFIRM_CACHE[key]
+            if len(_CONFIRM_CACHE) >= CONFIRM_CACHE_MAX_ENTRIES:
+                # A per-process perf cache: rebuilding beats unbounded growth.
+                _CONFIRM_CACHE.clear()
+        _CONFIRM_CACHE[(subject, organization_id)] = now + ttl
+
+
+def clear_confirmations() -> None:
+    """Forget every cached confirmation (tests; also safe to call on demand)."""
+    with _CONFIRM_LOCK:
+        _CONFIRM_CACHE.clear()
 
 
 NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
@@ -441,7 +513,19 @@ def refresh(body: RefreshIn, response: Response) -> dict[str, Any]:
     """Rotate the session, optionally switching the active organization."""
     if not body.refreshToken:
         raise HTTPException(status_code=400, detail="refreshToken required")
-    r = client().refresh(body.refreshToken, body.organizationId)
+    try:
+        r = client().refresh(body.refreshToken, body.organizationId)
+    except HTTPException as e:
+        if e.status_code == 401 and body.organizationId:
+            # A refused switch is not a dead session: name the actual cause so the
+            # client keeps the visitor in their current workspace instead of
+            # treating the account as signed out (CR-010).
+            raise HTTPException(
+                status_code=401,
+                detail="organization switch refused: you have no active membership in that organization",
+                headers=NO_STORE,
+            ) from None
+        raise
     response.headers.update(NO_STORE)
     return _session_payload(r)
 
@@ -482,25 +566,58 @@ def organizations(ident: Identity = Depends(viewer)) -> dict[str, Any]:
 
     if not (workos_enabled() and ident.subject):
         return {"organizations": current(), "degraded": False}
+    subject = str(ident.subject)
     try:
-        memberships = client().list_memberships(ident.subject)
+        memberships = client().list_memberships(subject)
     except HTTPException:
         # Identity provider hiccup must not hide the workspace you are already in.
         return {"organizations": current(), "degraded": True}
-    orgs = []
+
+    def confirmed(oid: str) -> bool:
+        """The listing is a cached view; only a direct lookup proves the switch works.
+
+        A ``True`` answer is remembered briefly (``WORKOS_ORG_CONFIRM_CACHE_S``,
+        default 60s) so opening the account menu does not cost one provider call
+        per organization, per user, per session change. Denials are never cached.
+        """
+        if confirmation_cached(subject, oid):
+            return True
+        rows = client().list_memberships(subject, organization_id=oid)
+        ok = any(
+            str(r.get("organization_id")) == oid and str(r.get("status") or "active") == "active"
+            for r in rows
+        )
+        if ok:
+            cache_confirmation(subject, oid)
+        return ok
+
+    orgs: list[dict[str, Any]] = []
+    degraded = False
     for m in memberships:
         oid = str(m.get("organization_id") or "")
         if not oid or str(m.get("status") or "active") != "active":
             continue
         role = m.get("role") if isinstance(m.get("role"), dict) else {}
-        orgs.append({
+        entry = {
             "id": oid,
             "name": m.get("organization_name") or oid,
             "role": normalize_role(role.get("slug") if isinstance(role, dict) else role),
             "active": True,
             "current": oid == external_id,
-        })
-    return {"organizations": orgs or current(), "degraded": False}
+        }
+        # The active organization is proven by the token itself; every other one
+        # must be confirmed by the provider, or a stale listing entry would offer
+        # a switch that the token grant then refuses. One lookup per candidate,
+        # minus the ones already confirmed inside the short cache window.
+        if not entry["current"]:
+            try:
+                if not confirmed(oid):
+                    continue
+            except HTTPException:
+                degraded = True
+                continue
+        orgs.append(entry)
+    return {"organizations": orgs or current(), "degraded": degraded}
 
 
 class PortalIn(BaseModel):

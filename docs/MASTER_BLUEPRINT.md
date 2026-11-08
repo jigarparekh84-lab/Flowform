@@ -166,7 +166,7 @@ Flowform ships in three deployment shapes. All three run the same UI and engine;
 | POST | `/v1/auth/callback` | exchange AuthKit code → access/refresh token (state required) | — |
 | POST | `/v1/auth/refresh` | rotate tokens; `organizationId` switches organisation | — |
 | POST | `/v1/auth/logout` | WorkOS session logout URL from the token's `sid` | viewer |
-| GET | `/v1/auth/organizations` | active memberships, current one flagged | viewer |
+| GET | `/v1/auth/organizations` | switchable organizations, each confirmed with the provider (confirmations cached ~60s, denials re-checked); current one flagged | viewer |
 | GET | `/v1/auth/me` | current tenant/user/role | viewer |
 | POST | `/v1/auth/admin-portal` | self-serve SSO / directory link for the tenant's IT | owner |
 | GET/POST | `/v1/projects` | list / create (body = `ProjectSnapshot` JSON) | viewer / editor |

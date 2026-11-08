@@ -352,8 +352,11 @@ export async function refreshSession(opts: { organizationId?: string } = {}): Pr
       setSession(next)
       return next
     } catch (e) {
-      // A rejected refresh token means the session is over; drop it and let the UI ask for sign-in.
-      setSession(null)
+      // A rejected refresh token means the session is over — except when the
+      // failure came from an organization switch, where a refusal only means that
+      // grant was not allowed. Then the visitor stays in the workspace they were
+      // in and the UI shows why the switch failed.
+      if (!opts.organizationId) setSession(null)
       throw e instanceof AuthError ? e : new AuthError('exchange_failed', 'Session refresh failed.')
     } finally {
       inflightRefresh = null
