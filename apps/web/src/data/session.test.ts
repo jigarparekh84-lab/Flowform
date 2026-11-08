@@ -34,6 +34,7 @@ let stateSeq = 0
 let refreshCalls = 0
 let callbackCalls = 0
 let rejectRefresh = false
+let rejectSwitchOrg: string | null = null
 let meRole = 'editor'
 let rejectToken: string | null = null
 
@@ -74,6 +75,9 @@ let rejectToken: string | null = null
   if (u.pathname === '/v1/auth/refresh') {
     refreshCalls++
     if (rejectRefresh || body?.refreshToken === 'expired') return json(401, { detail: 'sign-in could not be completed' })
+    if (rejectSwitchOrg && body?.organizationId === rejectSwitchOrg) {
+      return json(401, { detail: 'organization switch refused: no active membership' })
+    }
     const org = (body?.organizationId as string) ?? 'org_A'
     return json(200, {
       access_token: jwt({ sub: 'user_1', org_id: org, sid: `sess_${refreshCalls + 1}`, client_id: 'client_123' }),
@@ -114,6 +118,7 @@ const reset = () => {
   refreshCalls = 0
   callbackCalls = 0
   rejectRefresh = false
+  rejectSwitchOrg = null
   rejectToken = null
   navigations.length = 0
 }
@@ -170,6 +175,21 @@ assert.equal((switchCall.body as { organizationId?: string }).organizationId, 'o
 assert.equal(S.getSession()?.organizationId, 'org_B')
 const orgs = await S.listOrganizations()
 assert.deepEqual(orgs.organizations.map((o) => o.id), ['org_A', 'org_B'])
+
+// 6b. A switch the server refuses keeps the session: the visitor stays in the
+// workspace they were in, with the token they already hold, and the error
+// reaches the caller. Signing them out would lose a working session.
+rejectSwitchOrg = 'org_phantom'
+const held = S.getSession()
+await assert.rejects(
+  () => S.switchOrganization('org_phantom'),
+  (e: unknown) => e instanceof S.AuthError && e.message.includes('no active membership'),
+)
+assert.equal(S.getSession()?.organizationId, held?.organizationId, 'a refused switch must not move the workspace')
+assert.equal(S.getSession()?.refreshToken, held?.refreshToken, 'the refresh token is kept')
+assert.equal(S.currentToken()?.startsWith('ey'), true, 'the session stays usable')
+assert.equal(mem.has(S.SESSION_KEY), true, 'the session stays persisted')
+rejectSwitchOrg = null
 
 // 7. Role ranking mirrors the server matrix.
 assert.equal(S.can('viewer', 'admin'), false)
