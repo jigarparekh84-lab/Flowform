@@ -9,4 +9,4 @@
 # (and needs setuptools, which a hash-checked lock cannot express cleanly).
 
 mypy==2.4.1
-ruff==0.17.3
+ruff==0.17.4
