@@ -42,7 +42,7 @@
     "oxlint": "^1.91.0",
     "tsx": "^4.23.15",
     "typescript": "~7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.6"
   },
   "description": "Flowform — network/footprint design studio (web)"
 }
