@@ -27,22 +27,22 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@sentry/browser": "^11.11.0",
-    "maplibre-gl": "^6.16.0",
+    "@sentry/browser": "^11.15.0",
+    "maplibre-gl": "^6.19.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^26.6.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
-    "@vitejs/plugin-react": "^6.2.1",
-    "oxlint": "^1.91.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "oxlint": "^1.94.0",
     "tsx": "^4.23.15",
     "typescript": "~7.0.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.8"
   },
   "description": "Flowform — network/footprint design studio (web)"
 }
